@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/mrsafalpiya/portby.dev/internal/config"
+	"github.com/mrsafalpiya/portby.dev/internal/naming"
 	"github.com/mrsafalpiya/portby.dev/internal/proxy"
 	"github.com/mrsafalpiya/portby.dev/internal/recipe"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
@@ -28,16 +28,21 @@ type served struct {
 
 // domainOf is the main Worktree's Domain.
 func domainOf(p registry.Project) string {
-	return strings.ToLower(p.Name) + ".localhost"
+	return naming.DomainLabel(p.Name) + ".localhost"
 }
 
-// startProject resolves the Project's config and starts the main Worktree's
-// Processes. Config is resolved on every start, so changes take effect the
-// next time the Processes start. Failures are kept so requests to the Domain
-// can report them, rather than failing the caller.
+// startProject starts the main Worktree's Processes.
 func (d *Daemon) startProject(ctx context.Context, p registry.Project) {
-	s := served{project: p.Name, group: p.Path}
-	cfg, err := recipe.ResolveDir(p.Path)
+	d.startWorktree(ctx, p, domainOf(p), p.Path)
+}
+
+// startWorktree resolves the config in the Worktree at dir and starts its
+// Processes, serving them at domain. Config is resolved on every start, so
+// changes take effect the next time the Processes start. Failures are kept so
+// requests to the Domain can report them, rather than failing the caller.
+func (d *Daemon) startWorktree(ctx context.Context, p registry.Project, domain, dir string) {
+	s := served{project: p.Name, group: dir}
+	cfg, err := recipe.ResolveDir(dir)
 	if err == nil {
 		for _, w := range cfg.Warnings {
 			d.log.Warn("config", "project", p.Name, "warning", w)
@@ -50,19 +55,28 @@ func (d *Daemon) startProject(ctx context.Context, p registry.Project) {
 			specs = append(specs, supervisor.Spec{
 				Name:    proc.Name,
 				Command: proc.Command,
-				Dir:     p.Path,
-				LogFile: filepath.Join(d.cfg.Paths.Logs(), domainOf(p), proc.Name+".log"),
+				Dir:     dir,
+				LogFile: filepath.Join(d.cfg.Paths.Logs(), domain, proc.Name+".log"),
 			})
 		}
 		err = d.supervisor.StartGroup(ctx, s.group, specs)
 	}
 	if err != nil {
-		d.log.Error("starting Project", "project", p.Name, "err", err)
+		d.log.Error("starting Worktree", "project", p.Name, "worktree", dir, "err", err)
 		s.err = err
 	}
 	d.servedMu.Lock()
-	d.served[domainOf(p)] = s
+	d.served[domain] = s
 	d.servedMu.Unlock()
+}
+
+// stopWorktree stops serving domain and stops the Processes of the Worktree
+// at dir.
+func (d *Daemon) stopWorktree(ctx context.Context, domain, dir string) {
+	d.servedMu.Lock()
+	delete(d.served, domain)
+	d.servedMu.Unlock()
+	d.supervisor.StopGroup(ctx, dir)
 }
 
 // router is the daemon's proxy.Router.

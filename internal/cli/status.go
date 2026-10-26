@@ -25,17 +25,25 @@ func runStatus(ctx context.Context, env Env, args []string) error {
 		return nil
 	}
 	tw := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "PROJECT\tPATH\tPROCESSES")
+	fmt.Fprintln(tw, "PROJECT\tDOMAIN\tPATH\tPROCESSES")
 	for _, p := range projects {
-		fmt.Fprintf(tw, "%s\t%s", p.Name, p.Path)
-		if len(p.Processes) > 0 {
-			var procs []string
-			for _, proc := range p.Processes {
-				procs = append(procs, proc.Name+":"+proc.State)
+		// The main Worktree is the Project's own row; the others are
+		// indented under it.
+		for _, w := range p.Worktrees {
+			name := p.Name
+			if !w.Main {
+				name = "  " + w.Name
 			}
-			fmt.Fprintf(tw, "\t%s", strings.Join(procs, ","))
+			fmt.Fprintf(tw, "%s\t%s\t%s", name, w.Domain, w.Path)
+			if len(w.Processes) > 0 {
+				var procs []string
+				for _, proc := range w.Processes {
+					procs = append(procs, proc.Name+":"+proc.State)
+				}
+				fmt.Fprintf(tw, "\t%s", strings.Join(procs, ","))
+			}
+			fmt.Fprintln(tw)
 		}
-		fmt.Fprintln(tw)
 	}
 	return tw.Flush()
 }
