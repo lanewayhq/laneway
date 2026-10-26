@@ -8,7 +8,7 @@ import (
 	"strconv"
 
 	"github.com/mrsafalpiya/portby.dev/internal/database"
-	"github.com/mrsafalpiya/portby.dev/internal/provision"
+	"github.com/mrsafalpiya/portby.dev/internal/prepare"
 	"github.com/mrsafalpiya/portby.dev/internal/recipe"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
 	"github.com/mrsafalpiya/portby.dev/internal/service"
@@ -63,14 +63,14 @@ func databaseVars(cfg recipe.Resolved, vars map[string]string) map[string]string
 // config's mode says; false if the Project has none. A database in a Service
 // starts the Service first (pulling its image if needed) and keeps it from
 // going Idle until the step ends.
-func (d *Daemon) databaseStep(p registry.Project, w envWorktree, cfg recipe.Resolved) (provision.Step, bool) {
+func (d *Daemon) databaseStep(p registry.Project, w envWorktree, cfg recipe.Resolved) (prepare.Step, bool) {
 	db := cfg.Database
 	names := databaseEngine(db, database.Server{})
 	if names == nil {
-		return provision.Step{}, false
+		return prepare.Step{}, false
 	}
 	main, own := names.Database(p.Name, "", p.Path), names.Database(p.Name, w.label, w.dir)
-	return provision.Step{Name: "database", Run: func(ctx context.Context, out io.Writer) error {
+	return prepare.Step{Name: "database", Run: func(ctx context.Context, out io.Writer) error {
 		var server database.Server
 		if svc, ok := cfg.DatabaseService(); ok && database.Mode(db.Mode).Use(main, own) == own {
 			var release func()
@@ -83,7 +83,7 @@ func (d *Daemon) databaseStep(p registry.Project, w envWorktree, cfg recipe.Reso
 		}
 		warnings, err := database.Ensure(ctx, databaseEngine(db, server), database.Mode(db.Mode), main, own, out)
 		for _, warning := range warnings {
-			provision.Warn(ctx, warning)
+			prepare.Warn(ctx, warning)
 		}
 		return err
 	}}, true

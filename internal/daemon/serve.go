@@ -13,7 +13,7 @@ import (
 	"github.com/mrsafalpiya/portby.dev/internal/activity"
 	"github.com/mrsafalpiya/portby.dev/internal/config"
 	"github.com/mrsafalpiya/portby.dev/internal/naming"
-	"github.com/mrsafalpiya/portby.dev/internal/provision"
+	"github.com/mrsafalpiya/portby.dev/internal/prepare"
 	"github.com/mrsafalpiya/portby.dev/internal/proxy"
 	"github.com/mrsafalpiya/portby.dev/internal/recipe"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
@@ -111,12 +111,12 @@ func domainOf(p registry.Project) string {
 }
 
 // serveProject applies the main Worktree's Env Patch, serves it at its
-// Domain and begins its setup if it hasn't been set up.
+// Domain and begins preparing it if it isn't Ready.
 func (d *Daemon) serveProject(p registry.Project) {
 	d.applyEnvPatch(p, mainEnvWorktree(p))
 	d.serveWorktree(p, domainOf(p), p.Path)
 	d.reclaimOrphans(p, mainEnvWorktree(p))
-	d.provision(p, mainEnvWorktree(p), false)
+	d.prepare(p, mainEnvWorktree(p), false)
 }
 
 // serveWorktree makes the Worktree at dir known to the proxy at domain and
@@ -138,7 +138,7 @@ func (d *Daemon) serveWorktree(p registry.Project, domain, dir string) {
 // don't start; worktreeReady starts them after a successful --retry.
 func (d *Daemon) startAlways(s *served) {
 	d.background(func() {
-		if err := d.waitForSetup(s); err != nil {
+		if err := d.waitForReady(s); err != nil {
 			if s.ctx.Err() == nil {
 				d.log.Error("not starting always Processes", "project", s.project, "dir", s.dir, "err", err)
 			}
@@ -291,7 +291,7 @@ func (d *Daemon) starting(s *served) *start {
 func (d *Daemon) bootWorktree(s *served, st *start) (string, error) {
 	// Setup can take minutes: wait for it before taking the lifecycle
 	// lock, so `portby down` doesn't wait for it too.
-	if err := d.waitForSetup(s); err != nil {
+	if err := d.waitForReady(s); err != nil {
 		return "", err
 	}
 	s.lifecycle.Lock()
@@ -486,8 +486,8 @@ func (r router) Upstream(ctx context.Context, domain string, wait bool) (string,
 	case <-st.done:
 	default:
 		if !wait {
-			if d.provisioner.Status(s.dir).State != provision.Ready {
-				return "", proxy.ErrSettingUp
+			if d.preparer.Status(s.dir).State != prepare.Ready {
+				return "", proxy.ErrPreparing
 			}
 			return "", proxy.ErrStarting
 		}

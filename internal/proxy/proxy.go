@@ -45,7 +45,7 @@ type Router interface {
 	// Process serving domain, starting it if needed. While it is starting,
 	// Upstream waits for it to accept connections if wait is true, and
 	// otherwise returns ErrStarting at once (ErrSettingUp while the
-	// Worktree's setup runs; a *SetupError if it failed). It returns an error wrapping
+	// Worktree is Preparing; a *PreparationError if preparing it failed). It returns an error wrapping
 	// ErrUnknownDomain if domain is not one of Portby's Domains; any other
 	// error is shown to the user.
 	Upstream(ctx context.Context, domain string, wait bool) (string, error)
@@ -75,23 +75,23 @@ var (
 	// ErrStarting is returned by a Router, when asked not to wait, for a
 	// Domain whose Process is still starting.
 	ErrStarting = errors.New("starting")
-	// ErrSettingUp is ErrStarting for a Domain whose Worktree is still
-	// being set up, so its Processes can't start yet.
-	ErrSettingUp = errors.New("setting up")
+	// ErrPreparing is ErrStarting for a Domain whose Worktree is still
+	// Preparing, so its Processes can't start yet.
+	ErrPreparing = errors.New("preparing")
 )
 
-// SetupError is returned by a Router when the setup of a Domain's Worktree
-// failed, so its Processes aren't started. The proxy shows it as Portby's
-// setup error page.
-type SetupError struct {
+// PreparationError is returned by a Router when preparing a Domain's
+// Worktree failed, so its Processes aren't started. The proxy shows it as
+// Portby's preparation error page.
+type PreparationError struct {
 	// Step is the step that failed, Output its last lines of output.
 	Step   string
 	Output []string
 	Err    error
 }
 
-func (e *SetupError) Error() string { return e.Err.Error() }
-func (e *SetupError) Unwrap() error { return e.Err }
+func (e *PreparationError) Error() string { return e.Err.Error() }
+func (e *PreparationError) Unwrap() error { return e.Err }
 
 // StartError is returned by a Router when a Domain's Primary Process failed
 // to start, or (Crashed) crashed after it had started and is restarting or

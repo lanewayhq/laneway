@@ -48,7 +48,7 @@ func (d *Daemon) unlink(ctx context.Context, dir string) (api.UnlinkResponse, er
 	d.watcher.Unwatch(p.Path)
 	for _, w := range worktrees {
 		d.stopWorktree(ctx, w.domain, w.dir)
-		d.provisioner.Forget(w.dir)
+		d.preparer.Forget(w.dir)
 	}
 	d.addOrphans(orphans)
 	for _, o := range orphans {

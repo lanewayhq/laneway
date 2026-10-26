@@ -72,11 +72,11 @@ func printInfo(env Env, info api.Info) error {
 		state := s.State
 		switch {
 		case s.State == api.SetupFailed:
-			state = fmt.Sprintf("failed at step %q: %s (run `portby worktree ready --retry` once it is fixed)", s.Step, s.Error)
+			state = fmt.Sprintf("preparing it failed at step %q: %s (run `portby worktree ready --retry` once it is fixed)", s.Step, s.Error)
 		case s.Step != "":
 			state += ": " + s.Step
 		}
-		fmt.Fprintf(tw, "  Setup\t%s\n", state)
+		fmt.Fprintf(tw, "  Readiness\t%s\n", state)
 		for _, w := range s.Warnings {
 			fmt.Fprintf(tw, "  \twarning: %s\n", w)
 		}

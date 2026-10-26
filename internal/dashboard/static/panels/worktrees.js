@@ -1,5 +1,5 @@
-// The Worktrees panel: every Project with its Worktrees, their setup and run
-// states, Domains, Aliases and Processes, with start/stop/restart buttons.
+// The Worktrees panel: every Project with its Worktrees, their readiness
+// (Preparing, Ready, Failed) and run states, Domains, Aliases and Processes, with start/stop/restart buttons.
 // It re-renders on every `projects` event.
 import { h } from "../dom.js";
 
@@ -56,7 +56,7 @@ export default {
     const project = (p) => h("article", { class: "project" },
       h("header", {}, h("h3", {}, p.name), h("span", { class: "path" }, p.path)),
       h("table", {},
-        h("thead", {}, h("tr", {}, ...["Worktree", "Domain", "Setup", "State", "Processes", ""].map((c) => h("th", {}, c)))),
+        h("thead", {}, h("tr", {}, ...["Worktree", "Domain", "Readiness", "State", "Processes", ""].map((c) => h("th", {}, c)))),
         h("tbody", {}, ...p.worktrees.map((w) => worktree(p, w)))));
 
     const worktree = (p, w) => {
@@ -76,13 +76,13 @@ export default {
         return "-";
       }
       if (s.state === "failed") {
-        return details(`${key}:setup`, h("span", {}, badge("failed"), " at ", h("code", {}, s.step)),
+        return details(`${key}:setup`, h("span", {}, badge("failed"), " preparing at ", h("code", {}, s.step)),
           h("p", {}, s.error),
           s.output?.length ? h("pre", {}, s.output.join("\n")) : "",
           h("p", {}, "Fix it, then run ", h("code", {}, "portby worktree ready --retry"), " in the Worktree."));
       }
-      if (s.state === "provisioning") {
-        return h("span", {}, badge("setting up"), " ", h("code", {}, s.step ?? ""));
+      if (s.state === "preparing") {
+        return h("span", {}, badge("preparing"), " ", h("code", {}, s.step ?? ""));
       }
       return badge(s.state);
     };

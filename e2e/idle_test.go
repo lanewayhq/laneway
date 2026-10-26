@@ -248,7 +248,7 @@ func TestAWorktreeGoesIdleAfterTheStartThatWaitedForItsSetup(t *testing.T) {
 	d.MustRunCLI(repo.Dir, "link")
 
 	if page := d.Navigate("https://idle-setup.localhost/"); page.StatusCode != http.StatusServiceUnavailable {
-		t.Fatalf("navigation while provisioning: status %d, want the 503 setting up page:\n%s", page.StatusCode, page.Body)
+		t.Fatalf("navigation while preparing: status %d, want the 503 preparing page:\n%s", page.StatusCode, page.Body)
 	}
 	// The idle timeout passes while setup is still running: there is
 	// nothing to stop yet.

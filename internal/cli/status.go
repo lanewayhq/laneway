@@ -26,7 +26,7 @@ func runStatus(ctx context.Context, env Env, args []string) error {
 		return nil
 	}
 	tw := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "PROJECT\tDOMAIN\tPATH\tSETUP\tSTATE\tPROCESSES")
+	fmt.Fprintln(tw, "PROJECT\tDOMAIN\tPATH\tREADINESS\tSTATE\tPROCESSES")
 	for _, p := range projects {
 		// The main Worktree is the Project's own row; the others are
 		// indented under it.

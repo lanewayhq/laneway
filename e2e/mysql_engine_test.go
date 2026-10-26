@@ -21,7 +21,7 @@ func waitForSetup(t *testing.T, d *testkit.Daemon, dir string) *api.Setup {
 	defer cancel()
 	info, err := d.Client().WorktreeReady(ctx, api.ReadyRequest{Dir: dir, Wait: true})
 	if err != nil {
-		t.Fatalf("waiting for %s to be set up: %v", dir, err)
+		t.Fatalf("waiting for %s to be Ready: %v", dir, err)
 	}
 	return info.Worktree.Setup
 }

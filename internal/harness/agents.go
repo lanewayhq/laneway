@@ -20,7 +20,7 @@ This repository is served by Portby when it's installed. Every git worktree gets
 
 - Find this worktree's URL, its Processes and their states, its databases and its Service connection details with ` + "`portby info --json`" + `. Use that URL rather than starting your own server or guessing a port.
 - Run the project's commands (tests, artisan, composer, npm…) with ` + "`portby exec <command>`" + `, such as ` + "`portby exec php artisan test`" + `, so they use this worktree's PHP and Node versions.
-- ` + "`portby worktree ready`" + ` waits until this worktree is set up. If it reports that setup failed, show the user its output; ` + "`portby worktree ready --retry`" + ` runs setup again once the problem is fixed.
+- ` + "`portby worktree ready`" + ` waits until this worktree is Ready (Portby prepares each new worktree: its database, ` + "`.env`" + ` and setup commands). If it reports that preparing it failed, show the user its output; ` + "`portby worktree ready --retry`" + ` prepares it again once the problem is fixed.
 - If there is no ` + "`portby`" + ` command, Portby isn't installed: ignore this section.
 `
 

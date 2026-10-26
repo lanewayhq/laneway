@@ -14,11 +14,11 @@ import (
 // Exit codes of `portby worktree ready`. Harness hooks and scripts depend on
 // them, so they don't change. Usage errors exit with exitUsage (2).
 const (
-	// readyFailed: the Worktree's setup Failed. The failed step, its error
+	// readyFailed: preparing the Worktree Failed. The failed step, its error
 	// and its last lines of output are on stderr.
 	readyFailed = 1
 	// readyNothingToWaitFor: the directory isn't in a Linked Project's git
-	// repository, or no daemon is running, so there is no setup to wait for.
+	// repository, or no daemon is running, so there is nothing to wait for.
 	readyNothingToWaitFor = 3
 	// readyGaveUp: no answer: --timeout passed, it was interrupted, the
 	// Worktree was removed or the daemon stopped while waiting, or another
@@ -31,7 +31,7 @@ const defaultReadyTimeout = 10 * time.Minute
 
 func runWorktreeReady(ctx context.Context, env Env, args []string) error {
 	fs := newFlags(env, "worktree ready")
-	retry := fs.Bool("retry", false, "if setup failed, run it again (from the first step) and wait")
+	retry := fs.Bool("retry", false, "if preparing the Worktree failed, prepare it again (from the first step) and wait")
 	timeout := fs.Duration("timeout", defaultReadyTimeout, "give up after this long (exit 4); 0 waits for ever")
 	worktree := worktreeFlag(fs, env)
 	if err := parseFlags(fs, args); err != nil {
@@ -49,7 +49,7 @@ func runWorktreeReady(ctx context.Context, env Env, args []string) error {
 	req := api.ReadyRequest{Dir: env.Dir, Worktree: worktree(), Retry: *retry}
 	info, err := c.WorktreeReady(ctx, req)
 	if err == nil && !setupDone(info) {
-		fmt.Fprintf(env.Stderr, "Waiting for %s of %q to be set up…\n", describeWorktree(info.Worktree), info.Project.Name)
+		fmt.Fprintf(env.Stderr, "Waiting for %s of %q to be prepared…\n", describeWorktree(info.Worktree), info.Project.Name)
 		req.Retry, req.Wait = false, true
 		info, err = c.WorktreeReady(ctx, req)
 	}
@@ -61,7 +61,7 @@ func runWorktreeReady(ctx context.Context, env Env, args []string) error {
 	}
 	if setup := info.Worktree.Setup; setup.State == api.SetupFailed {
 		var b strings.Builder
-		fmt.Fprintf(&b, "setup of %s of %q failed at step %q: %s\n",
+		fmt.Fprintf(&b, "preparing %s of %q failed at step %q: %s\n",
 			describeWorktree(info.Worktree), info.Project.Name, setup.Step, setup.Error)
 		for _, line := range setup.Output {
 			fmt.Fprintf(&b, "  %s\n", line)
@@ -88,7 +88,7 @@ func readyError(ctx context.Context, timeout time.Duration, err error) error {
 		return exitCode{readyNothingToWaitFor, err.Error()}
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		return exitCode{readyGaveUp, fmt.Sprintf("the Worktree wasn't Ready after %s; "+
-			"see where its setup is with `portby status`, or wait longer with --timeout", timeout)}
+			"see how far it got with `portby status`, or wait longer with --timeout", timeout)}
 	default:
 		return exitCode{readyGaveUp, err.Error()}
 	}

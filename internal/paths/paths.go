@@ -79,7 +79,8 @@ func (p Paths) GlobalConfig() string {
 	return filepath.Join(p.ConfigDir, "config.toml")
 }
 
-// Setup is the file the Provisioner records Worktrees' setup states in.
+// Setup is the file the Preparer records Worktrees' states in (Ready,
+// Failed).
 func (p Paths) Setup() string {
 	return filepath.Join(p.StateDir, "setup.json")
 }

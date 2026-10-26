@@ -24,7 +24,7 @@ import (
 	"github.com/mrsafalpiya/portby.dev/internal/dashboard"
 	"github.com/mrsafalpiya/portby.dev/internal/paths"
 	"github.com/mrsafalpiya/portby.dev/internal/platform"
-	"github.com/mrsafalpiya/portby.dev/internal/provision"
+	"github.com/mrsafalpiya/portby.dev/internal/prepare"
 	"github.com/mrsafalpiya/portby.dev/internal/proxy"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
 	"github.com/mrsafalpiya/portby.dev/internal/service"
@@ -120,8 +120,8 @@ type Daemon struct {
 	watcher *watcher.Watcher
 	syncMu  sync.Mutex // serialises Worktree syncs
 
-	provisioner *provision.Provisioner // Worktree setup, see provision.go
-	services    *service.Manager       // shared Services, see services.go
+	preparer *prepare.Preparer // Preparing Worktrees, see prepare.go
+	services *service.Manager  // shared Services, see services.go
 
 	orphanMu      sync.Mutex // serialises changes to Orphans, see orphans.go
 	orphanTimer   clock.Timer
@@ -182,7 +182,7 @@ func Start(cfg Config) (*Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
-	prov, err := provision.Open(cfg.Paths.Setup(), log)
+	prov, err := prepare.Open(cfg.Paths.Setup(), log)
 	if err != nil {
 		ln.Close()
 		return nil, err
@@ -198,7 +198,7 @@ func Start(cfg Config) (*Daemon, error) {
 		closing:    make(chan struct{}),
 		done:       make(chan struct{}),
 	}
-	d.provisioner = prov
+	d.preparer = prov
 	d.services = service.New(service.Options{
 		Engine:      cfg.ContainerEngine,
 		Clock:       cfg.Clock,
@@ -321,7 +321,7 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 	d.startsMu.Unlock()
 	d.stop()
 	d.starts.Wait()
-	d.provisioner.Close()
+	d.preparer.Close()
 	d.supervisor.StopAll(ctx)
 	// Services last: Processes may be using them until they stop.
 	d.services.Close(ctx)

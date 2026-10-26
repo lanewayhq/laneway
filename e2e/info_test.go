@@ -422,7 +422,7 @@ func TestInfoPrintsTheSameDetailsForPeople(t *testing.T) {
 	assertLineWith(t, out, "Path", wt.Dir)
 	assertLineWith(t, out, "URL", "https://feature.info-text.localhost/")
 	assertLineWith(t, out, "Aliases", "https://api.info-text.localhost/")
-	assertLineWith(t, out, "Setup", "ready")
+	assertLineWith(t, out, "Readiness", "ready")
 	assertLineWith(t, out, "State", "stopped")
 	assertLineWith(t, out, "vite", "manual", "stopped", "https://vite.feature.info-text.localhost/")
 	assertLineWith(t, out, "web", "lazy", "stopped", "https://feature.info-text.localhost/", "(primary)")

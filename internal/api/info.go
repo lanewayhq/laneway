@@ -79,10 +79,10 @@ type InfoAlias struct {
 
 // InfoSetup is where the Worktree is in setup.
 type InfoSetup struct {
-	// State is "discovered" (setup hasn't begun), "provisioning", "ready"
+	// State is "discovered" (setup hasn't begun), "preparing", "ready"
 	// or "failed".
 	State string `json:"state"`
-	// Step is the step running (provisioning) or the step that failed
+	// Step is the step running (preparing) or the step that failed
 	// (failed), such as "env" or "on_create: composer install"; else "".
 	Step string `json:"step"`
 	// Error is why Step failed; else "".

@@ -1,16 +1,18 @@
-// Package provision is the Provisioner: it takes each Worktree through setup,
+// Package prepare is the Preparer: it takes each Worktree from being found
+// to Ready (GLOSSARY.md),
 //
-//	Discovered → Provisioning (database → Test Database → env → setup steps) → Ready | Failed
+//	Discovered → Preparing (database → Test Database → env → setup steps) → Ready | Failed
 //
-// one Worktree at a time per directory, in the background. What setup does is
-// a list of Steps the daemon builds (internal/daemon/provision.go); this
-// package only runs them, records the outcome and lets callers wait for it.
+// one Worktree at a time per directory, in the background. What preparing
+// does is a list of Steps the daemon builds (internal/daemon/prepare.go);
+// this package only runs them, records the outcome and lets callers wait for
+// it.
 //
-// Ready and Failed are persisted, so a Worktree set up once isn't set up again
-// when the daemon restarts, and a failure stays visible until setup is
-// retried. A setup the daemon was stopped in the middle of is forgotten and
-// runs again from the start.
-package provision
+// Ready and Failed are persisted, so a Worktree prepared once isn't prepared
+// again when the daemon restarts, and a failure stays visible until it is
+// retried. Preparing that the daemon was stopped in the middle of is
+// forgotten and runs again from the start.
+package prepare
 
 import (
 	"context"
@@ -32,8 +34,8 @@ type State string
 const (
 	// Discovered: the Worktree is known but setup hasn't started.
 	Discovered State = "discovered"
-	// Provisioning: setup is running.
-	Provisioning State = "provisioning"
+	// Preparing: its steps are running.
+	Preparing State = "preparing"
 	// Ready: every step succeeded.
 	Ready State = "ready"
 	// Failed: a step failed; Status says which and what it printed.
@@ -59,7 +61,7 @@ type Plan func(ctx context.Context) ([]Step, error)
 // Status is a Worktree's setup state.
 type Status struct {
 	State State `json:"state"`
-	// Step is the step running (Provisioning) or the one that failed
+	// Step is the step running (Preparing) or the one that failed
 	// (Failed).
 	Step string `json:"step,omitempty"`
 	// Error is why Step failed.
@@ -81,11 +83,11 @@ const OutputLines = 50
 // while waiting.
 var ErrForgotten = errors.New("the Worktree was removed")
 
-// ErrClosed is returned by Wait once the Provisioner is closed.
+// ErrClosed is returned by Wait once the Preparer is closed.
 var ErrClosed = errors.New("the Portby daemon is shutting down")
 
-// Provisioner runs and records setup for Worktrees, keyed by directory.
-type Provisioner struct {
+// Preparer runs and records setup for Worktrees, keyed by directory.
+type Preparer struct {
 	path string
 	log  *slog.Logger
 
@@ -105,10 +107,10 @@ type job struct {
 	done   chan struct{}
 }
 
-// Open loads the setup states recorded at path (a JSON file the Provisioner
-// owns) and returns a Provisioner that records them there.
-func Open(path string, log *slog.Logger) (*Provisioner, error) {
-	p := &Provisioner{
+// Open loads the setup states recorded at path (a JSON file the Preparer
+// owns) and returns a Preparer that records them there.
+func Open(path string, log *slog.Logger) (*Preparer, error) {
+	p := &Preparer{
 		path:     path,
 		log:      log,
 		statuses: map[string]Status{},
@@ -142,7 +144,7 @@ type file struct {
 }
 
 // Status returns the setup state of the Worktree at dir.
-func (p *Provisioner) Status(dir string) Status {
+func (p *Preparer) Status(dir string) Status {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if st, ok := p.statuses[dir]; ok {
@@ -151,10 +153,10 @@ func (p *Provisioner) Status(dir string) Status {
 	return Status{State: Discovered}
 }
 
-// Begin starts setting up the Worktree at dir in the background with the
+// Begin starts preparing the Worktree at dir in the background with the
 // steps plan gives, unless setup is running or has finished. With retry, a
 // Failed setup runs again from the first step.
-func (p *Provisioner) Begin(dir string, plan Plan, retry bool) {
+func (p *Preparer) Begin(dir string, plan Plan, retry bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.closed || p.running[dir] != nil {
@@ -171,7 +173,7 @@ func (p *Provisioner) Begin(dir string, plan Plan, retry bool) {
 	ctx, cancel := context.WithCancel(p.ctx)
 	j := &job{cancel: cancel, done: make(chan struct{})}
 	p.running[dir] = j
-	p.setLocked(dir, Status{State: Provisioning})
+	p.setLocked(dir, Status{State: Preparing})
 	p.jobs.Go(func() {
 		defer close(j.done)
 		defer cancel()
@@ -194,7 +196,7 @@ func (p *Provisioner) Begin(dir string, plan Plan, retry bool) {
 }
 
 // run runs the plan's steps in order and returns the outcome.
-func (p *Provisioner) run(ctx context.Context, dir string, j *job, plan Plan) Status {
+func (p *Preparer) run(ctx context.Context, dir string, j *job, plan Plan) Status {
 	warned := &warnings{}
 	ctx = context.WithValue(ctx, warningsKey{}, warned)
 	steps, err := plan(ctx)
@@ -204,7 +206,7 @@ func (p *Provisioner) run(ctx context.Context, dir string, j *job, plan Plan) St
 	for _, step := range steps {
 		p.mu.Lock()
 		if p.running[dir] == j {
-			p.setLocked(dir, Status{State: Provisioning, Step: step.Name, Warnings: warned.list()})
+			p.setLocked(dir, Status{State: Preparing, Step: step.Name, Warnings: warned.list()})
 		}
 		p.mu.Unlock()
 		out := &tail{}
@@ -251,9 +253,9 @@ func (w *warnings) list() []string {
 
 // Wait blocks until the Worktree at dir is Ready or Failed and returns its
 // status. It returns early with ctx's error, ErrForgotten if the Worktree is
-// forgotten, or ErrClosed once the Provisioner closes. A Worktree whose setup
+// forgotten, or ErrClosed once the Preparer closes. A Worktree whose setup
 // hasn't begun is waited for until it begins and ends.
-func (p *Provisioner) Wait(ctx context.Context, dir string) (Status, error) {
+func (p *Preparer) Wait(ctx context.Context, dir string) (Status, error) {
 	p.mu.Lock()
 	_, known := p.statuses[dir]
 	p.mu.Unlock()
@@ -281,7 +283,7 @@ func (p *Provisioner) Wait(ctx context.Context, dir string) (Status, error) {
 
 // Forget stops the Worktree's setup if it is running, waits for it to stop
 // and drops its record, for a Worktree that was removed.
-func (p *Provisioner) Forget(dir string) {
+func (p *Preparer) Forget(dir string) {
 	p.mu.Lock()
 	j := p.running[dir]
 	delete(p.running, dir)
@@ -301,7 +303,7 @@ func (p *Provisioner) Forget(dir string) {
 // Go runs plan's steps in the background, in order, stopping at the first
 // failure, which is logged. It is for steps that aren't part of any
 // Worktree's setup, such as on_remove. Close stops them.
-func (p *Provisioner) Go(what string, plan Plan) {
+func (p *Preparer) Go(what string, plan Plan) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.closed {
@@ -325,7 +327,7 @@ func (p *Provisioner) Go(what string, plan Plan) {
 
 // Close stops every running setup and on_remove step and waits for them.
 // Setups it stops run again when the daemon next starts.
-func (p *Provisioner) Close() {
+func (p *Preparer) Close() {
 	p.mu.Lock()
 	p.closed = true
 	p.notifyLocked()
@@ -334,19 +336,19 @@ func (p *Provisioner) Close() {
 	p.jobs.Wait()
 }
 
-func (p *Provisioner) setLocked(dir string, st Status) {
+func (p *Preparer) setLocked(dir string, st Status) {
 	p.statuses[dir] = st
 	p.notifyLocked()
 }
 
-func (p *Provisioner) notifyLocked() {
+func (p *Preparer) notifyLocked() {
 	close(p.changed)
 	p.changed = make(chan struct{})
 }
 
 // saveLocked writes the finished setups to disk (atomically), logging
 // failures: the states in memory stay right either way.
-func (p *Provisioner) saveLocked() {
+func (p *Preparer) saveLocked() {
 	f := file{Version: 1, Worktrees: map[string]Status{}}
 	for dir, st := range p.statuses {
 		if st.Done() {

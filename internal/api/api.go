@@ -103,18 +103,18 @@ type DeclaredProcess struct {
 
 // Setup states.
 const (
-	SetupDiscovered   = "discovered"
-	SetupProvisioning = "provisioning"
-	SetupReady        = "ready"
-	SetupFailed       = "failed"
+	SetupDiscovered = "discovered"
+	SetupPreparing  = "preparing"
+	SetupReady      = "ready"
+	SetupFailed     = "failed"
 )
 
-// Setup is a Worktree's setup state: discovered → provisioning → ready or
+// Setup is how far a Worktree is from Ready: discovered → preparing → ready or
 // failed.
 type Setup struct {
 	// State is one of the Setup* constants.
 	State string `json:"state"`
-	// Step is the step running (provisioning) or the step that failed
+	// Step is the step running (preparing) or the step that failed
 	// (failed), such as "env" or "on_create: composer install".
 	Step string `json:"step,omitempty"`
 	// Error is why Step failed.

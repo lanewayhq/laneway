@@ -7,7 +7,7 @@ import (
 
 	"github.com/mrsafalpiya/portby.dev/internal/api"
 	"github.com/mrsafalpiya/portby.dev/internal/database"
-	"github.com/mrsafalpiya/portby.dev/internal/provision"
+	"github.com/mrsafalpiya/portby.dev/internal/prepare"
 	"github.com/mrsafalpiya/portby.dev/internal/recipe"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
 )
@@ -32,11 +32,11 @@ func worktreeTestDatabase(p registry.Project, w envWorktree, cfg recipe.Resolved
 // Database, always empty and never copied; false if config's Test Database
 // decision is off. It starts the database's Service like the database step
 // and keeps it from going Idle until the step ends.
-func (d *Daemon) testDatabaseStep(p registry.Project, w envWorktree, cfg recipe.Resolved) (provision.Step, bool) {
+func (d *Daemon) testDatabaseStep(p registry.Project, w envWorktree, cfg recipe.Resolved) (prepare.Step, bool) {
 	if !cfg.TestDatabase {
-		return provision.Step{}, false
+		return prepare.Step{}, false
 	}
-	return provision.Step{Name: "test database", Run: func(ctx context.Context, out io.Writer) error {
+	return prepare.Step{Name: "test database", Run: func(ctx context.Context, out io.Writer) error {
 		name, ok := worktreeTestDatabase(p, w, cfg)
 		svc, inService := cfg.DatabaseService()
 		if !ok || !inService {
@@ -51,7 +51,7 @@ func (d *Daemon) testDatabaseStep(p registry.Project, w envWorktree, cfg recipe.
 			return err
 		}
 		for _, w := range cfg.TestDatabaseWarnings {
-			provision.Warn(ctx, w)
+			prepare.Warn(ctx, w)
 		}
 		return nil
 	}}, true

@@ -24,6 +24,10 @@ _Avoid_: Env override, env template, env sync
 A Worktree is Ready once its own database exists and its env file has been patched, so an agent or developer can start work in it.
 _Avoid_: Provisioned, set up, initialised
 
+**Preparing**:
+A Worktree is Preparing from when Portby finds it until it is Ready: its database is being made, its env file patched and its Project's steps run.
+_Avoid_: Provisioning, setting up, initialising
+
 **Test Database**:
 A second database belonging to a Worktree, used only by its test suite, so test runs in different Worktrees never touch each other's data.
 _Avoid_: Testing DB, CI database

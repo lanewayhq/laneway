@@ -72,7 +72,7 @@ func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
 	// steps see it as `portby` reports it.
 	for _, w := range changes.Added {
 		d.reclaimOrphans(p, linkedEnvWorktree(p, w))
-		d.provision(p, linkedEnvWorktree(p, w), false)
+		d.prepare(p, linkedEnvWorktree(p, w), false)
 	}
 	var dirs []string
 	for _, w := range d.registry.Worktrees(p.Path) {
@@ -128,6 +128,6 @@ func (d *Daemon) serveKnownWorktrees(p registry.Project) {
 			d.serveWorktree(p, domain, w.Path)
 		}
 		// A setup the daemon was stopped in the middle of runs again.
-		d.provision(p, linkedEnvWorktree(p, w), false)
+		d.prepare(p, linkedEnvWorktree(p, w), false)
 	}
 }

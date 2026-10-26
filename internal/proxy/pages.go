@@ -64,22 +64,23 @@ func writeStartErrorPage(w http.ResponseWriter, domain string, e *StartError) {
 	writePage(w, status, title, paragraphs...)
 }
 
-// writeSettingUpPage is the starting page for a Domain whose Worktree is
-// still being set up.
-func writeSettingUpPage(w http.ResponseWriter, domain string) {
+// writePreparingPage is the starting page for a Domain whose Worktree is
+// still Preparing.
+func writePreparingPage(w http.ResponseWriter, domain string) {
 	refresh := fmt.Sprint(StartingRefresh)
 	w.Header().Set("Refresh", refresh)
 	w.Header().Set("Retry-After", refresh)
-	writePage(w, http.StatusServiceUnavailable, "Setting up…",
-		fmt.Sprintf("The Worktree served at <code>%s</code> is being set up. "+
+	writePage(w, http.StatusServiceUnavailable, "Preparing…",
+		fmt.Sprintf("The Worktree served at <code>%s</code> is being prepared. "+
 			"Its Processes start once it is Ready.", html.EscapeString(domain)),
 		"This page reloads by itself. Run <code>portby worktree ready</code> in the Worktree to wait for it there.")
 }
 
-// writeSetupErrorPage explains why the setup of the Domain's Worktree failed.
-func writeSetupErrorPage(w http.ResponseWriter, domain string, e *SetupError) {
+// writePreparationErrorPage explains why preparing the Domain's Worktree
+// failed.
+func writePreparationErrorPage(w http.ResponseWriter, domain string, e *PreparationError) {
 	paragraphs := []string{
-		fmt.Sprintf("The setup of the Worktree served at <code>%s</code> failed at the step <code>%s</code>, "+
+		fmt.Sprintf("Preparing the Worktree served at <code>%s</code> failed at the step <code>%s</code>, "+
 			"so its Processes weren't started:", html.EscapeString(domain), html.EscapeString(e.Step)),
 		"<pre>" + html.EscapeString(e.Err.Error()) + "</pre>",
 	}
@@ -89,5 +90,5 @@ func writeSetupErrorPage(w http.ResponseWriter, domain string, e *SetupError) {
 	}
 	paragraphs = append(paragraphs, "Fix the problem, then run <code>portby worktree ready --retry</code> "+
 		"in the Worktree and reload this page.")
-	writePage(w, http.StatusBadGateway, "Setup failed", paragraphs...)
+	writePage(w, http.StatusBadGateway, "Preparation failed", paragraphs...)
 }

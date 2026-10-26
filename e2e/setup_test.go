@@ -118,13 +118,13 @@ func TestAWorktreeIsNotStartedUntilItIsReadyAndBrowsersAreToldItIsBeingSetUp(t *
 	page := d.Navigate("https://setup-page.localhost/")
 
 	if page.StatusCode != http.StatusServiceUnavailable || page.Header.Get("Refresh") == "" {
-		t.Fatalf("navigation while provisioning: status %d (Refresh %q), want the 503 starting page:\n%s",
+		t.Fatalf("navigation while preparing: status %d (Refresh %q), want the 503 starting page:\n%s",
 			page.StatusCode, page.Header.Get("Refresh"), page.Body)
 	}
-	assertContains(t, page.Body, "being set up")
-	assertSetupState(t, d, repo.Dir, "provisioning")
+	assertContains(t, page.Body, "being prepared")
+	assertSetupState(t, d, repo.Dir, "preparing")
 	if n := starts(t, log); n != 0 {
-		t.Fatalf("Process started %d times while the Worktree was provisioning, want 0", n)
+		t.Fatalf("Process started %d times while the Worktree was Preparing, want 0", n)
 	}
 
 	writeTestFile(t, gate, "")
@@ -151,7 +151,7 @@ func TestAFailedWorktreeShowsItsSetupErrorInsteadOfStarting(t *testing.T) {
 	if page.StatusCode != http.StatusBadGateway {
 		t.Fatalf("status %d, want the 502 setup error page:\n%s", page.StatusCode, page.Body)
 	}
-	assertContains(t, page.Body, "Setup failed")
+	assertContains(t, page.Body, "Preparation failed")
 	assertContains(t, page.Body, html.EscapeString("on_create: "+failing))
 	assertContains(t, page.Body, "broken-setup-output")
 	assertContains(t, page.Body, "portby worktree ready --retry")
@@ -207,7 +207,7 @@ func TestSetupRunsOnceAndAReadyWorktreeStaysReadyAcrossDaemonRestarts(t *testing
 	assertSetupState(t, d, repo.Dir, "ready")
 	assertSetupState(t, d, wt.Dir, "ready")
 	d.MustRunCLI(repo.Dir, "worktree", "ready", "--retry") // nothing to retry
-	// Once each; the two Worktrees are set up at the same time.
+	// Once each; the two Worktrees are prepared at the same time.
 	ran := strings.Fields(readFile(t, out))
 	slices.Sort(ran)
 	if want := []string{"kept", "setup-once"}; !slices.Equal(ran, want) {
@@ -305,7 +305,7 @@ func TestWorktreeReadyGivesUpWithExit4AfterItsTimeout(t *testing.T) {
 		t.Fatalf("worktree ready exited %d, want 4:\n%s", res.ExitCode, res.Output())
 	}
 	assertContains(t, res.Stderr, "300ms")
-	assertSetupState(t, d, repo.Dir, "provisioning")
+	assertSetupState(t, d, repo.Dir, "preparing")
 }
 
 func TestWorktreeAddCreatesTheWorktreeNextToTheMainOneAndDiscoveryTakesOver(t *testing.T) {
