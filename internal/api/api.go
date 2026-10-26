@@ -5,13 +5,16 @@
 // Routes (all JSON, served over the daemon's Unix socket):
 //
 //	GET  /v1/projects   -> ProjectList
-//	POST /v1/projects   LinkRequest -> LinkResponse   (Link a repository)
+//	POST /v1/projects   LinkRequest -> LinkResponse   (Link a repository and apply
+//	                    its Env Patch; with preview, only report the Env Patch)
 //	GET  /v1/worktree?dir=<abs path> -> WorktreeInfo  (the Worktree containing dir)
 //	GET  /v1/daemon     -> DaemonInfo
 //	GET  /v1/logs?dir=&process=&follow=  -> stream of LogLine, one JSON object per line
 //	POST /v1/worktree/up       ControlRequest -> Worktree  (start it, or one Process)
 //	POST /v1/worktree/down     ControlRequest -> Worktree  (stop it, or one Process)
 //	POST /v1/worktree/restart  ControlRequest -> Worktree
+//	POST   /v1/aliases  AliasRequest -> AliasResponse  (add an Alias to the Worktree containing dir)
+//	DELETE /v1/aliases/{name}?dir=<abs path> -> AliasResponse  (remove one)
 //
 // GET /v1/logs acts on the Worktree containing dir. Without process it
 // returns every Process's output, interleaved in the order it was written.
@@ -54,6 +57,8 @@ type Worktree struct {
 	// for its idle timeout, so its lazy Processes were stopped). Only
 	// GET /v1/projects and the up/down/restart routes fill it in.
 	State string `json:"state,omitempty"`
+	// Aliases are the Worktree's extra Domains, sorted.
+	Aliases []string `json:"aliases,omitempty"`
 	// Processes are the Worktree's running Processes, sorted by name.
 	// Only GET /v1/projects and the up/down/restart routes fill them in.
 	Processes []Process `json:"processes,omitempty"`
@@ -82,6 +87,10 @@ type LinkRequest struct {
 	Dir string `json:"dir"`
 	// Name overrides the Project name from portby.toml or the directory name.
 	Name string `json:"name,omitempty"`
+	// Preview asks what Linking would do to the Worktrees' env files
+	// (LinkResponse.EnvPatch) without Linking or changing anything, so it
+	// can be confirmed.
+	Preview bool `json:"preview,omitempty"`
 }
 
 // LinkResponse is the body returned after Linking.
@@ -91,6 +100,35 @@ type LinkResponse struct {
 	Worktree Worktree `json:"worktree"`
 	// AlreadyLinked is true when the repository was already a Project.
 	AlreadyLinked bool `json:"alreadyLinked"`
+	// EnvPatch lists the env files that were (or, with Preview, would be)
+	// changed, one per Worktree whose Env Patch wasn't already in place.
+	EnvPatch []EnvFilePatch `json:"envPatch,omitempty"`
+}
+
+// EnvFilePatch is how the Env Patch changes one Worktree's env file. Only the
+// keys Portby owns ever change.
+type EnvFilePatch struct {
+	Worktree Worktree `json:"worktree"`
+	// Path is the env file, such as <worktree>/.env.
+	Path string `json:"path"`
+	// Create is true when the file doesn't exist yet. It is created as a
+	// copy of CopyFrom (the main Worktree's .env, or .env.example), or with
+	// only Portby's keys when CopyFrom is empty.
+	Create   bool   `json:"create,omitempty"`
+	CopyFrom string `json:"copyFrom,omitempty"`
+	// Backup is where the original is copied before its first patch.
+	Backup  string      `json:"backup,omitempty"`
+	Changes []EnvChange `json:"changes"`
+}
+
+// EnvChange is one key Portby owns changing value.
+type EnvChange struct {
+	Key string `json:"key"`
+	// Old is "" when Added.
+	Old string `json:"old,omitempty"`
+	New string `json:"new"`
+	// Added is true when the key wasn't in the file.
+	Added bool `json:"added,omitempty"`
 }
 
 // WorktreeInfo is the body of GET /v1/worktree: the Worktree containing a
@@ -103,6 +141,23 @@ type WorktreeInfo struct {
 	Domain string `json:"domain"`
 	// URL is the Domain's HTTPS URL, empty with Domain.
 	URL string `json:"url"`
+}
+
+// AliasRequest is the body of POST /v1/aliases.
+type AliasRequest struct {
+	// Dir is an absolute path inside the Worktree to add the Alias to.
+	Dir string `json:"dir"`
+	// Name is the Alias's part of the Domain: "api-v2" adds
+	// api-v2.<project>.localhost.
+	Name string `json:"name"`
+}
+
+// AliasResponse is the body returned after adding or removing an Alias.
+type AliasResponse struct {
+	// Domain is the Alias's Domain, such as "api-v2.shop.localhost".
+	Domain string `json:"domain"`
+	// Worktree is the Worktree afterwards.
+	Worktree WorktreeInfo `json:"worktree"`
 }
 
 // DaemonInfo is the body of GET /v1/daemon.
@@ -126,6 +181,9 @@ const (
 	CodeNotGitRepo     = "not_git_repo"
 	CodeNotLinked      = "not_linked"
 	CodeUnknownProcess = "unknown_process"
+	CodeInvalidAlias   = "invalid_alias"
+	CodeAliasTaken     = "alias_taken"
+	CodeUnknownAlias   = "unknown_alias"
 	CodeInternal       = "internal"
 	// CodeUnknownWorktree: --worktree names none of the Project's Worktrees.
 	CodeUnknownWorktree = "unknown_worktree"

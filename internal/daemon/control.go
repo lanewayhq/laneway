@@ -107,7 +107,12 @@ func (d *Daemon) up(ctx context.Context, s *served, proc *recipe.Process) error 
 	if proc != nil && proc.StartMode == recipe.Manual {
 		s.lifecycle.Lock()
 		defer s.lifecycle.Unlock()
-		_, err := d.startProcess(s, *proc, true)
+		d.applyServedEnvPatch(s)
+		cfg, err := d.resolveWorktree(ctx, s.dir)
+		if err != nil {
+			return &api.Error{Code: api.CodeInvalidConfig, Message: err.Error()}
+		}
+		_, err = d.startProcess(s, d.specs(s, cfg, []recipe.Process{*proc})[0], true)
 		return err
 	}
 	s.mu.Lock()

@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -13,8 +14,8 @@ import (
 	"github.com/mrsafalpiya/portby.dev/internal/testkit"
 )
 
-// modesProject is a repo with a lazy Primary Process web and one more
-// Process, other, with the given Start Mode. Each writes its pid to a file
+// modesProject is a repo with a lazy Primary Process web and one more HTTP
+// Process, other (served at other.<domain>), with the given Start Mode. Each writes its pid to a file
 // outside the repo; it returns their paths.
 func modesProject(t *testing.T, name, mode string) (repo *gitfixture.Repo, webPID, otherPID string) {
 	t.Helper()
@@ -23,7 +24,7 @@ func modesProject(t *testing.T, name, mode string) (repo *gitfixture.Repo, webPI
 	webPID, otherPID = filepath.Join(pids, "web"), filepath.Join(pids, "other")
 	config := fmt.Sprintf("idle_timeout = \"10m\"\n\n"+
 		"[processes.web]\ncommand = %q\nprimary = true\n\n"+
-		"[processes.other]\ncommand = %q\nstart_mode = %q\n",
+		"[processes.other]\ncommand = %q\nhttp = true\nstart_mode = %q\n",
 		"echo $$ > "+webPID+"; exec "+server,
 		"echo $$ > "+otherPID+"; exec "+server+" --name other",
 		mode)
@@ -86,8 +87,18 @@ func TestManualProcessesOnlyStartThroughUp(t *testing.T) {
 		t.Fatalf("a request started the manual Process")
 	}
 
+	// Its <process>.<domain> says how to start it.
+	page := d.Get("https://other.mode-manual.localhost/")
+	if page.StatusCode != http.StatusBadGateway {
+		t.Fatalf("request to a manual Process that isn't running: status %d, want 502:\n%s", page.StatusCode, page.Body)
+	}
+	assertContains(t, page.Body, "portby up other")
+
 	d.MustRunCLI(repo.Dir, "up", "other")
 	other := waitForPID(t, otherPID)
+	if res := d.GetServer("https://other.mode-manual.localhost/"); res.Name != "other" {
+		t.Fatalf("other.mode-manual.localhost served by %q, want other", res.Name)
+	}
 
 	// Idle stops the lazy Primary Process but leaves what was started by hand.
 	clk.Advance(waitForTimer(t, clk))

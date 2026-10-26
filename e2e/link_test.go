@@ -161,3 +161,10 @@ func TestLinkOutsideGitRepositoryFailsClearly(t *testing.T) {
 		t.Fatalf("projects = %+v, want none", projects)
 	}
 }
+
+func assertNotContains(t *testing.T, got, unwanted string) {
+	t.Helper()
+	if strings.Contains(got, unwanted) {
+		t.Fatalf("output contains %q:\n%s", unwanted, got)
+	}
+}

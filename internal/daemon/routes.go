@@ -19,6 +19,8 @@ func (d *Daemon) routes() http.Handler {
 	mux.HandleFunc("GET /v1/daemon", d.handleDaemonInfo)
 	mux.HandleFunc("GET /v1/logs", d.handleLogs)
 	mux.HandleFunc("POST /v1/worktree/{action}", d.handleControl)
+	mux.HandleFunc("POST /v1/aliases", d.handleAddAlias)
+	mux.HandleFunc("DELETE /v1/aliases/{name}", d.handleRemoveAlias)
 	return mux
 }
 
@@ -69,6 +71,28 @@ func (d *Daemon) handleControl(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
+func (d *Daemon) handleAddAlias(w http.ResponseWriter, r *http.Request) {
+	var req api.AliasRequest
+	if !readJSON(w, r, &req) {
+		return
+	}
+	res, err := d.addAlias(r.Context(), req.Dir, req.Name)
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (d *Daemon) handleRemoveAlias(w http.ResponseWriter, r *http.Request) {
+	res, err := d.removeAlias(r.Context(), r.URL.Query().Get("dir"), r.PathValue("name"))
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
 func (d *Daemon) handleDaemonInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, api.DaemonInfo{PID: os.Getpid(), ProxyAddr: d.proxy.Addr().String()})
 }
@@ -100,6 +124,9 @@ var statusFor = map[string]int{
 	api.CodeUnknownProcess:  http.StatusNotFound,
 	api.CodeUnknownWorktree: http.StatusNotFound,
 	api.CodeStartFailed:     http.StatusBadGateway,
+	api.CodeInvalidAlias:    http.StatusUnprocessableEntity,
+	api.CodeAliasTaken:      http.StatusConflict,
+	api.CodeUnknownAlias:    http.StatusNotFound,
 
 	api.CodeInvalidConfig: http.StatusUnprocessableEntity,
 }

@@ -25,7 +25,8 @@ func resolveFixture(t *testing.T, name string, recipes ...recipe.Recipe) (recipe
 }
 
 // fixtureStack is a test Recipe, detected by a `fixture-stack` file, that
-// runs a web server, a queue worker and a scheduler.
+// runs a web server, a queue worker and a scheduler. Its web server says it
+// is HTTP, so it keeps its port when config makes another Process Primary.
 type fixtureStack struct{}
 
 func (fixtureStack) Name() string { return "fixture-stack" }
@@ -40,12 +41,17 @@ func (fixtureStack) Defaults(dir string) (config.Layer, error) {
 [processes.web]
 command = "serve --port={port}"
 primary = true
+http = true
 
 [processes.queue]
 command = "worker"
 
 [processes.scheduler]
 command = "scheduler"
+
+[env]
+APP_URL = "{url}"
+APP_ENV = "local"
 `))
 }
 
@@ -66,7 +72,7 @@ func TestCommittedConfigAloneDeclaresProcesses(t *testing.T) {
 	}
 	want := []recipe.Process{
 		{Name: "queue", Command: "php artisan queue:work"},
-		{Name: "web", Command: "php -S 127.0.0.1:{port}", Primary: true},
+		{Name: "web", Command: "php -S 127.0.0.1:{port}", Primary: true, HTTP: true},
 	}
 	if !reflect.DeepEqual(res.Processes, want) {
 		t.Errorf("Processes =\n  %+v\nwant\n  %+v", res.Processes, want)
@@ -82,7 +88,7 @@ func TestLocalConfigOverridesCommittedConfigByProcessName(t *testing.T) {
 	want := []recipe.Process{
 		{Name: "horizon", Command: "php artisan horizon"},
 		{Name: "queue", Command: "php artisan queue:work"},
-		{Name: "web", Command: "php -d xdebug.mode=debug -S 127.0.0.1:{port}", Primary: true},
+		{Name: "web", Command: "php -d xdebug.mode=debug -S 127.0.0.1:{port}", Primary: true, HTTP: true},
 	}
 	if !reflect.DeepEqual(res.Processes, want) {
 		t.Errorf("Processes =\n  %+v\nwant\n  %+v", res.Processes, want)
@@ -97,7 +103,7 @@ func TestConfigLayersOverRecipeDefaultsAndCanDisableTheirProcesses(t *testing.T)
 	}
 	want := []recipe.Process{
 		{Name: "queue", Command: "worker --tries=3"},
-		{Name: "web", Command: "serve --port={port}", Primary: true},
+		{Name: "web", Command: "serve --port={port}", Primary: true, HTTP: true},
 	}
 	if !reflect.DeepEqual(res.Processes, want) {
 		t.Errorf("Processes =\n  %+v\nwant\n  %+v", res.Processes, want)
@@ -113,7 +119,7 @@ func TestLocalConfigCanReenableAProcessTheCommittedConfigDisabled(t *testing.T) 
 	want := []recipe.Process{
 		{Name: "queue", Command: "worker"},
 		{Name: "scheduler", Command: "scheduler"},
-		{Name: "web", Command: "serve --port={port}", Primary: true},
+		{Name: "web", Command: "serve --port={port}", Primary: true, HTTP: true},
 	}
 	if !reflect.DeepEqual(res.Processes, want) {
 		t.Errorf("Processes =\n  %+v\nwant\n  %+v", res.Processes, want)
@@ -129,7 +135,16 @@ func TestARecipeThatDoesNotDetectTheProjectContributesNothing(t *testing.T) {
 	if res.Recipe != "" {
 		t.Errorf("Recipe = %q, want none", res.Recipe)
 	}
-	want := []recipe.Process{{Name: "web", Command: "serve", Primary: true}}
+	want := []recipe.Process{{Name: "web", Command: "serve", Primary: true, HTTP: true}}
+	if !reflect.DeepEqual(res.Processes, want) {
+		t.Errorf("Processes =\n  %+v\nwant\n  %+v", res.Processes, want)
+	}
+}
+
+func TestAWorktreeWithoutHTTPProcessesNeedsNoPrimaryProcess(t *testing.T) {
+	res := mustResolveFixture(t, "no-http")
+
+	want := []recipe.Process{{Name: "worker", Command: "worker"}}
 	if !reflect.DeepEqual(res.Processes, want) {
 		t.Errorf("Processes =\n  %+v\nwant\n  %+v", res.Processes, want)
 	}
@@ -139,10 +154,10 @@ func TestALaterLayerCanChooseADifferentPrimaryProcess(t *testing.T) {
 	res := mustResolveFixture(t, "primary-moved", fixtureStack{})
 
 	want := []recipe.Process{
-		{Name: "octane", Command: "php artisan octane:start --port={port}", Primary: true},
+		{Name: "octane", Command: "php artisan octane:start --port={port}", Primary: true, HTTP: true},
 		{Name: "queue", Command: "worker"},
 		{Name: "scheduler", Command: "scheduler"},
-		{Name: "web", Command: "serve --port={port}"},
+		{Name: "web", Command: "serve --port={port}", HTTP: true},
 	}
 	if !reflect.DeepEqual(res.Processes, want) {
 		t.Errorf("Processes =\n  %+v\nwant\n  %+v", res.Processes, want)
@@ -172,7 +187,7 @@ func TestStartModesAndTheIdleTimeoutMergeLaterWinning(t *testing.T) {
 		{Name: "queue", Command: "worker", StartMode: recipe.Lazy},
 		{Name: "scheduler", Command: "scheduler", StartMode: recipe.Always},
 		{Name: "tinker", Command: "tinker", StartMode: recipe.Manual},
-		{Name: "web", Command: "serve --port={port}", Primary: true, StartMode: recipe.Lazy},
+		{Name: "web", Command: "serve --port={port}", Primary: true, HTTP: true, StartMode: recipe.Lazy},
 	}
 	if !reflect.DeepEqual(res.Processes, want) {
 		t.Errorf("Processes =\n  %+v\nwant\n  %+v", res.Processes, want)
@@ -190,6 +205,27 @@ func TestTheIdleTimeoutIsUnsetByDefault(t *testing.T) {
 	}
 }
 
+func TestEnvPatchTemplatesMergeByKeyOverTheRecipesDefaults(t *testing.T) {
+	res := mustResolveFixture(t, "env-layers", fixtureStack{})
+
+	want := map[string]string{
+		"APP_ENV":        "local",
+		"APP_URL":        "{url}/app",
+		"SESSION_DOMAIN": "{domain}",
+		"LOG_CHANNEL":    "stderr",
+		"CACHE_PREFIX":   "{{literal}} {project}_{worktree}_",
+	}
+	if !reflect.DeepEqual(res.Env, want) {
+		t.Errorf("Env =\n  %q\nwant\n  %q", res.Env, want)
+	}
+}
+
+func TestAProjectWithoutEnvTemplatesHasNoEnvPatch(t *testing.T) {
+	if res := mustResolveFixture(t, "committed-only"); res.Env != nil {
+		t.Errorf("Env = %q, want none", res.Env)
+	}
+}
+
 func TestInvalidConfigNamesTheFileAndTheKey(t *testing.T) {
 	tests := []struct {
 		fixture string
@@ -204,11 +240,17 @@ func TestInvalidConfigNamesTheFileAndTheKey(t *testing.T) {
 		{"invalid-processes-not-table", config.FileName, []string{"processes", "table"}},
 		{"invalid-process-not-table", config.FileName, []string{"processes.web", "table"}},
 		{"invalid-empty-name", config.FileName, []string{"name", "empty"}},
+		{"invalid-http-no-primary", config.FileName, []string{"processes.vite.http", "Primary Process"}},
+		{"invalid-primary-not-http", config.FileName, []string{"processes.web.http", "Primary Process"}},
+		{"invalid-port-not-http", config.FileName, []string{"processes.queue.command", "{port}", "http = true"}},
 		{"invalid-start-timeout", config.FileName, []string{"start_timeout"}},
 		{"invalid-start-timeout-negative", config.FileName, []string{"start_timeout", "positive"}},
 		{"invalid-idle-timeout-negative", config.FileName, []string{"idle_timeout", "positive"}},
 		{"invalid-start-mode", config.FileName, []string{"processes.web.start_mode", "lazy, always or manual", "eager"}},
 		{"invalid-manual-primary", config.FileName, []string{"processes.web.start_mode", "Primary Process", "manual"}},
+		{"invalid-env-variable", config.FileName, []string{"env.APP_URL", "{domian}", "{domain}"}},
+		{"invalid-env-key", config.FileName, []string{`env."APP URL"`, "letters, digits"}},
+		{"invalid-env-not-table", config.FileName, []string{"env", "table"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.fixture, func(t *testing.T) {
@@ -237,7 +279,7 @@ func TestUnknownKeysAreWarningsNamingTheFileAndTheKey(t *testing.T) {
 	if !reflect.DeepEqual(res.Warnings, want) {
 		t.Errorf("Warnings =\n  %q\nwant\n  %q", res.Warnings, want)
 	}
-	if want := []recipe.Process{{Name: "web", Command: "serve", Primary: true}}; !reflect.DeepEqual(res.Processes, want) {
+	if want := []recipe.Process{{Name: "web", Command: "serve", Primary: true, HTTP: true}}; !reflect.DeepEqual(res.Processes, want) {
 		t.Errorf("Processes = %+v, want %+v", res.Processes, want)
 	}
 }
@@ -272,7 +314,7 @@ func TestResolveDirReportsInvalidConfig(t *testing.T) {
 // What `portby init` writes must mean the same thing as the config it was
 // resolved from, whether or not the Recipe still detects the Project.
 func TestTheResolvedConfigWrittenAsALayerResolvesToItself(t *testing.T) {
-	for _, fixture := range []string{"committed-only", "local-overrides", "recipe-defaults", "recipe-reenabled", "primary-moved", "start-timeout", "start-modes"} {
+	for _, fixture := range []string{"committed-only", "local-overrides", "recipe-defaults", "recipe-reenabled", "primary-moved", "start-timeout", "env-layers", "no-http", "start-modes"} {
 		t.Run(fixture, func(t *testing.T) {
 			res := mustResolveFixture(t, fixture, fixtureStack{})
 

@@ -1,0 +1,6 @@
+[processes.web]
+command = "serve --port={port}"
+primary = true
+
+[processes.queue]
+command = "worker --port={port}"

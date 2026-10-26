@@ -1,6 +1,6 @@
-// Package registry is the daemon's persistent record of Linked Projects and
-// their Worktrees. Later tickets extend it with Aliases, Service port
-// assignments and Orphans. Every change is written to disk before it is acknowledged, so
+// Package registry is the daemon's persistent record of Linked Projects,
+// their Worktrees and their Aliases. Later tickets extend it with Service
+// port assignments and Orphans. Every change is written to disk before it is acknowledged, so
 // registrations survive daemon restarts.
 package registry
 
@@ -44,6 +44,7 @@ type state struct {
 	Version   int        `json:"version"`
 	Projects  []Project  `json:"projects"`
 	Worktrees []Worktree `json:"worktrees,omitempty"`
+	Aliases   []Alias    `json:"aliases,omitempty"`
 }
 
 const currentVersion = 1
@@ -164,8 +165,10 @@ func (c WorktreeChanges) Empty() bool { return len(c.Added) == 0 && len(c.Remove
 // one.
 //
 // New Worktrees get their name's DomainLabel, or that label plus a hash of
-// their name if another Worktree of the Project already uses it.
-func (r *Registry) PlanWorktrees(project string, found []Found) WorktreeChanges {
+// their name if another Worktree or an Alias of the Project already uses it,
+// or it is one of reserved (the names of the main Worktree's HTTP Processes,
+// served at <process>.<project>.localhost).
+func (r *Registry) PlanWorktrees(project string, found []Found, reserved []string) WorktreeChanges {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	c := WorktreeChanges{project: project}
@@ -175,6 +178,14 @@ func (r *Registry) PlanWorktrees(project string, found []Found) WorktreeChanges 
 	}
 	known := map[string]bool{}
 	taken := map[string]bool{} // labels in use
+	for _, name := range reserved {
+		taken[name] = true
+	}
+	for _, a := range r.state.Aliases {
+		if a.Project == project {
+			taken[a.Name] = true
+		}
+	}
 	for _, w := range r.state.Worktrees {
 		path, ok := foundPath[w.Name]
 		switch {
@@ -223,6 +234,7 @@ func (r *Registry) PlanWorktrees(project string, found []Found) WorktreeChanges 
 }
 
 // ApplyWorktrees records changes planned by PlanWorktrees and persists them.
+// The Aliases of Worktrees that are gone are dropped with them.
 func (r *Registry) ApplyWorktrees(c WorktreeChanges) error {
 	if c.Empty() {
 		return nil
@@ -235,8 +247,106 @@ func (r *Registry) ApplyWorktrees(c WorktreeChanges) error {
 			all = append(all, w)
 		}
 	}
+	kept := map[string]bool{"": true} // the main Worktree is always there
+	for _, w := range c.next {
+		kept[w.Name] = true
+	}
 	next := r.state
 	next.Worktrees = append(all, c.next...)
+	next.Aliases = slices.DeleteFunc(slices.Clone(r.state.Aliases), func(a Alias) bool {
+		return a.Project == c.project && !kept[a.Worktree]
+	})
+	if err := r.save(next); err != nil {
+		return err
+	}
+	r.state = next
+	return nil
+}
+
+// Alias is an extra Domain of a Worktree: <name>.<project>.localhost.
+type Alias struct {
+	// Project is the owning Project's Path.
+	Project string `json:"project"`
+	// Worktree is git's name for the Worktree; "" for the main Worktree.
+	Worktree string `json:"worktree"`
+	// Name is the Alias's part of the Domain, unique within the Project
+	// among Aliases and Worktree labels.
+	Name string `json:"name"`
+}
+
+// ErrNoAlias means the Worktree has no Alias by that name.
+var ErrNoAlias = errors.New("no such Alias")
+
+// AliasTakenError means the Project already uses an Alias's name for a
+// Worktree's Domain or for another Alias.
+type AliasTakenError struct {
+	// Worktree is the Worktree using the name; "" for the main Worktree.
+	Worktree string
+	// IsAlias is set if the name is that Worktree's Alias, rather than its
+	// own Domain label.
+	IsAlias bool
+}
+
+func (e *AliasTakenError) Error() string {
+	if e.IsAlias {
+		return fmt.Sprintf("the name is already an Alias of Worktree %q", e.Worktree)
+	}
+	return fmt.Sprintf("the name is already the Domain label of Worktree %q", e.Worktree)
+}
+
+// Aliases returns the Aliases of the Project at project, sorted by name.
+func (r *Registry) Aliases(project string) []Alias {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []Alias
+	for _, a := range r.state.Aliases {
+		if a.Project == project {
+			out = append(out, a)
+		}
+	}
+	slices.SortFunc(out, func(a, b Alias) int { return strings.Compare(a.Name, b.Name) })
+	return out
+}
+
+// AddAlias records a and persists it. It returns an *AliasTakenError if the
+// Project already uses a.Name for a Worktree label or another Alias. Adding
+// an Alias the Worktree already has changes nothing.
+func (r *Registry) AddAlias(a Alias) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, w := range r.state.Worktrees {
+		if w.Project == a.Project && w.Label == a.Name {
+			return &AliasTakenError{Worktree: w.Name}
+		}
+	}
+	for _, existing := range r.state.Aliases {
+		switch {
+		case existing == a:
+			return nil
+		case existing.Project == a.Project && existing.Name == a.Name:
+			return &AliasTakenError{Worktree: existing.Worktree, IsAlias: true}
+		}
+	}
+	next := r.state
+	next.Aliases = append(slices.Clone(r.state.Aliases), a)
+	if err := r.save(next); err != nil {
+		return err
+	}
+	r.state = next
+	return nil
+}
+
+// RemoveAlias forgets a and persists the change. It returns ErrNoAlias if
+// the Worktree doesn't have it.
+func (r *Registry) RemoveAlias(a Alias) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	i := slices.Index(r.state.Aliases, a)
+	if i < 0 {
+		return ErrNoAlias
+	}
+	next := r.state
+	next.Aliases = slices.Delete(slices.Clone(r.state.Aliases), i, i+1)
 	if err := r.save(next); err != nil {
 		return err
 	}

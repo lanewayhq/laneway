@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/mrsafalpiya/portby.dev/internal/envpatch"
 )
 
 // LocalFileName is the gitignored per-developer config file. It overrides
@@ -42,6 +44,10 @@ type Layer struct {
 	// connections before it is Idle and its lazy Processes stop, such as
 	// "30m". It overrides the global idle_timeout.
 	IdleTimeout *time.Duration `toml:"idle_timeout"`
+	// Env is the Env Patch: the keys Portby owns in each Worktree's .env,
+	// keyed by env key ([env] table). Values are templates such as
+	// "{url}"; see envpatch.Variables.
+	Env map[string]string `toml:"env"`
 }
 
 // ProcessLayer is one [processes.<name>] table.
@@ -61,6 +67,10 @@ type ProcessLayer struct {
 	// Worktree is Idle, "always" keeps it running from when the daemon
 	// starts, and "manual" only runs it through `portby up <process>`.
 	StartMode *string `toml:"start_mode"`
+	// HTTP marks a Process that serves HTTP on its {port}. Other than the
+	// Primary Process, which always does, it is served at
+	// <process>.<domain>. Processes that aren't HTTP get no port.
+	HTTP *bool `toml:"http"`
 }
 
 // StartModes are the valid values of processes.<name>.start_mode.
@@ -103,7 +113,7 @@ func ParseLayer(source string, data []byte) (Layer, error) {
 		return Layer{}, decodeError(source, err)
 	}
 	// The decoder silently skips a non-table value for a map field.
-	for _, key := range append([]toml.Key{{"processes"}}, processKeys(l)...) {
+	for _, key := range append([]toml.Key{{"processes"}, {"env"}}, processKeys(l)...) {
 		if t := md.Type(key...); t != "" && t != "Hash" {
 			return Layer{}, fmt.Errorf("%s: %s must be a table, not a %s", source, key, strings.ToLower(t))
 		}
@@ -145,6 +155,14 @@ func (l Layer) validate() error {
 	if l.IdleTimeout != nil && *l.IdleTimeout <= 0 {
 		return fmt.Errorf("idle_timeout must be positive, such as \"30m\", not %s", *l.IdleTimeout)
 	}
+	for _, k := range slices.Sorted(maps.Keys(l.Env)) {
+		if !envKey.MatchString(k) {
+			return fmt.Errorf("env.%s: an env key must be letters, digits and _ and not start with a digit", key(k))
+		}
+		if err := envpatch.CheckTemplate(l.Env[k]); err != nil {
+			return fmt.Errorf("env.%s: %w", key(k), err)
+		}
+	}
 	var primaries []string
 	for _, name := range slices.Sorted(maps.Keys(l.Processes)) {
 		p := l.Processes[name]
@@ -164,6 +182,9 @@ func (l Layer) validate() error {
 	}
 	return nil
 }
+
+// envKey is what phpdotenv accepts as a key.
+var envKey = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.]*$`)
 
 // typeError matches the decoder's errors for a value of the wrong type.
 var typeError = regexp.MustCompile(`^toml: line (\d+) \(last key "([^"]+)"\): (.*)$`)
