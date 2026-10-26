@@ -73,11 +73,11 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 // apiProject describes p and its Worktrees, the main one first.
 func (d *Daemon) apiProject(p registry.Project) api.Project {
 	res := api.Project{Name: p.Name, Path: p.Path, Worktrees: []api.Worktree{
-		{Path: p.Path, Main: true, Domain: domainOf(p)},
+		{Path: p.Path, Main: true, Domain: domainOf(p), Aliases: d.aliasDomains(p, "")},
 	}}
 	for _, w := range d.registry.Worktrees(p.Path) {
 		res.Worktrees = append(res.Worktrees, api.Worktree{
-			Name: w.Name, Path: w.Path, Domain: worktreeDomain(p, w),
+			Name: w.Name, Path: w.Path, Domain: worktreeDomain(p, w), Aliases: d.aliasDomains(p, w.Name),
 		})
 	}
 	return res

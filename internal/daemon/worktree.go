@@ -21,6 +21,7 @@ func (d *Daemon) worktreeInfo(ctx context.Context, dir string) (api.WorktreeInfo
 		Domain:   d.checkoutDomain(p, checkout),
 	}
 	info.Worktree.Domain = info.Domain
+	info.Worktree.Aliases = d.aliasDomains(p, checkout.Name)
 	if info.Domain != "" {
 		info.URL = "https://" + info.Domain + "/"
 	}
@@ -33,8 +34,17 @@ func (d *Daemon) checkoutDomain(p registry.Project, c gitrepo.Checkout) string {
 	if c.Main() {
 		return domainOf(p)
 	}
+	return d.namedWorktreeDomain(p, c.Name)
+}
+
+// namedWorktreeDomain is the Domain of the Project's Worktree called name
+// ("" for the main Worktree), or "" if there is no such Worktree.
+func (d *Daemon) namedWorktreeDomain(p registry.Project, name string) string {
+	if name == "" {
+		return domainOf(p)
+	}
 	for _, w := range d.registry.Worktrees(p.Path) {
-		if w.Name == c.Name {
+		if w.Name == name {
 			return worktreeDomain(p, w)
 		}
 	}

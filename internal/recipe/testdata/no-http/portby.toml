@@ -1,0 +1,4 @@
+# A Worktree that only runs a worker serves no Domain.
+[processes.worker]
+command = "worker"
+http = false

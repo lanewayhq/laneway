@@ -1,7 +1,7 @@
 // Package supervisor is the Process Supervisor: it starts and stops the
 // Processes of each Worktree, picking a fresh free loopback port for every
-// Process on every start and passing it through `{port}` in the command and
-// the PORT env var.
+// HTTP Process on every start and passing it through `{port}` in the command
+// and the PORT env var.
 //
 // A Process that exits without being stopped has crashed: it is restarted
 // with backoff, and marked failed if it keeps crashing (see MaxCrashes). The
@@ -37,6 +37,9 @@ type Spec struct {
 	Name string
 	// Command is run with `sh -c`, after every `{port}` is replaced.
 	Command string
+	// HTTP Processes get a port; others don't, and their `{port}` is left
+	// as it is.
+	HTTP bool
 	// Dir is the working directory, normally the Worktree's.
 	Dir string
 	// LogFile is where all of the Process's output is written (appended,
@@ -259,14 +262,20 @@ func (s *Supervisor) start(group string, spec Spec) (*Process, error) {
 // p.mu.
 func (p *Process) startRun() error {
 	spec := p.spec
-	port, err := freePort()
-	if err != nil {
-		return fmt.Errorf("picking a port for Process %q: %w", spec.Name, err)
+	var port int
+	command, env := spec.Command, os.Environ()
+	if spec.HTTP {
+		var err error
+		port, err = freePort()
+		if err != nil {
+			return fmt.Errorf("picking a port for Process %q: %w", spec.Name, err)
+		}
+		command = strings.ReplaceAll(spec.Command, "{port}", strconv.Itoa(port))
+		env = append(env, "PORT="+strconv.Itoa(port))
 	}
-	command := strings.ReplaceAll(spec.Command, "{port}", strconv.Itoa(port))
 	cmd := exec.Command("/bin/sh", "-c", command)
 	cmd.Dir = spec.Dir
-	cmd.Env = append(os.Environ(), "PORT="+strconv.Itoa(port))
+	cmd.Env = env
 	// Stdout and stderr share one pipe we create ourselves (rather than
 	// exec's copying goroutines), so Wait doesn't depend on grandchildren
 	// closing it.
