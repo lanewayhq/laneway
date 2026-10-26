@@ -31,8 +31,10 @@ func domainOf(p registry.Project) string {
 	return naming.DomainLabel(p.Name) + ".localhost"
 }
 
-// startProject starts the main Worktree's Processes.
+// startProject applies the main Worktree's Env Patch and starts its
+// Processes.
 func (d *Daemon) startProject(ctx context.Context, p registry.Project) {
+	d.applyEnvPatch(p, mainEnvWorktree(p))
 	d.startWorktree(ctx, p, domainOf(p), p.Path)
 }
 

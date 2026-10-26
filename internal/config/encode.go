@@ -32,6 +32,15 @@ func Encode(w io.Writer, l Layer) error {
 			fmt.Fprintf(&b, "disabled = %t\n", *p.Disabled)
 		}
 	}
+	if len(l.Env) > 0 {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString("[env]\n")
+		for _, k := range slices.Sorted(maps.Keys(l.Env)) {
+			fmt.Fprintf(&b, "%s = %s\n", key(k), quote(l.Env[k]))
+		}
+	}
 	_, err := io.WriteString(w, b.String())
 	return err
 }

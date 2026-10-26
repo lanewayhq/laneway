@@ -45,6 +45,9 @@ type Resolved struct {
 	Processes []Process
 	// Disabled names the Processes config turned off, sorted.
 	Disabled []string
+	// Env is the Env Patch: env key → template, merged by key. nil if no
+	// layer declares any.
+	Env map[string]string
 	// Warnings are problems that didn't stop resolution, such as unknown
 	// keys. Each names the file it comes from.
 	Warnings []string
@@ -80,6 +83,7 @@ func (r Resolved) Layer() config.Layer {
 	for _, name := range r.Disabled {
 		l.Processes[name] = config.ProcessLayer{Disabled: &disabled}
 	}
+	l.Env = maps.Clone(r.Env)
 	return l
 }
 
@@ -125,6 +129,12 @@ func Resolve(in Input) (Resolved, error) {
 		res.Warnings = append(res.Warnings, l.Warnings...)
 		if l.Name != nil {
 			res.Name = *l.Name
+		}
+		for key, template := range l.Env {
+			if res.Env == nil {
+				res.Env = map[string]string{}
+			}
+			res.Env[key] = template
 		}
 		for name, pl := range l.Processes {
 			p := procs[name]

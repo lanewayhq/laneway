@@ -152,6 +152,13 @@ const cliTimeout = 15 * time.Second
 // and the daemon's home as its environment.
 func (d *Daemon) RunCLI(dir string, args ...string) CLIResult {
 	d.t.Helper()
+	return d.RunCLIWithInput(dir, "", args...)
+}
+
+// RunCLIWithInput is RunCLI with input as the command's stdin, such as
+// "y\n" to answer a confirmation.
+func (d *Daemon) RunCLIWithInput(dir, input string, args ...string) CLIResult {
+	d.t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), cliTimeout)
 	defer cancel()
 	var stdout, stderr bytes.Buffer
@@ -159,6 +166,7 @@ func (d *Daemon) RunCLI(dir string, args ...string) CLIResult {
 		Args:     args,
 		Dir:      dir,
 		Getenv:   d.Getenv,
+		Stdin:    strings.NewReader(input),
 		Stdout:   &stdout,
 		Stderr:   &stderr,
 		Platform: d.Platform,
