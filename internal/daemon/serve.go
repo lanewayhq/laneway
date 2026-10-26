@@ -126,7 +126,7 @@ func (d *Daemon) starting(s *served) *start {
 // Primary Process's name and the other HTTP Processes.
 func (d *Daemon) bootWorktree(s *served) (string, map[string]bool, error) {
 	d.applyServedEnvPatch(s)
-	cfg, err := recipe.ResolveDir(s.dir)
+	cfg, err := d.resolveWorktree(s.ctx, s.dir)
 	if err != nil {
 		return "", nil, fmt.Errorf("Project %q could not be started: %w", s.project, err)
 	}
@@ -157,6 +157,7 @@ func (d *Daemon) bootWorktree(s *served) (string, map[string]bool, error) {
 	timeout := cmp.Or(cfg.StartTimeout, StartTimeout)
 	ctx, cancel := context.WithTimeout(s.ctx, timeout)
 	defer cancel()
+	cfg.apply(specs, primary)
 	if err := d.supervisor.StartGroup(ctx, s.group, specs); err != nil {
 		return "", nil, fmt.Errorf("Project %q could not be started: %w", s.project, err)
 	}

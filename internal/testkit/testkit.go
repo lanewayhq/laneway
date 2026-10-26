@@ -48,6 +48,13 @@ type Daemon struct {
 	// install`, `doctor` and `open` never run sudo, touch a trust store or
 	// systemd, or open a browser. Tests set it up and inspect it.
 	Platform *platformtest.Fake
+	// Bin is first on the PATH the daemon's Processes and the CLI see, for
+	// stub Runtimes (StubPHP, StubNode, StubMise). The rest of that PATH is
+	// a few basic tools (see systemTools), so the machine's own mise, PHP
+	// and Node are never used.
+	Bin string
+	// Path is that PATH.
+	Path string
 
 	running *daemon.Daemon
 }
@@ -68,15 +75,21 @@ func StartDaemon(t testing.TB, opts ...Option) *Daemon {
 	}
 	t.Cleanup(func() { os.RemoveAll(runtimeDir) })
 
+	bin := filepath.Join(home, ".portby-test", "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatalf("testkit: %v", err)
+	}
+	path := bin + string(os.PathListSeparator) + systemBin(t, filepath.Dir(bin))
 	env := map[string]string{
 		"HOME":            home,
 		"XDG_RUNTIME_DIR": runtimeDir,
+		"PATH":            path,
 	}
 	p, err := paths.FromEnv(func(k string) string { return env[k] })
 	if err != nil {
 		t.Fatalf("testkit: %v", err)
 	}
-	d := &Daemon{t: t, env: env, opts: opts, Home: home, Paths: p, Platform: platformtest.New()}
+	d := &Daemon{t: t, env: env, opts: opts, Home: home, Paths: p, Platform: platformtest.New(), Bin: bin, Path: path}
 	d.Start()
 	t.Cleanup(d.Stop)
 	return d
@@ -89,7 +102,8 @@ func (d *Daemon) Start() {
 		return
 	}
 	// Port 0: tests never bind fixed ports.
-	cfg := daemon.Config{Paths: d.Paths, ProxyAddr: "127.0.0.1:0"}
+	cfg := daemon.Config{Paths: d.Paths, ProxyAddr: "127.0.0.1:0",
+		Env: []string{"HOME=" + d.Home, "PATH=" + d.Path}}
 	for _, opt := range d.opts {
 		opt(&cfg)
 	}
@@ -131,6 +145,15 @@ func (d *Daemon) Getenv(key string) string {
 	return d.env[key]
 }
 
+// Environ returns the whole environment the CLI sees.
+func (d *Daemon) Environ() []string {
+	var vars []string
+	for k, v := range d.env {
+		vars = append(vars, k+"="+v)
+	}
+	return vars
+}
+
 // CLIResult is the outcome of one CLI invocation.
 type CLIResult struct {
 	Stdout   string
@@ -166,6 +189,7 @@ func (d *Daemon) RunCLIWithInput(dir, input string, args ...string) CLIResult {
 		Args:     args,
 		Dir:      dir,
 		Getenv:   d.Getenv,
+		Environ:  d.Environ,
 		Stdin:    strings.NewReader(input),
 		Stdout:   &stdout,
 		Stderr:   &stderr,

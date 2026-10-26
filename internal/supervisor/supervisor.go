@@ -46,6 +46,13 @@ type Spec struct {
 	// LogFile is where all of the Process's output is written (appended,
 	// and rotated as it grows). Empty means output is only kept in memory.
 	LogFile string
+	// Env is the environment the command runs with, plus PORT for an HTTP
+	// Process. Nil means
+	// the Supervisor's own.
+	Env []string
+	// Notes are written to the Process's output, each prefixed "portby: ",
+	// once before it first starts (such as Runtime warnings).
+	Notes []string
 }
 
 // StopTimeout is how long a Process gets to exit after SIGTERM before its
@@ -252,6 +259,9 @@ func (s *Supervisor) start(group string, spec Spec) (*Process, error) {
 	s.outMu.Lock()
 	s.outputOf(group, spec.Name).setFile(spec.LogFile, s.opts)
 	s.outMu.Unlock()
+	for _, note := range spec.Notes {
+		s.writeLine(group, spec.Name, "portby: "+note)
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if err := p.startRun(); err != nil {
@@ -265,7 +275,11 @@ func (s *Supervisor) start(group string, spec Spec) (*Process, error) {
 func (p *Process) startRun() error {
 	spec := p.spec
 	var port int
-	command, env := spec.Command, os.Environ()
+	command, env := spec.Command, spec.Env
+	if env == nil {
+		env = os.Environ()
+	}
+	env = slices.Clone(env)
 	if spec.HTTP {
 		var err error
 		port, err = freePort()
