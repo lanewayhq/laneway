@@ -26,6 +26,7 @@ var portbyBin = sync.OnceValues(func() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	builtBinDir.Store(dir)
 	cmd := exec.Command("go", "build", "-o", filepath.Join(dir, "portby"), "./cmd/portby")
 	cmd.Dir = filepath.Dir(strings.TrimSpace(string(out)))
 	if out, err := cmd.CombinedOutput(); err != nil {
