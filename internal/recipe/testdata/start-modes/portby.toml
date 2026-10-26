@@ -1,0 +1,17 @@
+idle_timeout = "30m"
+
+[processes.web]
+command = "serve --port={port}"
+primary = true
+
+[processes.scheduler]
+command = "scheduler"
+start_mode = "always"
+
+[processes.tinker]
+command = "tinker"
+start_mode = "manual"
+
+[processes.queue]
+command = "worker"
+start_mode = "always"

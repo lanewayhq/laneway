@@ -1,0 +1,4 @@
+idle_timeout = "-5m"
+
+[processes.web]
+command = "serve"

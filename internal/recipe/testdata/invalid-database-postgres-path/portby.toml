@@ -1,0 +1,3 @@
+[database]
+engine = "postgres"
+path = "database/database.sqlite"

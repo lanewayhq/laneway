@@ -1,0 +1,6 @@
+[processes.web]
+command = "serve --port={port}"
+primary = true
+
+[processes.assets]
+command = "vite --config {vite_config}"
