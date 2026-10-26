@@ -80,6 +80,11 @@ type Resolved struct {
 	// Database is the database each Worktree gets; its Engine is "" if
 	// the Project has none.
 	Database Database
+	// TestDatabase is the Test Database decision: whether each Worktree
+	// also gets an empty Test Database, <database>_test, in the database's
+	// Service. True only when database.test is on and the database is in
+	// a Service (DatabaseService). auto is off until a Recipe decides it.
+	TestDatabase bool
 	// Warnings are problems that didn't stop resolution, such as unknown
 	// keys. Each names the file it comes from.
 	Warnings []string
@@ -142,6 +147,10 @@ type Database struct {
 	// Mode is how a Worktree other than the main one gets its database,
 	// one of config.DatabaseModes; DefaultDatabaseMode unless configured.
 	Mode string
+	// Test is database.test as configured, one of config.DatabaseTests,
+	// or "" if no layer sets it (which means auto). Resolved.TestDatabase
+	// is the decision.
+	Test string
 }
 
 // DatabaseService is the Service the Project's database lives in: the
@@ -219,7 +228,7 @@ func (r Resolved) Layer() config.Layer {
 		for _, kv := range []struct {
 			from string
 			to   **string
-		}{{db.Engine, &l.Database.Engine}, {db.Path, &l.Database.Path}, {db.Mode, &l.Database.Worktree}} {
+		}{{db.Engine, &l.Database.Engine}, {db.Path, &l.Database.Path}, {db.Mode, &l.Database.Worktree}, {db.Test, &l.Database.Test}} {
 			if kv.from != "" {
 				*kv.to = &kv.from
 			}
@@ -297,8 +306,8 @@ func Resolve(in Input) (Resolved, error) {
 		commandSource, httpSource, startModeSource string
 	}
 	procs := map[string]*merged{}
-	var engineSource, pathSource string // the layers that last set database.engine and .path
-	services := map[string]string{}     // engine → version, later layers winning
+	var engineSource, pathSource, testSource string // the layers that last set database.engine, .path and .test
+	services := map[string]string{}                 // engine → version, later layers winning
 	for i, l := range layers {
 		res.Warnings = append(res.Warnings, l.Warnings...)
 		if l.Name != nil {
@@ -331,6 +340,9 @@ func Resolve(in Input) (Resolved, error) {
 			}
 			if db.Worktree != nil {
 				res.Database.Mode = *db.Worktree
+			}
+			if db.Test != nil {
+				res.Database.Test, testSource = *db.Test, l.Source
 			}
 		}
 		for key, template := range l.Env {
@@ -386,9 +398,15 @@ func Resolve(in Input) (Resolved, error) {
 	}
 	// A database in a Service needs the Service: at the version
 	// [services] pins, else the engine's default.
-	if e, ok := service.Lookup(res.Database.Engine); ok && services[e.Name] == "" {
+	e, inService := service.Lookup(res.Database.Engine)
+	if inService && services[e.Name] == "" {
 		services[e.Name] = e.DefaultVersion
 	}
+	if res.Database.Test == "on" && res.Database.Engine != "" && !inService {
+		return Resolved{}, fmt.Errorf("%s: database.test is on, but Test Databases are only for databases in a Service "+
+			"and database.engine is %s; set database.test to off", testSource, res.Database.Engine)
+	}
+	res.TestDatabase = res.Database.Test == "on" && inService
 	if inherit {
 		res.OnCreate = append(slices.Clone(recipeCreate), res.OnCreate...)
 		res.OnRemove = append(slices.Clone(recipeRemove), res.OnRemove...)

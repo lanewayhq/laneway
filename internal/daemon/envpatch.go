@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"path/filepath"
 
@@ -13,6 +14,11 @@ import (
 
 // envFileName is the env file the Env Patch goes into.
 const envFileName = ".env"
+
+// testEnvFileName is the env file a Laravel app's tests read on top of .env.
+// With Test Databases on, it gets the Env Patch too, pointed at the
+// Worktree's Test Database.
+const testEnvFileName = ".env.testing"
 
 // envWorktree is a Worktree as the Env Patch sees it.
 type envWorktree struct {
@@ -55,11 +61,7 @@ func (d *Daemon) planEnvPatch(p registry.Project, w envWorktree) (envpatch.Plan,
 	if err != nil || len(cfg.Env) == 0 {
 		return envpatch.Plan{}, err
 	}
-	vars := envVars(p, w, cfg.Database)
-	services := d.serviceVars(cfg.Services)
-	maps.Copy(vars, services)
-	maps.Copy(vars, databaseVars(cfg, services))
-	values, err := envpatch.RenderAll(cfg.Env, vars)
+	values, err := envpatch.RenderAll(cfg.Env, d.envPatchVars(p, w, cfg))
 	if err != nil {
 		return envpatch.Plan{}, err
 	}
@@ -70,6 +72,64 @@ func (d *Daemon) planEnvPatch(p registry.Project, w envWorktree) (envpatch.Plan,
 	}
 	f.Seeds = append(f.Seeds, filepath.Join(w.dir, envFileName+".example"))
 	return envpatch.Prepare(f, values)
+}
+
+// envPatchVars are the template variables' values for the Worktree w whose
+// config is cfg: envVars, its Services' and its databases'.
+func (d *Daemon) envPatchVars(p registry.Project, w envWorktree, cfg recipe.Resolved) map[string]string {
+	vars := envVars(p, w, cfg.Database)
+	services := d.serviceVars(cfg.Services)
+	maps.Copy(vars, services)
+	maps.Copy(vars, databaseVars(cfg, services))
+	if name, ok := worktreeTestDatabase(p, w, cfg); ok {
+		vars["test_db"] = name
+	}
+	return vars
+}
+
+// planTestEnvPatch works out how the Worktree's .env.testing changes to
+// point its tests at its Test Database: it gets the same Env Patch as .env,
+// rendered with {db} holding the Test Database. A linked Worktree without a
+// .env.testing gets a copy of the main Worktree's. The plan is empty when
+// Test Databases are off or there are no templates. Portby never makes a
+// .env.testing from nothing: when neither the Worktree nor the main Worktree
+// has one, test config is left alone and missing is the Test Database the
+// tests won't use, for a warning.
+func (d *Daemon) planTestEnvPatch(p registry.Project, w envWorktree) (plan envpatch.Plan, missing string, err error) {
+	cfg, err := recipe.ResolveDir(w.dir)
+	if err != nil || len(cfg.Env) == 0 {
+		return envpatch.Plan{}, "", err
+	}
+	testDB, ok := worktreeTestDatabase(p, w, cfg)
+	if !ok {
+		return envpatch.Plan{}, "", nil
+	}
+	vars := d.envPatchVars(p, w, cfg)
+	vars["db"] = testDB
+	values, err := envpatch.RenderAll(cfg.Env, vars)
+	if err != nil {
+		return envpatch.Plan{}, "", err
+	}
+	f := envpatch.File{Path: filepath.Join(w.dir, testEnvFileName)}
+	if !w.main {
+		f.Seeds = []string{filepath.Join(p.Path, testEnvFileName)}
+	}
+	plan, err = envpatch.Prepare(f, values)
+	if err != nil {
+		return envpatch.Plan{}, "", err
+	}
+	if plan.Create && plan.CopyFrom == "" {
+		return envpatch.Plan{}, testDB, nil
+	}
+	return plan, "", nil
+}
+
+// testEnvWarning is the setup warning for a Worktree whose tests won't use
+// its Test Database testDB because there is no .env.testing to patch.
+func testEnvWarning(p registry.Project, testDB string) string {
+	return fmt.Sprintf("the main Worktree has no %s, so Portby left this Worktree's test config alone and its tests "+
+		"don't use its Test Database %s; create %s and it is patched the next time the Worktree starts or `portby link` runs",
+		testEnvFileName, testDB, filepath.Join(p.Path, testEnvFileName))
 }
 
 // applyEnvPatch brings the Worktree's .env up to date with its Env Patch,
@@ -86,6 +146,15 @@ func (d *Daemon) applyEnvPatch(p registry.Project, w envWorktree) {
 		d.log.Error("applying the Env Patch", "project", p.Name, "worktree", w.dir, "err", err)
 	} else if !plan.Empty() {
 		d.log.Info("applied the Env Patch", "project", p.Name, "path", plan.Path)
+	}
+	testPlan, _, err := d.planTestEnvPatch(p, w)
+	if err == nil {
+		err = testPlan.Apply()
+	}
+	if err != nil {
+		d.log.Error("applying the Env Patch to .env.testing", "project", p.Name, "worktree", w.dir, "err", err)
+	} else if !testPlan.Empty() {
+		d.log.Info("applied the Env Patch", "project", p.Name, "path", testPlan.Path)
 	}
 }
 

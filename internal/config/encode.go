@@ -71,7 +71,7 @@ func Encode(w io.Writer, l Layer) error {
 		for _, kv := range []struct {
 			key   string
 			value *string
-		}{{"engine", db.Engine}, {"path", db.Path}, {"worktree", db.Worktree}} {
+		}{{"engine", db.Engine}, {"path", db.Path}, {"worktree", db.Worktree}, {"test", db.Test}} {
 			if kv.value != nil {
 				fmt.Fprintf(&b, "%s = %s\n", kv.key, quote(*kv.value))
 			}

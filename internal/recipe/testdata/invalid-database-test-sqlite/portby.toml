@@ -1,0 +1,4 @@
+[database]
+engine = "sqlite"
+path = "database/database.sqlite"
+test = "on"

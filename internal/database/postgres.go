@@ -37,6 +37,13 @@ func (Postgres) Database(project, worktree, _ string) string {
 	return naming.DatabaseName(project, worktree, PostgresMaxName)
 }
 
+// TestDatabase is the Worktree's database name with "_test", the database
+// name cut short first so that the whole fits in PostgresMaxName (see
+// naming.TestDatabaseName).
+func (Postgres) TestDatabase(project, worktree, _ string) string {
+	return naming.TestDatabaseName(project, worktree, PostgresMaxName)
+}
+
 func (p Postgres) Exists(ctx context.Context, db string) (bool, error) {
 	var exists bool
 	err := p.admin(ctx, func(c *pgwire.Conn) error {
