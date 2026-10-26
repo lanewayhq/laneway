@@ -16,7 +16,9 @@ func (d *Daemon) routes() http.Handler {
 	mux.HandleFunc("GET /v1/projects", d.handleListProjects)
 	mux.HandleFunc("GET /v1/events", d.handleEvents)
 	mux.HandleFunc("POST /v1/projects", d.handleLink)
+	mux.HandleFunc("DELETE /v1/projects", d.handleUnlink)
 	mux.HandleFunc("GET /v1/worktree", d.handleWorktree)
+	mux.HandleFunc("GET /v1/info", d.handleInfo)
 	mux.HandleFunc("GET /v1/daemon", d.handleDaemonInfo)
 	mux.HandleFunc("GET /v1/logs", d.handleLogs)
 	mux.HandleFunc("POST /v1/worktree/ready", d.handleWorktreeReady)
@@ -25,6 +27,8 @@ func (d *Daemon) routes() http.Handler {
 	mux.HandleFunc("DELETE /v1/aliases/{name}", d.handleRemoveAlias)
 	mux.HandleFunc("GET /v1/services", d.handleListServices)
 	mux.HandleFunc("POST /v1/services/{action}", d.handleControlServices)
+	mux.HandleFunc("GET /v1/orphans", d.handleListOrphans)
+	mux.HandleFunc("POST /v1/gc", d.handleGC)
 	return mux
 }
 
@@ -45,8 +49,26 @@ func (d *Daemon) handleLink(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
+func (d *Daemon) handleUnlink(w http.ResponseWriter, r *http.Request) {
+	res, err := d.unlink(r.Context(), r.URL.Query().Get("dir"))
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
 func (d *Daemon) handleWorktree(w http.ResponseWriter, r *http.Request) {
 	info, err := d.worktreeInfo(r.Context(), r.URL.Query().Get("dir"))
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
+func (d *Daemon) handleInfo(w http.ResponseWriter, r *http.Request) {
+	info, err := d.info(r.Context(), r.URL.Query().Get("dir"))
 	if err != nil {
 		d.writeError(w, err)
 		return
@@ -117,6 +139,18 @@ func (d *Daemon) handleControlServices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+func (d *Daemon) handleListOrphans(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, d.listOrphans())
+}
+
+func (d *Daemon) handleGC(w http.ResponseWriter, r *http.Request) {
+	var req api.GCRequest
+	if !readJSON(w, r, &req) {
+		return
+	}
+	writeJSON(w, http.StatusOK, d.gc(r.Context(), req))
 }
 
 func (d *Daemon) handleDaemonInfo(w http.ResponseWriter, r *http.Request) {

@@ -1,6 +1,6 @@
 // Package registry is the daemon's persistent record of Linked Projects,
-// their Worktrees and their Aliases, and the ports of Services. Later
-// tickets extend it with Orphans. Every change is written to disk before it is acknowledged, so
+// their Worktrees and their Aliases, the ports of Services and Orphans.
+// Every change is written to disk before it is acknowledged, so
 // registrations survive daemon restarts.
 package registry
 
@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/mrsafalpiya/portby.dev/internal/naming"
 )
@@ -46,6 +47,7 @@ type state struct {
 	Worktrees []Worktree `json:"worktrees,omitempty"`
 	Aliases   []Alias    `json:"aliases,omitempty"`
 	Services  []Service  `json:"services,omitempty"`
+	Orphans   []Orphan   `json:"orphans,omitempty"`
 }
 
 const currentVersion = 1
@@ -109,6 +111,27 @@ func (r *Registry) AddProject(p Project) error {
 	}
 	r.state = next
 	return nil
+}
+
+// RemoveProject forgets the Project whose main Worktree is at path, with its
+// Worktrees and Aliases, and persists the change. It reports whether there
+// was one.
+func (r *Registry) RemoveProject(path string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	i := slices.IndexFunc(r.state.Projects, func(p Project) bool { return p.Path == path })
+	if i < 0 {
+		return false, nil
+	}
+	next := r.state
+	next.Projects = slices.Delete(slices.Clone(r.state.Projects), i, i+1)
+	next.Worktrees = slices.DeleteFunc(slices.Clone(r.state.Worktrees), func(w Worktree) bool { return w.Project == path })
+	next.Aliases = slices.DeleteFunc(slices.Clone(r.state.Aliases), func(a Alias) bool { return a.Project == path })
+	if err := r.save(next); err != nil {
+		return false, err
+	}
+	r.state = next
+	return true, nil
 }
 
 // Worktree is a linked (not main) Worktree of a Project, as last discovered
@@ -419,6 +442,90 @@ func (r *Registry) planServiceLocked(engine, version string, candidates []int) (
 		}
 	}
 	return Service{}, false, fmt.Errorf("%s:%s: %w", engine, version, ErrNoServicePort)
+}
+
+// Orphan is a database left behind by a removed Worktree or an unlinked
+// Project, recorded so it can be dropped once its grace period is over.
+type Orphan struct {
+	// Engine and Version name the database Service it lives in, such as
+	// postgres and "18".
+	Engine   string `json:"engine"`
+	Version  string `json:"version"`
+	Database string `json:"database"`
+	// ProjectName is the name of the Project it belonged to, and Worktree
+	// git's name for its Worktree ("" for the main Worktree).
+	ProjectName string `json:"projectName"`
+	Worktree    string `json:"worktree,omitempty"`
+	// Kind says what it was to the Worktree, as the API reports it.
+	Kind string `json:"kind"`
+	// Since is when it became an Orphan.
+	Since time.Time `json:"since"`
+}
+
+// Same reports whether o and other are the same database.
+func (o Orphan) Same(other Orphan) bool {
+	return o.Engine == other.Engine && o.Version == other.Version && o.Database == other.Database
+}
+
+// Orphans returns every Orphan, oldest first.
+func (r *Registry) Orphans() []Orphan {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := slices.Clone(r.state.Orphans)
+	slices.SortStableFunc(out, func(a, b Orphan) int {
+		if c := a.Since.Compare(b.Since); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Database, b.Database)
+	})
+	return out
+}
+
+// AddOrphans records orphans and persists them. A database that is already
+// an Orphan keeps its record (and so when it became one).
+func (r *Registry) AddOrphans(orphans []Orphan) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	next := r.state
+	next.Orphans = slices.Clone(r.state.Orphans)
+	for _, o := range orphans {
+		if !slices.ContainsFunc(next.Orphans, o.Same) {
+			next.Orphans = append(next.Orphans, o)
+		}
+	}
+	if len(next.Orphans) == len(r.state.Orphans) {
+		return nil
+	}
+	if err := r.save(next); err != nil {
+		return err
+	}
+	r.state = next
+	return nil
+}
+
+// RemoveOrphans forgets the Orphans that are the same databases as any of
+// orphans (dropped, or taken back), persists the change and returns the
+// records it removed.
+func (r *Registry) RemoveOrphans(orphans []Orphan) ([]Orphan, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var removed []Orphan
+	next := r.state
+	next.Orphans = slices.DeleteFunc(slices.Clone(r.state.Orphans), func(o Orphan) bool {
+		if slices.ContainsFunc(orphans, o.Same) {
+			removed = append(removed, o)
+			return true
+		}
+		return false
+	})
+	if len(removed) == 0 {
+		return nil, nil
+	}
+	if err := r.save(next); err != nil {
+		return nil, err
+	}
+	r.state = next
+	return removed, nil
 }
 
 // save writes s atomically: to a temp file in the same directory, then renamed

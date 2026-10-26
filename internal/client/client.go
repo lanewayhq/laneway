@@ -62,6 +62,14 @@ func (c *Client) Worktree(ctx context.Context, dir string) (api.WorktreeInfo, er
 	return info, err
 }
 
+// Info returns everything about the Worktree containing dir, which must be
+// absolute: what `portby info` prints.
+func (c *Client) Info(ctx context.Context, dir string) (api.Info, error) {
+	var info api.Info
+	err := c.do(ctx, http.MethodGet, "/v1/info?dir="+url.QueryEscape(dir), nil, &info)
+	return info, err
+}
+
 // WorktreeReady finds the Worktree containing req.Dir, begins (or with
 // req.Retry, retries) its setup and returns its state. With req.Wait it
 // returns once the Worktree is Ready or its setup failed: check
@@ -156,6 +164,31 @@ func (c *Client) ControlServices(ctx context.Context, action string, req api.Ser
 	var list api.ServiceList
 	err := c.do(ctx, http.MethodPost, "/v1/services/"+url.PathEscape(action), req, &list)
 	return list.Services, err
+}
+
+// Orphans lists the databases waiting out their grace period before they
+// are dropped.
+func (c *Client) Orphans(ctx context.Context) ([]api.Orphan, error) {
+	var list api.OrphanList
+	if err := c.do(ctx, http.MethodGet, "/v1/orphans", nil, &list); err != nil {
+		return nil, err
+	}
+	return list.Orphans, nil
+}
+
+// Unlink Unlinks the Project containing dir, which must be absolute.
+func (c *Client) Unlink(ctx context.Context, dir string) (api.UnlinkResponse, error) {
+	var res api.UnlinkResponse
+	err := c.do(ctx, http.MethodDelete, "/v1/projects?dir="+url.QueryEscape(dir), nil, &res)
+	return res, err
+}
+
+// GC drops Orphans and leftover parallel test copies now (with
+// req.Preview, only lists them).
+func (c *Client) GC(ctx context.Context, req api.GCRequest) (api.GCResponse, error) {
+	var res api.GCResponse
+	err := c.do(ctx, http.MethodPost, "/v1/gc", req, &res)
+	return res, err
 }
 
 // do sends one request and decodes the response into out.

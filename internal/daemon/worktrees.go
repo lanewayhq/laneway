@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"slices"
 
 	"github.com/mrsafalpiya/portby.dev/internal/gitrepo"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
@@ -33,6 +34,9 @@ func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
 		return
 	default:
 	}
+	if _, ok := d.registry.ProjectAt(p.Path); !ok {
+		return // Unlinked while this sync waited for syncMu
+	}
 	found, pending, err := d.foundWorktrees(ctx, p)
 	if err != nil {
 		d.log.Error("listing Worktrees", "project", p.Name, "err", err)
@@ -46,6 +50,11 @@ func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
 		d.log.Info("Worktree removed", "project", p.Name, "worktree", w.Name, "path", w.Path)
 		d.stopWorktree(ctx, worktreeDomain(p, w), w.Path)
 		d.teardown(p, linkedEnvWorktree(p, w))
+		// A moved Worktree is removed and added again: its databases
+		// stay its own.
+		if !slices.ContainsFunc(changes.Added, func(a registry.Worktree) bool { return a.Name == w.Name }) {
+			d.orphanWorktree(p, linkedEnvWorktree(p, w))
+		}
 	}
 	for _, w := range changes.Added {
 		d.log.Info("Worktree discovered", "project", p.Name, "worktree", w.Name, "path", w.Path)
@@ -62,6 +71,7 @@ func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
 	// Setup begins once the Registry knows the Worktree, so its setup
 	// steps see it as `portby` reports it.
 	for _, w := range changes.Added {
+		d.reclaimOrphans(p, linkedEnvWorktree(p, w))
 		d.provision(p, linkedEnvWorktree(p, w), false)
 	}
 	var dirs []string

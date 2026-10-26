@@ -94,7 +94,15 @@ func Connect(ctx context.Context, cfg Config) (*Conn, error) {
 		return nil, err
 	}
 	c := &Conn{cfg: cfg, conn: nc, r: bufio.NewReader(nc)}
-	if err := c.guard(ctx, c.handshake); err != nil {
+	// No statement runs while logging in, so there is nothing to kill (and
+	// the connection's id isn't known yet): the deadline alone cuts it
+	// short.
+	stop := context.AfterFunc(ctx, func() { nc.SetDeadline(time.Now()) })
+	err = c.handshake()
+	if !stop() && ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	if err != nil {
 		nc.Close()
 		return nil, err
 	}

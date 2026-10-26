@@ -90,7 +90,13 @@ func Connect(ctx context.Context, cfg Config) (*Conn, error) {
 		return nil, err
 	}
 	c := &Conn{cfg: cfg, conn: nc, r: bufio.NewReader(nc)}
-	err = c.guard(ctx, c.startup)
+	// No query runs while logging in, so there is nothing to cancel (and
+	// the backend's key isn't known yet): the deadline alone cuts it short.
+	stop := context.AfterFunc(ctx, func() { nc.SetDeadline(time.Now()) })
+	err = c.startup()
+	if !stop() && ctx.Err() != nil {
+		err = ctx.Err()
+	}
 	if err != nil {
 		nc.Close()
 		return nil, err

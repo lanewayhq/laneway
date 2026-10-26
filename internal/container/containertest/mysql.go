@@ -36,6 +36,9 @@ import (
 //	INSERT INTO <table> (`<column>`) SELECT `<column>` FROM <table>
 //	SHOW TABLES, INSERT INTO <table> VALUES ('<text>'), SELECT <column> FROM <table>
 //	SET SESSION …, KILL QUERY <id> (accepted, no effect)
+//	SHOW DATABASES, SELECT SCHEMA_NAME FROM information_schema.SCHEMATA ORDER BY SCHEMA_NAME
+//	SELECT ID FROM information_schema.PROCESSLIST WHERE DB = '<db>' … (always none),
+//	KILL CONNECTION <id> (accepted, no effect)
 //
 // where <table> is name, `name` or `db`.`name`. Databases (each a set of
 // one-column tables) are kept in the container's Volume. There are no
@@ -259,7 +262,9 @@ var (
 	myDropDatabase   = regexp.MustCompile("^DROP DATABASE (IF EXISTS )?`(\\w+)`$")
 	myUse            = regexp.MustCompile("^USE `(\\w+)`$")
 	mySet            = regexp.MustCompile(`^SET SESSION `)
-	myKill           = regexp.MustCompile(`^KILL QUERY \d+$`)
+	myKill           = regexp.MustCompile(`^KILL (?:QUERY|CONNECTION) \d+$`)
+	myListDatabases  = regexp.MustCompile(`^(?:SHOW DATABASES|SELECT SCHEMA_NAME FROM information_schema\.SCHEMATA ORDER BY SCHEMA_NAME)$`)
+	myProcessList    = regexp.MustCompile(`^SELECT ID FROM information_schema\.PROCESSLIST WHERE DB = '\w+' AND ID <> CONNECTION_ID\(\)$`)
 	myShowCreate     = regexp.MustCompile(`^SHOW CREATE TABLE ` + myRef + `$`)
 	myCreateTable    = regexp.MustCompile(`(?s)^CREATE TABLE ` + myRef + ` \(\s*` + "`?(\\w+)`?" + ` \w+\s*\)$`)
 	myDropTable      = regexp.MustCompile(`^DROP TABLE ` + myRef + `$`)
@@ -301,6 +306,16 @@ func (my *myServer) query(s *mySession, sql string) error {
 			tables = append(tables, []string{t})
 		}
 		return s.rows([]string{"Tables_in_" + s.database}, tables)
+	}
+	if myListDatabases.MatchString(sql) {
+		var names [][]string
+		for _, db := range slices.Sorted(slices.Values(my.databases())) {
+			names = append(names, []string{db})
+		}
+		return s.rows([]string{"Database"}, names)
+	}
+	if myProcessList.MatchString(sql) {
+		return s.rows([]string{"ID"}, nil) // the fake doesn't track sessions' databases
 	}
 	if m := mySchemaQuery.FindStringSubmatch(sql); m != nil {
 		var found [][]string
