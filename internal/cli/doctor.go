@@ -16,6 +16,7 @@ import (
 	"github.com/mrsafalpiya/portby.dev/internal/gitrepo"
 	"github.com/mrsafalpiya/portby.dev/internal/paths"
 	"github.com/mrsafalpiya/portby.dev/internal/platform"
+	"github.com/mrsafalpiya/portby.dev/internal/recipe"
 	"github.com/mrsafalpiya/portby.dev/internal/runtimes"
 )
 
@@ -97,6 +98,7 @@ func runDoctor(ctx context.Context, env Env, args []string) error {
 		r.check(statusOK, "mise", v, "")
 	}
 	checkRuntimes(ctx, r, env)
+	checkTestDatabase(ctx, r, env)
 
 	if r.failures > 0 {
 		fmt.Fprintln(env.Stdout)
@@ -109,10 +111,7 @@ func runDoctor(ctx context.Context, env Env, args []string) error {
 // directory, outside a git repository), and how they fit what the Project
 // declares. A Runtime that is neither found nor needed isn't mentioned.
 func checkRuntimes(ctx context.Context, r *report, env Env) {
-	dir := env.Dir
-	if c, err := gitrepo.Resolve(ctx, env.Dir); err == nil {
-		dir = c.Dir
-	}
+	dir := worktreeDir(ctx, env)
 	rt := runtimes.Environ(ctx, dir, environOf(env))
 	found := rt.Find(ctx)
 	warned := map[string]bool{}
@@ -134,6 +133,29 @@ func checkRuntimes(ctx context.Context, r *report, env Env) {
 		}
 		r.check(statusOK, f.Name, fmt.Sprintf("%s at %s (%s)", f.Version, f.Path, from), "")
 	}
+}
+
+// checkTestDatabase reports why the tests of the current Worktree's Project
+// may not use its Test Database, such as a phpunit.xml that hard-codes
+// DB_DATABASE. A config that can't be resolved isn't reported here: link
+// and starts report it.
+func checkTestDatabase(ctx context.Context, r *report, env Env) {
+	res, err := recipe.ResolveDir(worktreeDir(ctx, env))
+	if err != nil {
+		return
+	}
+	for _, w := range res.TestDatabaseWarnings {
+		r.check(statusWarn, "Test Database", w, "")
+	}
+}
+
+// worktreeDir is the root of the Worktree the CLI runs in, or its directory
+// outside a git repository.
+func worktreeDir(ctx context.Context, env Env) string {
+	if c, err := gitrepo.Resolve(ctx, env.Dir); err == nil {
+		return c.Dir
+	}
+	return env.Dir
 }
 
 func checkService(ctx context.Context, r *report, plat platform.Platform) {
