@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/mrsafalpiya/portby.dev/internal/service"
 )
 
 // Variables are the names a template can use as {name}. Every Worktree has a
@@ -12,13 +14,16 @@ import (
 // database have. Later tickets add the other database and Service variables
 // (test_db, and each Service's host and port) here and in the daemon's
 // envVars.
-var Variables = []string{
+var Variables = append([]string{
 	"project",  // the Project name
 	"worktree", // git's name for the Worktree; empty for the main Worktree
 	"domain",   // the Worktree's Domain, such as feat-x.shop.localhost
 	"url",      // the Worktree's URL, such as https://feat-x.shop.localhost
 	"db",       // the Worktree's database: for SQLite, the file's absolute path
-}
+},
+	// Each Service's host, port and credentials, such as {redis_port},
+	// which only have values in Worktrees whose config uses the Service.
+	service.AllVariables()...)
 
 // placeholder matches what a template treats specially: an escaped brace,
 // or {name}. Any other brace is literal.

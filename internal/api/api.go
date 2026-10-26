@@ -20,6 +20,9 @@
 //	                    dir now, begin or retry its setup and, with wait, wait for it)
 //	POST   /v1/aliases  AliasRequest -> AliasResponse  (add an Alias to the Worktree containing dir)
 //	DELETE /v1/aliases/{name}?dir=<abs path> -> AliasResponse  (remove one)
+//	GET  /v1/services   -> ServiceList
+//	POST /v1/services/up    ServiceRequest -> ServiceList  (start one Service, or every one)
+//	POST /v1/services/down  ServiceRequest -> ServiceList  (stop one Service, or every one)
 //
 // GET /v1/logs acts on the Worktree containing dir. Without process it
 // returns every Process's output, interleaved in the order it was written.
@@ -263,7 +266,44 @@ const (
 	// CodeForbidden: a request that changes state reached the Dashboard's
 	// API from somewhere other than the Dashboard's own pages.
 	CodeForbidden = "forbidden"
+
+	// CodeUnknownService: no Service has that name; the message lists them.
+	CodeUnknownService = "unknown_service"
+	// CodeServiceFailed: a Service could not be started or stopped, such
+	// as when no container engine is available.
+	CodeServiceFailed = "service_failed"
 )
+
+// Service is a shared Service, such as redis:7, and how to connect to it.
+type Service struct {
+	// Name is "<engine>:<version>".
+	Name    string `json:"name"`
+	Engine  string `json:"engine"`
+	Version string `json:"version"`
+	Host    string `json:"host"`
+	Port    int    `json:"port"`
+	// User is empty for engines without users (Redis).
+	User     string `json:"user,omitempty"`
+	Password string `json:"password"`
+	// State is "stopped", "starting", "running" or "idle" (stopped after
+	// its idle timeout; the next connection starts it).
+	State string `json:"state"`
+	// Error says why the Service can't be used (Portby can't listen on
+	// its port, or its last start failed).
+	Error string `json:"error,omitempty"`
+}
+
+// ServiceList is every Service Portby serves, sorted by name.
+type ServiceList struct {
+	Services []Service `json:"services"`
+}
+
+// ServiceRequest names a Service: "redis:7", or just "redis" if only one
+// version of it is served (or the default version is). Empty means every
+// Service.
+type ServiceRequest struct {
+	Name string `json:"name,omitempty"`
+}
 
 // ErrorResponse is the body of every non-2xx response.
 type ErrorResponse struct {

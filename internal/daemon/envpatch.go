@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"maps"
 	"path/filepath"
 
 	"github.com/mrsafalpiya/portby.dev/internal/api"
@@ -54,7 +55,9 @@ func (d *Daemon) planEnvPatch(p registry.Project, w envWorktree) (envpatch.Plan,
 	if err != nil || len(cfg.Env) == 0 {
 		return envpatch.Plan{}, err
 	}
-	values, err := envpatch.RenderAll(cfg.Env, envVars(p, w, cfg.Database))
+	vars := envVars(p, w, cfg.Database)
+	maps.Copy(vars, d.serviceVars(cfg.Services))
+	values, err := envpatch.RenderAll(cfg.Env, vars)
 	if err != nil {
 		return envpatch.Plan{}, err
 	}

@@ -15,6 +15,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/mrsafalpiya/portby.dev/internal/envpatch"
+	"github.com/mrsafalpiya/portby.dev/internal/service"
 )
 
 // LocalFileName is the gitignored per-developer config file. It overrides
@@ -48,6 +49,10 @@ type Layer struct {
 	// keyed by env key ([env] table). Values are templates such as
 	// "{url}"; see envpatch.Variables.
 	Env map[string]string `toml:"env"`
+	// Services are the Services the Project uses, keyed by engine
+	// ([services] table), each with its version: redis = "7". Every
+	// Project using redis:7 shares one container.
+	Services map[string]string `toml:"services"`
 	// OnCreate are setup steps: shell commands run in a Worktree's
 	// directory, in order, once its Env Patch is applied. The Worktree is
 	// Ready when they have all succeeded. They run after the Recipe's.
@@ -149,7 +154,7 @@ func ParseLayer(source string, data []byte) (Layer, error) {
 		return Layer{}, decodeError(source, err)
 	}
 	// The decoder silently skips a non-table value for a map field.
-	for _, key := range append([]toml.Key{{"processes"}, {"env"}, {"database"}}, processKeys(l)...) {
+	for _, key := range append([]toml.Key{{"processes"}, {"env"}, {"database"}, {"services"}}, processKeys(l)...) {
 		if t := md.Type(key...); t != "" && t != "Hash" {
 			return Layer{}, fmt.Errorf("%s: %s must be a table, not a %s", source, key, strings.ToLower(t))
 		}
@@ -215,6 +220,15 @@ func (l Layer) validate() error {
 			return fmt.Errorf("env.%s: %w", key(k), err)
 		}
 	}
+	for _, name := range slices.Sorted(maps.Keys(l.Services)) {
+		if _, ok := service.Lookup(name); !ok {
+			return fmt.Errorf("services.%s: Portby has no Service %q; the Services are %s",
+				key(name), name, strings.Join(service.Names(), ", "))
+		}
+		if !serviceVersion.MatchString(l.Services[name]) {
+			return fmt.Errorf("services.%s must be a version, such as \"7\" or \"7.2\", not %q", name, l.Services[name])
+		}
+	}
 	var primaries []string
 	for _, name := range slices.Sorted(maps.Keys(l.Processes)) {
 		p := l.Processes[name]
@@ -234,6 +248,9 @@ func (l Layer) validate() error {
 	}
 	return nil
 }
+
+// serviceVersion is what a Service's version may look like: an image tag.
+var serviceVersion = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 func (db *DatabaseLayer) validate() error {
 	if db == nil {

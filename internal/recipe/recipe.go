@@ -62,6 +62,9 @@ type Resolved struct {
 	// Env is the Env Patch: env key → template, merged by key. nil if no
 	// layer declares any.
 	Env map[string]string
+	// Services are the Services the Project uses, one per engine, sorted
+	// by engine.
+	Services []Service
 	// OnCreate are the setup steps (shell commands) run in a new Worktree:
 	// the Recipe's first, then the Project's layers' in order, unless a
 	// Project layer sets inherit_setup = false.
@@ -98,6 +101,13 @@ type Process struct {
 	HTTP bool
 	// StartMode says when the Process runs.
 	StartMode StartMode
+}
+
+// Service is a Service the Project uses: an engine at a version, such as
+// redis at "7".
+type Service struct {
+	Engine  string
+	Version string
 }
 
 // StartMode is when a Process runs. The zero value is Lazy.
@@ -174,6 +184,12 @@ func (r Resolved) Layer() config.Layer {
 		l.Processes[name] = config.ProcessLayer{Disabled: &disabled}
 	}
 	l.Env = maps.Clone(r.Env)
+	for _, svc := range r.Services {
+		if l.Services == nil {
+			l.Services = map[string]string{}
+		}
+		l.Services[svc.Engine] = svc.Version
+	}
 	l.OnCreate = slices.Clone(r.OnCreate)
 	l.OnRemove = slices.Clone(r.OnRemove)
 	if r.Recipe != "" && len(r.OnCreate)+len(r.OnRemove) > 0 {
@@ -268,7 +284,8 @@ func Resolve(in Input) (Resolved, error) {
 		commandSource, httpSource, startModeSource string
 	}
 	procs := map[string]*merged{}
-	var engineSource string // the layer that last set database.engine
+	var engineSource string         // the layer that last set database.engine
+	services := map[string]string{} // engine → version, later layers winning
 	for i, l := range layers {
 		res.Warnings = append(res.Warnings, l.Warnings...)
 		if l.Name != nil {
@@ -309,6 +326,7 @@ func Resolve(in Input) (Resolved, error) {
 			}
 			res.Env[key] = template
 		}
+		maps.Copy(services, l.Services)
 		for name, pl := range l.Processes {
 			p := procs[name]
 			if p == nil {
@@ -394,6 +412,9 @@ func Resolve(in Input) (Resolved, error) {
 				"so it gets no port; set processes.%s.http = true if it serves HTTP", p.commandSource, p.Name, p.Name, p.Name)
 		}
 		res.Processes = append(res.Processes, p.Process)
+	}
+	for _, engine := range slices.Sorted(maps.Keys(services)) {
+		res.Services = append(res.Services, Service{Engine: engine, Version: services[engine]})
 	}
 	if in.Runtimes != nil {
 		res.RuntimeWarnings = runtimes.Check(in.Dir, in.Runtimes)

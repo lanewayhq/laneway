@@ -14,15 +14,20 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/mrsafalpiya/portby.dev/internal/clock"
+	"github.com/mrsafalpiya/portby.dev/internal/container"
 	"github.com/mrsafalpiya/portby.dev/internal/dashboard"
 	"github.com/mrsafalpiya/portby.dev/internal/paths"
+	"github.com/mrsafalpiya/portby.dev/internal/platform"
 	"github.com/mrsafalpiya/portby.dev/internal/provision"
 	"github.com/mrsafalpiya/portby.dev/internal/proxy"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
+	"github.com/mrsafalpiya/portby.dev/internal/service"
 	"github.com/mrsafalpiya/portby.dev/internal/supervisor"
 	"github.com/mrsafalpiya/portby.dev/internal/watcher"
 )
@@ -32,8 +37,7 @@ import (
 //
 // The spec's Seam 1 swaps exactly two things in tests: the clock and the
 // container engine. Both are interface-typed fields with real defaults filled
-// in by Start, so tests can inject fakes. (The container engine isn't here
-// yet.)
+// in by Start, so tests can inject fakes.
 type Config struct {
 	Paths  paths.Paths
 	Logger *slog.Logger
@@ -55,11 +59,25 @@ type Config struct {
 	// registry is rescanned even without file system events;
 	// watcher.DefaultRescanInterval if zero.
 	WorktreeRescanInterval time.Duration
+	// ContainerEngine runs Services' containers. Nil means the Docker
+	// Engine API found on the machine when a Service first needs it,
+	// rootless Podman's first (ADR-0005). Tests use containertest.Fake.
+	ContainerEngine container.Engine
+	// ServiceHosts are the addresses Services listen on; nil means
+	// DefaultServiceHosts. The first is the host clients are given.
+	ServiceHosts []string
+	// ContainerPrefix starts the names of Services' containers and
+	// volumes; "portby" if empty.
+	ContainerPrefix string
 	// DashboardDomain is where the Dashboard is served,
 	// dashboard.DefaultDomain if empty. Tests running several daemons at
 	// once give each its own, since Caddy's certificate cache is shared.
 	DashboardDomain string
 }
+
+// DefaultServiceHosts are where Services listen: loopback only, IPv4 and
+// IPv6 (`psql -h localhost` tries ::1 first).
+var DefaultServiceHosts = []string{"127.0.0.1", "::1"}
 
 // DefaultProxyAddr is where browsers expect HTTPS.
 const DefaultProxyAddr = "127.0.0.1:443"
@@ -91,6 +109,7 @@ type Daemon struct {
 	syncMu  sync.Mutex // serialises Worktree syncs
 
 	provisioner *provision.Provisioner // Worktree setup, see provision.go
+	services    *service.Manager       // shared Services, see services.go
 
 	// closing is closed (under syncMu) when Shutdown begins. It ends
 	// streaming responses, and Worktree syncs that start afterwards don't
@@ -120,6 +139,12 @@ func Start(cfg Config) (*Daemon, error) {
 	if cfg.Env == nil {
 		cfg.Env = os.Environ()
 	}
+	if cfg.ServiceHosts == nil {
+		cfg.ServiceHosts = DefaultServiceHosts
+	}
+	if cfg.ContainerEngine == nil {
+		cfg.ContainerEngine = discoverEngine(cfg.Env)
+	}
 	reg, err := registry.Open(cfg.Paths.Registry())
 	if err != nil {
 		return nil, err
@@ -147,6 +172,15 @@ func Start(cfg Config) (*Daemon, error) {
 		done:       make(chan struct{}),
 	}
 	d.provisioner = prov
+	d.services = service.New(service.Options{
+		Engine:      cfg.ContainerEngine,
+		Clock:       cfg.Clock,
+		Log:         log,
+		Hosts:       cfg.ServiceHosts,
+		Prefix:      cfg.ContainerPrefix,
+		IdleTimeout: d.serviceIdleTimeout,
+	})
+	d.serveRecordedServices()
 	d.stopping, d.stop = context.WithCancel(context.Background())
 	d.proxy, err = proxy.Start(proxy.Config{
 		Addr:       cfg.ProxyAddr,
@@ -155,6 +189,7 @@ func Start(cfg Config) (*Daemon, error) {
 		LogErrors:  cfg.Logger != nil,
 	})
 	if err != nil {
+		d.services.Close(context.Background())
 		ln.Close()
 		return nil, err
 	}
@@ -171,6 +206,7 @@ func Start(cfg Config) (*Daemon, error) {
 	if err != nil {
 		d.dashboard.Close()
 		d.proxy.Stop()
+		d.services.Close(context.Background())
 		ln.Close()
 		return nil, fmt.Errorf("watching Worktrees: %w", err)
 	}
@@ -232,7 +268,26 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 	d.starts.Wait()
 	d.provisioner.Close()
 	d.supervisor.StopAll(ctx)
+	// Services last: Processes may be using them until they stop.
+	d.services.Close(ctx)
 	return err
+}
+
+// discoverEngine is the container engine found through the platform layer
+// (the same sockets `portby doctor` checks), looked up on first use.
+func discoverEngine(env []string) container.Engine {
+	getenv := func(key string) string {
+		for _, kv := range slices.Backward(env) {
+			if k, v, ok := strings.Cut(kv, "="); ok && k == key {
+				return v
+			}
+		}
+		return ""
+	}
+	return &container.Discovered{Find: func(ctx context.Context) (string, error) {
+		e, err := platform.Detect(getenv).ContainerEngine(ctx)
+		return strings.TrimPrefix(e.Address, "unix://"), err
+	}}
 }
 
 // listen binds the API socket. The socket's directory is created (or tightened)

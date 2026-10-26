@@ -117,6 +117,7 @@ func (d *Daemon) up(ctx context.Context, s *served, proc *recipe.Process) error 
 	}
 	s.mu.Lock()
 	if s.start != nil && isDone(s.start) {
+		s.start.releaseServices()
 		s.start = nil
 	}
 	s.mu.Unlock()
@@ -150,6 +151,9 @@ func (d *Daemon) down(ctx context.Context, s *served, proc *recipe.Process) {
 		return
 	}
 	s.mu.Lock()
+	if s.start != nil && isDone(s.start) {
+		s.start.releaseServices()
+	}
 	s.start, s.idle = nil, false
 	s.mu.Unlock()
 	s.activity.Reset()
