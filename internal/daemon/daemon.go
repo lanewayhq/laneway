@@ -1,6 +1,7 @@
-// Package daemon is the long-running Portby process. It owns the Registry and
+// Package daemon is the long-running Portby process. It owns the Registry,
 // serves the JSON API (see package api) over a Unix socket that only the user
-// can access.
+// can access, runs each Project's Processes and serves them at their Domains
+// through the HTTPS proxy.
 package daemon
 
 import (
@@ -13,10 +14,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/mrsafalpiya/portby.dev/internal/paths"
+	"github.com/mrsafalpiya/portby.dev/internal/proxy"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
+	"github.com/mrsafalpiya/portby.dev/internal/supervisor"
 )
 
 // Config is everything the daemon needs from the outside world. Tests build
@@ -28,7 +32,13 @@ import (
 type Config struct {
 	Paths  paths.Paths
 	Logger *slog.Logger
+	// ProxyAddr is the HTTPS proxy's listen address, DefaultProxyAddr if
+	// empty. It must be a loopback address; tests use port 0.
+	ProxyAddr string
 }
+
+// DefaultProxyAddr is where browsers expect HTTPS.
+const DefaultProxyAddr = "127.0.0.1:443"
 
 // Daemon is a running daemon.
 type Daemon struct {
@@ -38,31 +48,57 @@ type Daemon struct {
 	server   *http.Server
 	listener net.Listener
 
+	supervisor *supervisor.Supervisor
+	proxy      *proxy.Proxy
+	servedMu   sync.Mutex
+	served     map[string]served // Domain → what is served there
+
 	done     chan struct{} // closed once the server stops
 	serveErr error         // why it stopped; read only after done is closed
 }
 
-// Start opens the Registry, binds the API socket and begins serving in the
-// background. It returns once the socket accepts connections.
+// Start opens the Registry, binds the API socket and the HTTPS proxy, starts
+// every Project's Processes and begins serving in the background. It returns
+// once the socket accepts connections.
 func Start(cfg Config) (*Daemon, error) {
 	log := cfg.Logger
 	if log == nil {
 		log = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
+	if cfg.ProxyAddr == "" {
+		cfg.ProxyAddr = DefaultProxyAddr
+	}
 	reg, err := registry.Open(cfg.Paths.Registry())
 	if err != nil {
 		return nil, err
 	}
+	// The socket comes first: it is what detects a daemon that's already
+	// running, before anything else is bound or started.
 	ln, err := listen(cfg.Paths.Socket)
 	if err != nil {
 		return nil, err
 	}
 	d := &Daemon{
-		cfg:      cfg,
-		log:      log,
-		registry: reg,
-		listener: ln,
-		done:     make(chan struct{}),
+		cfg:        cfg,
+		log:        log,
+		registry:   reg,
+		listener:   ln,
+		supervisor: supervisor.New(log),
+		served:     map[string]served{},
+		done:       make(chan struct{}),
+	}
+	d.proxy, err = proxy.Start(proxy.Config{
+		Addr:       cfg.ProxyAddr,
+		StorageDir: cfg.Paths.CertStorage(),
+		Router:     router{d},
+		LogErrors:  cfg.Logger != nil,
+	})
+	if err != nil {
+		ln.Close()
+		return nil, err
+	}
+	for _, p := range reg.Projects() {
+		d.startProject(context.Background(), p)
 	}
 	d.server = &http.Server{
 		Handler:           d.routes(),
@@ -75,8 +111,13 @@ func Start(cfg Config) (*Daemon, error) {
 		}
 		close(d.done)
 	}()
-	log.Info("daemon started", "socket", cfg.Paths.Socket)
+	log.Info("daemon started", "socket", cfg.Paths.Socket, "proxy", d.proxy.Addr())
 	return d, nil
+}
+
+// ProxyAddr is the address the HTTPS proxy is listening on.
+func (d *Daemon) ProxyAddr() net.Addr {
+	return d.proxy.Addr()
 }
 
 // Wait blocks until the daemon stops serving and returns why.
@@ -85,13 +126,17 @@ func (d *Daemon) Wait() error {
 	return d.serveErr
 }
 
-// Shutdown stops accepting requests, waits for in-flight ones to finish and
-// removes the socket.
+// Shutdown stops accepting API requests, waits for in-flight ones to finish
+// and removes the socket, then stops the proxy and every Process.
 func (d *Daemon) Shutdown(ctx context.Context) error {
 	err := d.server.Shutdown(ctx)
 	if werr := d.Wait(); err == nil {
 		err = werr
 	}
+	if perr := d.proxy.Stop(); err == nil {
+		err = perr
+	}
+	d.supervisor.StopAll(ctx)
 	return err
 }
 

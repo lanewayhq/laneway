@@ -35,7 +35,7 @@ func TestBinary(t *testing.T) {
 
 	startDaemon := func() *exec.Cmd {
 		t.Helper()
-		cmd := exec.Command(bin, "daemon")
+		cmd := exec.Command(bin, "daemon", "--https-addr", "127.0.0.1:0")
 		cmd.Env = env
 		if err := cmd.Start(); err != nil {
 			t.Fatal(err)

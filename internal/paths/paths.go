@@ -42,3 +42,15 @@ func FromEnv(getenv func(string) string) (Paths, error) {
 func (p Paths) Registry() string {
 	return filepath.Join(p.StateDir, "registry.json")
 }
+
+// CertStorage is the directory the proxy keeps Portby's local CA and every
+// issued certificate in.
+func (p Paths) CertStorage() string {
+	return filepath.Join(p.StateDir, "certs")
+}
+
+// CARootCert is Portby's local root CA certificate (PEM), the one file a
+// browser or client needs to trust Portby's Domains.
+func (p Paths) CARootCert() string {
+	return filepath.Join(p.CertStorage(), "pki", "authorities", "local", "root.crt")
+}

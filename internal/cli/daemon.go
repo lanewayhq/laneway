@@ -13,6 +13,8 @@ import (
 // or SIGTERM).
 func runDaemon(ctx context.Context, env Env, args []string) error {
 	fs := newFlags(env, "daemon")
+	httpsAddr := fs.String("https-addr", daemon.DefaultProxyAddr,
+		"loopback `address` the HTTPS proxy listens on")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -21,8 +23,9 @@ func runDaemon(ctx context.Context, env Env, args []string) error {
 		return err
 	}
 	d, err := daemon.Start(daemon.Config{
-		Paths:  p,
-		Logger: slog.New(slog.NewTextHandler(env.Stderr, nil)),
+		Paths:     p,
+		Logger:    slog.New(slog.NewTextHandler(env.Stderr, nil)),
+		ProxyAddr: *httpsAddr,
 	})
 	if err != nil {
 		return err

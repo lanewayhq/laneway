@@ -75,7 +75,8 @@ func (d *Daemon) Start() {
 	if d.running != nil {
 		return
 	}
-	cfg := daemon.Config{Paths: d.Paths}
+	// Port 0: tests never bind fixed ports.
+	cfg := daemon.Config{Paths: d.Paths, ProxyAddr: "127.0.0.1:0"}
 	for _, opt := range d.opts {
 		opt(&cfg)
 	}

@@ -47,7 +47,8 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 			Main: checkout.Main(),
 		},
 	}
-	err = d.registry.AddProject(registry.Project{Name: name, Path: checkout.MainDir})
+	project := registry.Project{Name: name, Path: checkout.MainDir}
+	err = d.registry.AddProject(project)
 	switch {
 	case errors.Is(err, registry.ErrAlreadyLinked):
 		existing, _ := d.registry.ProjectAt(checkout.MainDir)
@@ -61,6 +62,8 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 		}
 	case err != nil:
 		return api.LinkResponse{}, err
+	default:
+		d.startProject(ctx, project)
 	}
 	return res, nil
 }
