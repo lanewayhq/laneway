@@ -13,7 +13,6 @@ import (
 	"github.com/mrsafalpiya/portby.dev/internal/naming"
 	"github.com/mrsafalpiya/portby.dev/internal/provision"
 	"github.com/mrsafalpiya/portby.dev/internal/proxy"
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
 	"github.com/mrsafalpiya/portby.dev/internal/supervisor"
 )
@@ -127,7 +126,7 @@ func (d *Daemon) bootWorktree(s *served) (string, error) {
 		return "", err
 	}
 	d.applyServedEnvPatch(s)
-	cfg, err := recipe.ResolveDir(s.dir)
+	cfg, err := d.resolveWorktree(s.ctx, s.dir)
 	if err != nil {
 		return "", fmt.Errorf("Project %q could not be started: %w", s.project, err)
 	}
@@ -154,6 +153,7 @@ func (d *Daemon) bootWorktree(s *served) (string, error) {
 	timeout := cmp.Or(cfg.StartTimeout, StartTimeout)
 	ctx, cancel := context.WithTimeout(s.ctx, timeout)
 	defer cancel()
+	cfg.apply(specs, primary)
 	if err := d.supervisor.StartGroup(ctx, s.group, specs); err != nil {
 		return "", fmt.Errorf("Project %q could not be started: %w", s.project, err)
 	}

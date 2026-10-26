@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 
 	"github.com/mrsafalpiya/portby.dev/internal/client"
@@ -25,8 +26,11 @@ type Env struct {
 	// Dir is the working directory commands act on.
 	Dir    string
 	Getenv func(string) string
-	// Stdin is where commands read answers to questions; nil reads as
-	// empty, which answers no.
+	// Environ returns the whole environment, for commands Portby runs
+	// (`portby exec`) and Runtime resolution. If nil, os.Environ.
+	Environ func() []string
+	// Stdin is where commands read answers to questions, and what `portby
+	// exec` passes to its command; nil reads as empty, which answers no.
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
@@ -51,6 +55,7 @@ type command struct {
 var commands = map[string]command{
 	"daemon":   {"Run the Portby daemon in the foreground", runDaemon},
 	"doctor":   {"Check that Portby is set up and working", runDoctor},
+	"exec":     {"Run a command in the current Worktree with its Runtimes", runExec},
 	"init":     {"Write the resolved config to portby.toml", runInit},
 	"install":  {"Set up Portby on this machine (service, ports 80/443, CA trust)", runInstall},
 	"link":     {"Link the current git repository as a Project", runLink},
@@ -158,6 +163,14 @@ func apiClient(env Env) (*client.Client, error) {
 		return nil, err
 	}
 	return client.New(p.Socket), nil
+}
+
+// environOf returns the environment commands run with.
+func environOf(env Env) []string {
+	if env.Environ != nil {
+		return env.Environ()
+	}
+	return os.Environ()
 }
 
 // platformOf returns the Platform commands act on.

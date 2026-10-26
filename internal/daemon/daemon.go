@@ -45,6 +45,11 @@ type Config struct {
 	// ProxyAddr is the HTTPS proxy's listen address, DefaultProxyAddr if
 	// empty. It must be a loopback address; tests use port 0.
 	ProxyAddr string
+	// Env is the environment Processes start from, before their Worktree's
+	// Runtimes are resolved into it (package runtimes): its PATH is where
+	// mise, or without mise the Runtimes themselves, are looked up. Nil
+	// means the daemon's own environment.
+	Env []string
 	// WorktreeRescanInterval is how often every Project's git worktree
 	// registry is rescanned even without file system events;
 	// watcher.DefaultRescanInterval if zero.
@@ -101,6 +106,9 @@ func Start(cfg Config) (*Daemon, error) {
 	}
 	if cfg.Clock == nil {
 		cfg.Clock = clock.Real()
+	}
+	if cfg.Env == nil {
+		cfg.Env = os.Environ()
 	}
 	reg, err := registry.Open(cfg.Paths.Registry())
 	if err != nil {

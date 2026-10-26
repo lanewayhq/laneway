@@ -2,9 +2,11 @@ package e2e
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
 	"github.com/mrsafalpiya/portby.dev/internal/platform"
 	"github.com/mrsafalpiya/portby.dev/internal/platform/platformtest"
 	"github.com/mrsafalpiya/portby.dev/internal/testkit"
@@ -118,4 +120,56 @@ func assertCheck(t *testing.T, out, status, check, detail string) {
 		return
 	}
 	t.Fatalf("doctor output has no %q check:\n%s", check, out)
+}
+
+func TestDoctorReportsTheRuntimesResolvedForTheCurrentWorktree(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	miseBin := filepath.Join(d.Home, "mise-installs", "php", "bin")
+	testkit.StubPHP(t, miseBin, "8.4.2", "Core", "mbstring")
+	testkit.StubMise(t, d.Bin, map[string]string{"PATH": miseBin + ":" + d.Path})
+	testkit.StubNode(t, d.Bin, "v22.11.0")
+	repo := gitfixture.New(t, "doctor-runtimes").
+		WriteFile("composer.json", `{"require": {"php": "^8.4", "ext-mbstring": "*"}}`).
+		WriteFile("package.json", `{"engines": {"node": ">=20"}}`).
+		WriteFile("app/readme.txt", "hi").
+		Commit("a PHP and Node Project")
+
+	res := d.RunCLI(filepath.Join(repo.Dir, "app"), "doctor")
+
+	assertCheck(t, res.Stdout, "ok", "php", "8.4.2 at "+filepath.Join(miseBin, "php")+" (through mise)")
+	assertCheck(t, res.Stdout, "ok", "node", "22.11.0 at "+filepath.Join(d.Bin, "node")+" (from PATH)")
+}
+
+func TestDoctorReportsRuntimeMismatchesAndMissingRuntimes(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	testkit.StubNode(t, d.Bin, "v18.20.0")
+	repo := gitfixture.New(t, "doctor-mismatch").
+		WriteFile("composer.json", `{"require": {"php": "^8.3"}}`).
+		WriteFile("package.json", `{"engines": {"node": "^20 || ^22"}}`).
+		Commit("a PHP and Node Project")
+
+	res := d.RunCLI(repo.Dir, "doctor")
+
+	assertCheck(t, res.Stdout, "warn", "php", "PHP was not found through mise or on PATH")
+	assertCheck(t, res.Stdout, "warn", "node", `Node 18.20.0 doesn't satisfy engines.node "^20 || ^22" in package.json`)
+	assertContains(t, res.Stdout, "fix: install a matching version with mise: `mise use php@8.3`")
+	assertContains(t, res.Stdout, "fix: install a matching version with mise: `mise use node@20`")
+}
+
+func TestDoctorFallsBackToPathWhenMiseFails(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	testkit.WriteExecutable(t, d.Bin, "mise",
+		"echo 'mise ERROR Config files in /work/shop/mise.toml are not trusted.' >&2; exit 1\n")
+	testkit.StubPHP(t, d.Bin, "8.4.0")
+	repo := gitfixture.New(t, "doctor-mise-fails").
+		WriteFile("composer.json", `{"require": {"php": "^8.4"}}`).
+		Commit("a PHP Project")
+
+	res := d.RunCLI(repo.Dir, "doctor")
+
+	assertCheck(t, res.Stdout, "warn", "mise env", "Runtimes come from PATH: mise ERROR Config files in /work/shop/mise.toml are not trusted.")
+	assertCheck(t, res.Stdout, "ok", "php", "8.4.0 at "+filepath.Join(d.Bin, "php")+" (from PATH)")
 }
