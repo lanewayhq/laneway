@@ -50,6 +50,11 @@ type Config struct {
 	// ProxyAddr is the HTTPS proxy's listen address, DefaultProxyAddr if
 	// empty. It must be a loopback address; tests use port 0.
 	ProxyAddr string
+	// HTTPAddr is where plain HTTP is redirected to HTTPS from,
+	// DefaultHTTPAddr if empty. It must be a loopback address; tests use
+	// port 0. If it can't be bound the daemon logs why and runs without
+	// it (`portby doctor` reports the port's holder).
+	HTTPAddr string
 	// Env is the environment Processes start from, before their Worktree's
 	// Runtimes are resolved into it (package runtimes): its PATH is where
 	// mise, or without mise the Runtimes themselves, are looked up. Nil
@@ -82,6 +87,9 @@ var DefaultServiceHosts = []string{"127.0.0.1", "::1"}
 // DefaultProxyAddr is where browsers expect HTTPS.
 const DefaultProxyAddr = "127.0.0.1:443"
 
+// DefaultHTTPAddr is where browsers expect plain HTTP.
+const DefaultHTTPAddr = "127.0.0.1:80"
+
 // Daemon is a running daemon.
 type Daemon struct {
 	cfg      Config
@@ -94,6 +102,7 @@ type Daemon struct {
 
 	supervisor *supervisor.Supervisor
 	proxy      *proxy.Proxy
+	redirect   *proxy.Redirect // nil if HTTPAddr couldn't be bound
 	servedMu   sync.Mutex
 	served     map[string]*served // Domain → what is served there
 
@@ -138,6 +147,9 @@ func Start(cfg Config) (*Daemon, error) {
 	}
 	if cfg.ProxyAddr == "" {
 		cfg.ProxyAddr = DefaultProxyAddr
+	}
+	if cfg.HTTPAddr == "" {
+		cfg.HTTPAddr = DefaultHTTPAddr
 	}
 	if cfg.DashboardDomain == "" {
 		cfg.DashboardDomain = dashboard.DefaultDomain
@@ -202,7 +214,12 @@ func Start(cfg Config) (*Daemon, error) {
 		ln.Close()
 		return nil, err
 	}
+	_, httpsPort, _ := net.SplitHostPort(d.proxy.Addr().String())
+	if d.redirect, err = proxy.StartRedirect(cfg.HTTPAddr, httpsPort); err != nil {
+		log.Error("not redirecting plain HTTP to HTTPS", "addr", cfg.HTTPAddr, "err", err)
+	}
 	if err := d.startDashboard(); err != nil {
+		d.stopRedirect(context.Background())
 		d.proxy.Stop()
 		ln.Close()
 		return nil, err
@@ -214,6 +231,7 @@ func Start(cfg Config) (*Daemon, error) {
 	})
 	if err != nil {
 		d.dashboard.Close()
+		d.stopRedirect(context.Background())
 		d.proxy.Stop()
 		d.services.Close(context.Background())
 		ln.Close()
@@ -246,6 +264,22 @@ func (d *Daemon) ProxyAddr() net.Addr {
 	return d.proxy.Addr()
 }
 
+// HTTPAddr is the address plain HTTP is redirected to HTTPS from, or nil if
+// it couldn't be bound.
+func (d *Daemon) HTTPAddr() net.Addr {
+	if d.redirect == nil {
+		return nil
+	}
+	return d.redirect.Addr()
+}
+
+func (d *Daemon) stopRedirect(ctx context.Context) error {
+	if d.redirect == nil {
+		return nil
+	}
+	return d.redirect.Stop(ctx)
+}
+
 // Wait blocks until the daemon stops serving and returns why.
 func (d *Daemon) Wait() error {
 	<-d.done
@@ -268,6 +302,9 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 	}
 	os.Remove(d.dashboardSocket())
 	d.watcher.Close()
+	if rerr := d.stopRedirect(ctx); err == nil {
+		err = rerr
+	}
 	if perr := d.proxy.Stop(); err == nil {
 		err = perr
 	}

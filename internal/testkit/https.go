@@ -22,6 +22,20 @@ func (d *Daemon) ProxyAddr() string {
 	return d.running.ProxyAddr().String()
 }
 
+// HTTPAddr is the address the daemon redirects plain HTTP to HTTPS from.
+// Like ProxyAddr, it changes on every (re)start.
+func (d *Daemon) HTTPAddr() string {
+	d.t.Helper()
+	if d.running == nil {
+		d.t.Fatal("testkit: HTTPAddr called while the daemon is stopped")
+	}
+	addr := d.running.HTTPAddr()
+	if addr == nil {
+		d.t.Fatal("testkit: the daemon isn't redirecting plain HTTP")
+	}
+	return addr.String()
+}
+
 // CAPool returns a cert pool holding only Portby's local root CA, read from
 // the daemon's home the way `portby install` would trust it.
 func (d *Daemon) CAPool() *x509.CertPool {

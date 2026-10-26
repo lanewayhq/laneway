@@ -256,6 +256,9 @@ type DaemonInfo struct {
 	PID int `json:"pid"`
 	// ProxyAddr is the address the HTTPS proxy is listening on.
 	ProxyAddr string `json:"proxyAddr"`
+	// HTTPAddr is the address plain HTTP is redirected to HTTPS from; ""
+	// if the daemon couldn't bind it.
+	HTTPAddr string `json:"httpAddr,omitempty"`
 }
 
 // LogLine is one line of a Process's output, from GET /v1/logs.

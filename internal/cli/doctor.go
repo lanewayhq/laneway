@@ -74,7 +74,11 @@ func runDoctor(ctx context.Context, env Env, args []string) error {
 		r.check(statusFail, "daemon", daemonErr.Error(),
 			"run `portby install`, or `systemctl --user start portby` if it is installed")
 	} else {
-		r.check(statusOK, "daemon", fmt.Sprintf("running (pid %d, HTTPS on %s)", info.PID, info.ProxyAddr), "")
+		detail := fmt.Sprintf("running (pid %d, HTTPS on %s", info.PID, info.ProxyAddr)
+		if info.HTTPAddr != "" {
+			detail += ", HTTP redirect on " + info.HTTPAddr
+		}
+		r.check(statusOK, "daemon", detail+")", "")
 	}
 
 	checkService(ctx, r, plat)
@@ -195,11 +199,9 @@ func checkPort(ctx context.Context, r *report, plat platform.Platform, port, dae
 	case len(others) > 0:
 		r.check(statusFail, name, "in use by "+strings.Join(others, ", "),
 			fmt.Sprintf("stop it or move it off port %d; Portby needs this port", port))
-	case port == httpsPort:
+	default:
 		r.check(statusFail, name, "free, but Portby is not listening on it",
 			"start the daemon with `portby install`; if it is running, see `journalctl --user -u portby.service`")
-	default:
-		r.check(statusOK, name, "free", "")
 	}
 }
 

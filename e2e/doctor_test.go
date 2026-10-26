@@ -18,6 +18,7 @@ func TestDoctorReportsAHealthySetup(t *testing.T) {
 	d.MustRunCLI(d.Home, "install")
 	// The in-process daemon is this test process.
 	d.Platform.SetPortHolders(443, platform.Holder{Program: "portby", PID: os.Getpid()})
+	d.Platform.SetPortHolders(80, platform.Holder{Program: "portby", PID: os.Getpid()})
 	d.Platform.SetContainerEngine(platform.Engine{Name: "podman", Address: "unix:///run/user/1000/podman/podman.sock"})
 	d.Platform.SetMise("2026.10.4 linux-x64")
 
@@ -26,7 +27,7 @@ func TestDoctorReportsAHealthySetup(t *testing.T) {
 	assertCheck(t, res.Stdout, "ok", "daemon", "running")
 	assertCheck(t, res.Stdout, "ok", "service", "")
 	assertCheck(t, res.Stdout, "ok", "port 443", "bound by Portby")
-	assertCheck(t, res.Stdout, "ok", "port 80", "free")
+	assertCheck(t, res.Stdout, "ok", "port 80", "bound by Portby")
 	assertCheck(t, res.Stdout, "ok", "port permission", "")
 	assertCheck(t, res.Stdout, "ok", "CA in "+platformtest.LinuxStore, "trusted")
 	assertCheck(t, res.Stdout, "ok", "container engine", "podman")
@@ -56,6 +57,7 @@ func TestDoctorReportsWhatIsNotSetUp(t *testing.T) {
 		t.Fatalf("doctor exited 0 before install:\n%s", res.Output())
 	}
 	assertCheck(t, res.Stdout, "FAIL", "service", "not installed")
+	assertCheck(t, res.Stdout, "FAIL", "port 80", "not listening")
 	assertCheck(t, res.Stdout, "FAIL", "port permission", "")
 	assertCheck(t, res.Stdout, "FAIL", "CA in "+platformtest.LinuxStore, "not trusted")
 	assertCheck(t, res.Stdout, "FAIL", "container engine", "")

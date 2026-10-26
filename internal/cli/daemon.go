@@ -15,6 +15,8 @@ func runDaemon(ctx context.Context, env Env, args []string) error {
 	fs := newFlags(env, "daemon")
 	httpsAddr := fs.String("https-addr", daemon.DefaultProxyAddr,
 		"loopback `address` the HTTPS proxy listens on")
+	httpAddr := fs.String("http-addr", daemon.DefaultHTTPAddr,
+		"loopback `address` plain HTTP is redirected to HTTPS from")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -26,6 +28,7 @@ func runDaemon(ctx context.Context, env Env, args []string) error {
 		Paths:     p,
 		Logger:    slog.New(slog.NewTextHandler(env.Stderr, nil)),
 		ProxyAddr: *httpsAddr,
+		HTTPAddr:  *httpAddr,
 	})
 	if err != nil {
 		return err

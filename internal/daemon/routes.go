@@ -154,7 +154,11 @@ func (d *Daemon) handleGC(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Daemon) handleDaemonInfo(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, api.DaemonInfo{PID: os.Getpid(), ProxyAddr: d.proxy.Addr().String()})
+	info := api.DaemonInfo{PID: os.Getpid(), ProxyAddr: d.proxy.Addr().String()}
+	if addr := d.HTTPAddr(); addr != nil {
+		info.HTTPAddr = addr.String()
+	}
+	writeJSON(w, http.StatusOK, info)
 }
 
 func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {

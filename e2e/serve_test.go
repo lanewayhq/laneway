@@ -192,3 +192,54 @@ func TestDaemonRefusesANonLoopbackProxyAddress(t *testing.T) {
 		t.Fatalf("daemon.Start with a non-loopback proxy address: err = %v, want a loopback error", err)
 	}
 }
+
+func TestPlainHTTPRedirectsToTheSameURLOverHTTPS(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	_, httpsPort, _ := net.SplitHostPort(d.ProxyAddr())
+	client := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		Timeout:       10 * time.Second,
+	}
+	req, err := http.NewRequest(http.MethodGet, "http://"+d.HTTPAddr()+"/orders?page=2", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Host = "serve-redirect.localhost"
+
+	res, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+
+	if res.StatusCode != http.StatusPermanentRedirect {
+		t.Fatalf("status = %d, want 308", res.StatusCode)
+	}
+	want := "https://serve-redirect.localhost:" + httpsPort + "/orders?page=2"
+	if got := res.Header.Get("Location"); got != want {
+		t.Fatalf("Location = %q, want %q", got, want)
+	}
+}
+
+func TestPlainHTTPOnlyRedirectsLocalhostNames(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	req, err := http.NewRequest(http.MethodGet, "http://"+d.HTTPAddr()+"/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Host = "example.com"
+	client := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		Timeout:       10 * time.Second,
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("status for example.com = %d, want 404", res.StatusCode)
+	}
+}
