@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -41,7 +42,12 @@ func (d *Daemon) startProject(ctx context.Context, p registry.Project) {
 		s.primary, _ = cfg.PrimaryProcess()
 		var specs []supervisor.Spec
 		for _, name := range slices.Sorted(maps.Keys(cfg.Processes)) {
-			specs = append(specs, supervisor.Spec{Name: name, Command: cfg.Processes[name].Command, Dir: p.Path})
+			specs = append(specs, supervisor.Spec{
+				Name:    name,
+				Command: cfg.Processes[name].Command,
+				Dir:     p.Path,
+				LogFile: filepath.Join(d.cfg.Paths.Logs(), domainOf(p), name+".log"),
+			})
 		}
 		err = d.supervisor.StartGroup(ctx, s.group, specs)
 	}

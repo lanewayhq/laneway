@@ -44,7 +44,8 @@ type command struct {
 var commands = map[string]command{
 	"daemon": {"Run the Portby daemon in the foreground", runDaemon},
 	"link":   {"Link the current git repository as a Project", runLink},
-	"status": {"List Linked Projects", runStatus},
+	"logs":   {"Show (or follow with -f) Process output", runLogs},
+	"status": {"List Linked Projects and their Processes", runStatus},
 }
 
 // usageError makes Run print the error and exit with exitUsage.
