@@ -1,10 +1,13 @@
 // Package api defines the daemon's JSON API: the request and response bodies
-// shared by the daemon, the CLI and (later) the dashboard. Changing a field
-// here changes the wire contract.
+// shared by the daemon, the CLI and the Dashboard (package dashboard, which
+// serves these routes under /api). Changing a field here changes the wire
+// contract.
 //
 // Routes (all JSON, served over the daemon's Unix socket):
 //
 //	GET  /v1/projects   -> ProjectList
+//	GET  /v1/events     -> server-sent events: "projects" (data = ProjectList) at
+//	                    once and whenever it changes (the Dashboard's live view)
 //	POST /v1/projects   LinkRequest -> LinkResponse   (Link a repository and apply
 //	                    its Env Patch; with preview, only report the Env Patch)
 //	GET  /v1/worktree?dir=<abs path> -> WorktreeInfo  (the Worktree containing dir)
@@ -64,10 +67,26 @@ type Worktree struct {
 	// Processes are the Worktree's running Processes, sorted by name.
 	// Only GET /v1/projects and the up/down/restart routes fill them in.
 	Processes []Process `json:"processes,omitempty"`
+	// Declared are the Processes the Worktree's config declares, sorted by
+	// name, whether they run or not (Processes has the ones that run).
+	// Only GET /v1/projects and GET /v1/events fill them in; empty if the
+	// config can't be read.
+	Declared []DeclaredProcess `json:"declared,omitempty"`
 	// Setup is where the Worktree is in setup. GET /v1/projects,
 	// GET /v1/worktree, POST /v1/worktree/ready and the up/down/restart
 	// routes fill it in.
 	Setup *Setup `json:"setup,omitempty"`
+}
+
+// DeclaredProcess is a Process as the Worktree's config declares it.
+type DeclaredProcess struct {
+	Name string `json:"name"`
+	// StartMode is "lazy", "always" or "manual".
+	StartMode string `json:"startMode"`
+	Primary   bool   `json:"primary,omitempty"`
+	// HTTP Processes other than the Primary one are served at
+	// <name>.<domain>.
+	HTTP bool `json:"http,omitempty"`
 }
 
 // Setup states.
@@ -238,6 +257,9 @@ const (
 	CodeUnknownWorktree = "unknown_worktree"
 	// CodeShuttingDown: the daemon stopped while the request was waiting.
 	CodeShuttingDown = "shutting_down"
+	// CodeForbidden: a request that changes state reached the Dashboard's
+	// API from somewhere other than the Dashboard's own pages.
+	CodeForbidden = "forbidden"
 )
 
 // ErrorResponse is the body of every non-2xx response.

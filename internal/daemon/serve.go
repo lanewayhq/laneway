@@ -412,6 +412,9 @@ func (r router) Begin(domain string) func() {
 
 func (r router) Upstream(ctx context.Context, domain string, wait bool) (string, error) {
 	d := r.d
+	if domain == d.cfg.DashboardDomain {
+		return d.dashboardUpstream(), nil
+	}
 	s, process, ok := d.route(domain)
 	if !ok {
 		return "", fmt.Errorf("%s: %w", domain, proxy.ErrUnknownDomain)

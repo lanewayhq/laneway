@@ -46,6 +46,12 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 		project = existing
 	} else if d.nameTaken(name) {
 		return api.LinkResponse{}, nameTakenError(name)
+	} else if domainOf(project) == d.cfg.DashboardDomain {
+		return api.LinkResponse{}, &api.Error{
+			Code: api.CodeNameTaken,
+			Message: fmt.Sprintf("the Project name %q would be served at https://%s, where the Dashboard is; "+
+				"choose a different one with --name <name>", name, d.cfg.DashboardDomain),
+		}
 	}
 	// Every Worktree's Env Patch is worked out (and, unless previewing,
 	// applied) before anything is Linked or started, so a Project whose

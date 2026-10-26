@@ -14,6 +14,7 @@ import (
 func (d *Daemon) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/projects", d.handleListProjects)
+	mux.HandleFunc("GET /v1/events", d.handleEvents)
 	mux.HandleFunc("POST /v1/projects", d.handleLink)
 	mux.HandleFunc("GET /v1/worktree", d.handleWorktree)
 	mux.HandleFunc("GET /v1/daemon", d.handleDaemonInfo)
@@ -26,15 +27,7 @@ func (d *Daemon) routes() http.Handler {
 }
 
 func (d *Daemon) handleListProjects(w http.ResponseWriter, r *http.Request) {
-	list := api.ProjectList{Projects: []api.Project{}}
-	for _, p := range d.registry.Projects() {
-		ap := d.apiProject(p)
-		for i, w := range ap.Worktrees {
-			ap.Worktrees[i] = d.withState(w)
-		}
-		list.Projects = append(list.Projects, ap)
-	}
-	writeJSON(w, http.StatusOK, list)
+	writeJSON(w, http.StatusOK, d.projectList())
 }
 
 func (d *Daemon) handleLink(w http.ResponseWriter, r *http.Request) {
