@@ -6,6 +6,7 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"net/url"
 	"path"
 	"regexp"
 	"slices"
@@ -363,7 +364,7 @@ func TestEveryFileTheDashboardLoadsIsBuiltIn(t *testing.T) {
 			queue = append(queue, path.Clean(ref))
 		}
 	}
-	for _, want := range []string{"/app.js", "/style.css", "/panels/index.js", "/panels/worktrees.js"} {
+	for _, want := range []string{"/app.js", "/style.css", "/panels/index.js", "/panels/worktrees.js", "/panels/logs.js"} {
 		if !seen[want] {
 			t.Errorf("the Dashboard never loads %s (loaded: %v)", want, slices.Sorted(maps.Keys(seen)))
 		}
@@ -383,5 +384,123 @@ func TestTheDashboardCannotBeFramedByOtherPages(t *testing.T) {
 	}
 	if csp := page.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "frame-ancestors 'none'") {
 		t.Errorf("Content-Security-Policy %q, want frame-ancestors 'none'", csp)
+	}
+}
+
+// logStream opens a Process output stream (GET /v1/logs) through the
+// Dashboard at url and returns its lines as they arrive. The channel is
+// closed when the stream ends.
+func logStream(t *testing.T, d *testkit.Daemon, url string) <-chan api.LogLine {
+	t.Helper()
+	client := d.HTTPS()
+	client.Timeout = 0
+	resp, err := client.Get(url)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	t.Cleanup(func() { resp.Body.Close() })
+	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(resp.Header.Get("Content-Type"), "application/x-ndjson") {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("GET %s: status %d, Content-Type %q:\n%s", url, resp.StatusCode, resp.Header.Get("Content-Type"), b)
+	}
+	lines := make(chan api.LogLine, 100)
+	go func() {
+		defer close(lines)
+		dec := json.NewDecoder(resp.Body)
+		for {
+			var l api.LogLine
+			if dec.Decode(&l) != nil {
+				return
+			}
+			lines <- l
+		}
+	}()
+	return lines
+}
+
+// waitForLogLine reads lines until one from process with text arrives,
+// failing the test if none does within a few seconds.
+func waitForLogLine(t *testing.T, lines <-chan api.LogLine, process, text string) {
+	t.Helper()
+	timeout := time.After(discoveryTimeout)
+	for {
+		select {
+		case l, ok := <-lines:
+			if !ok {
+				t.Fatalf("the stream ended while waiting for %s: %q", process, text)
+			}
+			if l.Process == process && l.Text == text {
+				return
+			}
+		case <-timeout:
+			t.Fatalf("timed out after %s waiting for %s: %q", discoveryTimeout, process, text)
+		}
+	}
+}
+
+// logsURL is the Dashboard's URL for the output of the Worktree at dir
+// (one Process, or all of them when process is "").
+func logsURL(dash, dir, process string, follow bool) string {
+	q := url.Values{"dir": {dir}}
+	if process != "" {
+		q.Set("process", process)
+	}
+	if follow {
+		q.Set("follow", "true")
+	}
+	return dash + "/api/v1/logs?" + q.Encode()
+}
+
+// logsProject is a Project with a Primary Process web and a Process worker
+// that writes "worker went" once the file go exists in the Worktree.
+func logsProject(t *testing.T, name string) *gitfixture.Repo {
+	t.Helper()
+	server := testkit.TestServer(t)
+	return gitfixture.New(t, name).
+		WriteFile("portby.toml", "[processes.web]\nprimary = true\ncommand = \"echo web started; exec "+server+"\"\n"+
+			"[processes.worker]\ncommand = \"echo worker ready; while [ ! -e go ]; do sleep 0.01; done; echo worker went; exec sleep 600\"\n").
+		Commit("declare web and worker")
+}
+
+func TestTheDashboardFollowsAllOfAWorktreesProcessesLabelledByName(t *testing.T) {
+	t.Parallel()
+	d, dash := dashboardDaemon(t, "dash-logs-all")
+	repo := logsProject(t, "dash-logs-all-shop")
+	d.MustRunCLI(repo.Dir, "link")
+	d.MustRunCLI(repo.Dir, "up")
+
+	lines := logStream(t, d, logsURL(dash, repo.Dir, "", true))
+	waitForLogLine(t, lines, "web", "web started")
+	waitForLogLine(t, lines, "worker", "worker ready")
+
+	// New output arrives on the open stream, without asking again.
+	repo.WriteFile("go", "")
+	waitForLogLine(t, lines, "worker", "worker went")
+
+	// The stream ends when the daemon stops, rather than holding it up.
+	d.Stop()
+	for range lines {
+	}
+}
+
+func TestTheDashboardShowsOneProcesssRecentOutputEvenAfterItStopped(t *testing.T) {
+	t.Parallel()
+	d, dash := dashboardDaemon(t, "dash-logs-one")
+	repo := logsProject(t, "dash-logs-one-shop")
+	d.MustRunCLI(repo.Dir, "link")
+	d.MustRunCLI(repo.Dir, "up")
+	lines := logStream(t, d, logsURL(dash, repo.Dir, "worker", true))
+	waitForLogLine(t, lines, "worker", "worker ready")
+	repo.WriteFile("go", "")
+	waitForLogLine(t, lines, "worker", "worker went")
+
+	d.MustRunCLI(repo.Dir, "down")
+
+	var got []string
+	for l := range logStream(t, d, logsURL(dash, repo.Dir, "worker", false)) {
+		got = append(got, l.Process+" | "+l.Text)
+	}
+	if want := []string{"worker | worker ready", "worker | worker went"}; !slices.Equal(got, want) {
+		t.Fatalf("worker's output after down:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
