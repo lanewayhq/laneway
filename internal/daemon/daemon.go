@@ -115,6 +115,10 @@ type Daemon struct {
 	orphanTimer   clock.Timer
 	orphanRetryAt time.Time // after a failed drop, when to try again
 	orphansClosed bool
+	// orphanSweeping is set while due Orphans are being dropped;
+	// orphanDropMu serialises dropping (sweeps and gc).
+	orphanSweeping bool
+	orphanDropMu   sync.Mutex
 
 	// closing is closed (under syncMu) when Shutdown begins. It ends
 	// streaming responses, and Worktree syncs that start afterwards don't

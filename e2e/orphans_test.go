@@ -517,3 +517,77 @@ func TestOrphansThatCannotBeDroppedAreTriedAgainLater(t *testing.T) {
 	clk.Advance(daemon.OrphanRetry)
 	waitForOrphans(t, d)
 }
+
+// mysqlDatabases lists the databases on the MySQL Service at port.
+func mysqlDatabases(t *testing.T, d *testkit.Daemon, port int) []string {
+	t.Helper()
+	conn := dialMySQL(t, d, port, "")
+	defer conn.Close()
+	return myColumn(t, conn, "SHOW DATABASES")
+}
+
+func TestARemovedWorktreesMySQLDatabasesAreOrphansDroppedAfter24HoursOrByGc(t *testing.T) {
+	t.Parallel()
+	d, clk := orphanDaemon(t)
+	repo := mysqlProject(t, "orphan-mysql", `test = "on"`)
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	wt := repo.AddWorktree("feature")
+	d.MustRunCLI(wt.Dir, "worktree", "ready")
+	conn := dialMySQL(t, d, 3306, "")
+	for _, db := range []string{"orphan_mysql__feature_test_test_1", "orphan_mysql__old_test_test_1", "orphan_mysql_test_test_1"} {
+		myExec(t, conn, "CREATE DATABASE `"+db+"`")
+	}
+	conn.Close()
+
+	repo.Git("worktree", "remove", wt.Dir)
+
+	waitForOrphans(t, d, "orphan_mysql__feature", "orphan_mysql__feature_test", "orphan_mysql__feature_test_test_1")
+	if s := orphan(t, d, "orphan_mysql__feature").Service; s != "mysql:8.4" {
+		t.Errorf("the Orphan's Service is %s, want mysql:8.4", s)
+	}
+	clk.Advance(daemon.OrphanGrace)
+	waitForOrphans(t, d)
+	got := mysqlDatabases(t, d, 3306)
+	for _, db := range []string{"orphan_mysql__feature", "orphan_mysql__feature_test", "orphan_mysql__feature_test_test_1"} {
+		if slices.Contains(got, db) {
+			t.Errorf("%s still exists after its grace period", db)
+		}
+	}
+
+	res := d.MustRunCLI(repo.Dir, "gc", "--yes")
+
+	assertContains(t, res.Stdout, "orphan_mysql__old_test_test_1")
+	got = mysqlDatabases(t, d, 3306)
+	if slices.Contains(got, "orphan_mysql__old_test_test_1") {
+		t.Error("gc --yes left the leftover parallel test copy")
+	}
+	if !containsAll(got, []string{"orphan_mysql", "orphan_mysql_test", "orphan_mysql_test_test_1"}) {
+		t.Errorf("the main Worktree's databases are gone: %v", got)
+	}
+}
+
+func TestOrphansThatCameDueWhileTheDaemonWasStoppedAreDroppedWhenItStarts(t *testing.T) {
+	t.Parallel()
+	d, clk := orphanDaemon(t)
+	repo := postgresProject(t, "orphan-overdue", `test = "on"`)
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	for _, name := range []string{"one", "two"} {
+		wt := repo.AddWorktree(name)
+		d.MustRunCLI(wt.Dir, "worktree", "ready")
+		repo.Git("worktree", "remove", wt.Dir)
+	}
+	waitForOrphans(t, d, "orphan_overdue__one", "orphan_overdue__one_test", "orphan_overdue__two", "orphan_overdue__two_test")
+	d.Stop()
+
+	clk.Advance(daemon.OrphanGrace + time.Hour)
+	d.Start()
+
+	waitForOrphans(t, d)
+	got := postgresDatabases(t, d, 5432)
+	for _, db := range []string{"orphan_overdue__one", "orphan_overdue__one_test", "orphan_overdue__two", "orphan_overdue__two_test"} {
+		if slices.Contains(got, db) {
+			t.Errorf("%s still exists", db)
+		}
+	}
+}

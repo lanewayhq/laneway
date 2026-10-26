@@ -34,6 +34,9 @@ func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
 		return
 	default:
 	}
+	if _, ok := d.registry.ProjectAt(p.Path); !ok {
+		return // Unlinked while this sync waited for syncMu
+	}
 	found, pending, err := d.foundWorktrees(ctx, p)
 	if err != nil {
 		d.log.Error("listing Worktrees", "project", p.Name, "err", err)

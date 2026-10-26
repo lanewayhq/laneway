@@ -186,12 +186,26 @@ func (d *Daemon) scheduleOrphanDropLocked() {
 	if d.orphanRetryAt.After(at) {
 		at = d.orphanRetryAt
 	}
-	drop := func() { d.background(func() { d.dropDueOrphans(d.stopping) }) }
 	if delay := at.Sub(d.cfg.Clock.Now()); delay > 0 {
-		d.orphanTimer = d.cfg.Clock.AfterFunc(delay, drop)
+		d.orphanTimer = d.cfg.Clock.AfterFunc(delay, func() {
+			d.orphanMu.Lock()
+			defer d.orphanMu.Unlock()
+			d.sweepOrphansLocked()
+		})
 	} else {
-		drop()
+		d.sweepOrphansLocked()
 	}
+}
+
+// sweepOrphansLocked drops the Orphans that are due in the background,
+// unless a sweep is already running (it schedules the next one when it
+// ends). The caller holds orphanMu.
+func (d *Daemon) sweepOrphansLocked() {
+	if d.orphanSweeping || d.orphansClosed {
+		return
+	}
+	d.orphanSweeping = true
+	d.background(func() { d.dropDueOrphans(d.stopping) })
 }
 
 // dropDueOrphans drops the Orphans whose grace period is over.
@@ -214,6 +228,7 @@ func (d *Daemon) dropDueOrphans(ctx context.Context) {
 	if len(errs) > 0 && ctx.Err() == nil {
 		d.orphanRetryAt = d.cfg.Clock.Now().Add(OrphanRetry)
 	}
+	d.orphanSweeping = false
 	d.scheduleOrphanDropLocked()
 }
 
@@ -223,6 +238,9 @@ func (d *Daemon) dropDueOrphans(ctx context.Context) {
 // found, with no Since) is dropped as it is. It returns the ones it
 // dropped.
 func (d *Daemon) dropOrphans(ctx context.Context, orphans []registry.Orphan) (dropped []registry.Orphan, errs []error) {
+	// A sweep and `gc` never drop at the same time.
+	d.orphanDropMu.Lock()
+	defer d.orphanDropMu.Unlock()
 	for _, batch := range byService(orphans) {
 		service := batch[0].Engine + ":" + batch[0].Version
 		e, release, err := d.dropper(ctx, batch[0].Engine, batch[0].Version)
@@ -246,7 +264,7 @@ func (d *Daemon) dropOrphan(ctx context.Context, e database.Dropper, o registry.
 	d.orphanMu.Lock()
 	defer d.orphanMu.Unlock()
 	if !o.Since.IsZero() && !slices.ContainsFunc(d.registry.Orphans(), o.Same) {
-		return fmt.Errorf("%s is no longer an Orphan", o.Database)
+		return fmt.Errorf("%s is no longer an Orphan (it was taken back, or dropped already)", o.Database)
 	}
 	if err := e.Drop(ctx, o.Database); err != nil {
 		return err
