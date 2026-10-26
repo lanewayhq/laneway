@@ -94,7 +94,8 @@ func (e *SetupError) Error() string { return e.Err.Error() }
 func (e *SetupError) Unwrap() error { return e.Err }
 
 // StartError is returned by a Router when a Domain's Primary Process failed
-// to start. The proxy shows it as Portby's error page.
+// to start, or (Crashed) crashed after it had started and is restarting or
+// has failed. The proxy shows it as Portby's error page.
 type StartError struct {
 	// Process is the Primary Process's name.
 	Process string
@@ -105,7 +106,9 @@ type StartError struct {
 	// TimedOut is set when the Process was still running but hadn't
 	// accepted a connection by the start timeout.
 	TimedOut bool
-	Err      error
+	// Crashed is set when the Process had started and has crashed since.
+	Crashed bool
+	Err     error
 }
 
 func (e *StartError) Error() string { return e.Err.Error() }

@@ -21,25 +21,34 @@ func isNavigation(r *http.Request) bool {
 }
 
 // writeStartingPage answers a browser navigation while the Domain's
-// Processes start. The page reloads itself until the app answers instead.
+// Processes start. The page reloads itself until the Primary Process answers
+// instead.
 func writeStartingPage(w http.ResponseWriter, domain string) {
 	refresh := fmt.Sprint(StartingRefresh)
 	w.Header().Set("Refresh", refresh)
 	w.Header().Set("Retry-After", refresh)
 	writePage(w, http.StatusServiceUnavailable, "Starting…",
 		fmt.Sprintf("Portby is starting the Processes for <code>%s</code>.", html.EscapeString(domain)),
-		"This page reloads by itself and shows the app as soon as it accepts connections.")
+		"This page reloads by itself and shows the Domain's page as soon as its Primary Process accepts connections.")
 }
 
-// writeStartErrorPage explains why the Domain's Primary Process didn't start.
+// writeStartErrorPage explains why the Domain's Primary Process didn't start,
+// or isn't running after a crash.
 func writeStartErrorPage(w http.ResponseWriter, domain string, e *StartError) {
 	status := http.StatusBadGateway
 	if e.TimedOut {
 		status = http.StatusGatewayTimeout
 	}
+	title, what, retry := "The Primary Process didn't start", "Portby couldn't start the Process",
+		"Fix the problem, then reload this page to start it again."
+	if e.Crashed {
+		title, what, retry = "The Primary Process crashed", "The Process crashed",
+			"Portby restarts a crashed Process after a short wait, unless it has crashed too often: then fix the problem "+
+				"and run <code>portby restart</code>. Reload this page once it is running again."
+	}
 	paragraphs := []string{
-		fmt.Sprintf("Portby couldn't start the Primary Process <code>%s</code> for <code>%s</code>:",
-			html.EscapeString(e.Process), html.EscapeString(domain)),
+		fmt.Sprintf("%s <code>%s</code> serving <code>%s</code>:",
+			what, html.EscapeString(e.Process), html.EscapeString(domain)),
 		"<pre>" + html.EscapeString(e.Err.Error()) + "</pre>",
 	}
 	if e.Command != "" {
@@ -51,8 +60,8 @@ func writeStartErrorPage(w http.ResponseWriter, domain string, e *StartError) {
 	} else if e.Command != "" {
 		paragraphs = append(paragraphs, "It printed no output.")
 	}
-	paragraphs = append(paragraphs, "Fix the problem, then reload this page to start it again.")
-	writePage(w, status, "The app didn't start", paragraphs...)
+	paragraphs = append(paragraphs, retry)
+	writePage(w, status, title, paragraphs...)
 }
 
 // writeSettingUpPage is the starting page for a Domain whose Worktree is

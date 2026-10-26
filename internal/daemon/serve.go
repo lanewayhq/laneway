@@ -531,7 +531,12 @@ func (r router) Upstream(ctx context.Context, domain string, wait bool) (string,
 	ctx, cancel := context.WithTimeout(ctx, StartTimeout)
 	defer cancel()
 	if err := proc.WaitUp(ctx); err != nil {
-		return "", err
+		if ctx.Err() != nil {
+			return "", err
+		}
+		// It crashed: restarting, or failed for good.
+		return "", &proxy.StartError{Process: process, Command: proc.Command(),
+			Output: d.lastOutput(s.group, process), Crashed: true, Err: err}
 	}
 	return proc.Addr(), nil
 }

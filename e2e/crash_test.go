@@ -38,6 +38,14 @@ func TestCrashedProcessRestartsAfterBackoff(t *testing.T) {
 	if boots := countBoots(d, repo.Dir); boots != 1 {
 		t.Fatalf("Process started %d times before its backoff passed, want 1", boots)
 	}
+	// Meanwhile a browser gets the error page with the command and output.
+	page := d.Navigate("https://crash-once.localhost/")
+	if page.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status during the backoff = %d, want 502:\n%s", page.StatusCode, page.Body)
+	}
+	assertContains(t, page.Body, "restarting")
+	assertContains(t, page.Body, "--exit-when "+crash)
+	assertContains(t, page.Body, "boot\n")
 
 	clk.Advance(time.Second)
 
@@ -150,6 +158,10 @@ func TestProcessThatKeepsCrashingIsMarkedFailed(t *testing.T) {
 	}
 	assertContains(t, page.Body, "failed")
 	assertContains(t, page.Body, "portby logs web")
+	assertContains(t, page.Body, "--exit-when "+crash)
+	if n := strings.Count(page.Body, "boot\n"); n != 5 {
+		t.Fatalf("the page shows %d boots of the Process's output, want all 5:\n%s", n, page.Body)
+	}
 
 	// Once the bug is fixed, `portby up` starts it again.
 	if err := os.Remove(crash); err != nil {
