@@ -31,6 +31,13 @@ func (MySQL) Database(project, worktree, _ string) string {
 	return naming.DatabaseName(project, worktree, MySQLMaxName)
 }
 
+// TestDatabase is the Worktree's database name with "_test", the database
+// name cut short first so that the whole fits in MySQLMaxName (see
+// naming.TestDatabaseName).
+func (MySQL) TestDatabase(project, worktree, _ string) string {
+	return naming.TestDatabaseName(project, worktree, MySQLMaxName)
+}
+
 func (m MySQL) Exists(ctx context.Context, db string) (bool, error) {
 	var exists bool
 	err := m.admin(ctx, func(c *mysqlwire.Conn) error {

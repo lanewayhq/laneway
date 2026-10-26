@@ -28,15 +28,18 @@ import (
 // pattern rather than parsed:
 //
 //	SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '<db>'
-//	CREATE DATABASE `<db>`
-//	SHOW TABLES
-//	CREATE TABLE <table> (<column> <type>)
-//	INSERT INTO <table> VALUES ('<text>')
-//	SELECT <column> FROM <table>
-//	KILL QUERY <id>
+//	SELECT TABLE_NAME[, TABLE_TYPE] FROM information_schema.TABLES WHERE TABLE_SCHEMA = '<db>' …
+//	SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE … (the table's one column)
+//	SELECT … FROM information_schema.ROUTINES / TRIGGERS … (always none)
+//	CREATE DATABASE `<db>` [CHARACTER SET … COLLATE …], DROP DATABASE [IF EXISTS] `<db>`, USE `<db>`
+//	SHOW CREATE TABLE <table>, CREATE TABLE <table> (<column> <type>), DROP TABLE <table>
+//	INSERT INTO <table> (`<column>`) SELECT `<column>` FROM <table>
+//	SHOW TABLES, INSERT INTO <table> VALUES ('<text>'), SELECT <column> FROM <table>
+//	SET SESSION …, KILL QUERY <id> (accepted, no effect)
 //
-// Databases (each a set of one-column tables) are kept in the container's
-// Volume.
+// where <table> is name, `name` or `db`.`name`. Databases (each a set of
+// one-column tables) are kept in the container's Volume. There are no
+// views, routines or triggers: the slow tier copies those.
 func MySQL(ln net.Listener, spec container.Spec, data *Volume) {
 	my := &myServer{data: data}
 	for _, kv := range spec.Env {
@@ -288,17 +291,7 @@ func (my *myServer) query(s *mySession, sql string) error {
 		return s.fail(mysqlwire.NoSuchTable, "42S02", fmt.Sprintf("Table '%s.%s' doesn't exist", db, name))
 	}
 
-	switch m := (func() (m []string) {
-		for _, re := range []*regexp.Regexp{mySchemaQuery, myTablesQuery, myTableQuery, myColumnsQuery,
-			myObjectsQuery, myCreateDatabase, myDropDatabase, myUse, mySet, myKill, myShowCreate,
-			myCreateTable, myDropTable, myInsert, myInsertSelect, mySelect} {
-			if m = re.FindStringSubmatch(sql); m != nil {
-				return append(m, re.String())
-			}
-		}
-		return nil
-	})(); {
-	case m == nil && sql == "SHOW TABLES":
+	if sql == "SHOW TABLES" {
 		if s.database == "" {
 			return s.fail(1046, "3D000", "No database selected")
 		}
@@ -308,44 +301,49 @@ func (my *myServer) query(s *mySession, sql string) error {
 			tables = append(tables, []string{t})
 		}
 		return s.rows([]string{"Tables_in_" + s.database}, tables)
-	case m == nil:
-		return s.fail(1064, "42000", fmt.Sprintf("the fake MySQL doesn't understand %q", sql))
-	case m[len(m)-1] == mySchemaQuery.String():
+	}
+	if m := mySchemaQuery.FindStringSubmatch(sql); m != nil {
 		var found [][]string
 		if _, ok := my.database(m[1]); ok {
 			found = [][]string{{"utf8mb4", "utf8mb4_0900_ai_ci"}}
 		}
 		return s.rows([]string{"DEFAULT_CHARACTER_SET_NAME", "DEFAULT_COLLATION_NAME"}, found)
-	case m[len(m)-1] == myTablesQuery.String():
+	}
+	if m := myTablesQuery.FindStringSubmatch(sql); m != nil {
 		db, _ := my.database(m[1])
 		var tables [][]string
 		for _, t := range slices.Sorted(maps.Keys(db)) {
 			tables = append(tables, []string{t, "BASE TABLE"})
 		}
 		return s.rows([]string{"TABLE_NAME", "TABLE_TYPE"}, tables)
-	case m[len(m)-1] == myTableQuery.String():
+	}
+	if m := myTableQuery.FindStringSubmatch(sql); m != nil {
 		db, _ := my.database(m[1])
 		var found [][]string
 		if _, ok := db[m[2]]; ok {
 			found = [][]string{{m[2]}}
 		}
 		return s.rows([]string{"TABLE_NAME"}, found)
-	case m[len(m)-1] == myColumnsQuery.String():
+	}
+	if m := myColumnsQuery.FindStringSubmatch(sql); m != nil {
 		db, _ := my.database(m[1])
 		var found [][]string
 		if t, ok := db[m[2]]; ok {
 			found = [][]string{{t.Column}}
 		}
 		return s.rows([]string{"COLUMN_NAME"}, found)
-	case m[len(m)-1] == myObjectsQuery.String():
+	}
+	if m := myObjectsQuery.FindStringSubmatch(sql); m != nil {
 		return s.rows(strings.Split(m[1], ", "), nil) // the fake has no routines or triggers
-	case m[len(m)-1] == myCreateDatabase.String():
+	}
+	if m := myCreateDatabase.FindStringSubmatch(sql); m != nil {
 		if _, ok := my.database(m[1]); ok {
 			return s.fail(1007, "HY000", fmt.Sprintf("Can't create database '%s'; database exists", m[1]))
 		}
 		my.setDatabase(m[1], myDatabase{})
 		return s.ok()
-	case m[len(m)-1] == myDropDatabase.String():
+	}
+	if m := myDropDatabase.FindStringSubmatch(sql); m != nil {
 		if _, ok := my.database(m[2]); !ok {
 			if m[1] != "" {
 				return s.ok()
@@ -354,22 +352,26 @@ func (my *myServer) query(s *mySession, sql string) error {
 		}
 		my.data.Set(myDatabasesKey, strings.Join(slices.DeleteFunc(my.databases(), func(n string) bool { return n == m[2] }), " "))
 		return s.ok()
-	case m[len(m)-1] == myUse.String():
+	}
+	if m := myUse.FindStringSubmatch(sql); m != nil {
 		if _, ok := my.database(m[1]); !ok {
 			return noDatabase(m[1])
 		}
 		s.database = m[1]
 		return s.ok()
-	case m[len(m)-1] == mySet.String(), m[len(m)-1] == myKill.String():
+	}
+	if mySet.MatchString(sql) || myKill.MatchString(sql) {
 		return s.ok()
-	case m[len(m)-1] == myShowCreate.String():
+	}
+	if m := myShowCreate.FindStringSubmatch(sql); m != nil {
 		_, dbName, t, err := table(m, 1)
 		if t == nil {
 			return cmp.Or(err, noTable(dbName, m[2]))
 		}
 		return s.rows([]string{"Table", "Create Table"},
 			[][]string{{m[2], "CREATE TABLE `" + m[2] + "` (\n  `" + t.Column + "` text\n)"}})
-	case m[len(m)-1] == myCreateTable.String():
+	}
+	if m := myCreateTable.FindStringSubmatch(sql); m != nil {
 		db, dbName, t, err := table(m, 1)
 		if err != nil {
 			return err
@@ -380,7 +382,8 @@ func (my *myServer) query(s *mySession, sql string) error {
 		db[m[2]] = &myTable{Column: m[3], Rows: []string{}}
 		my.setDatabase(dbName, db)
 		return s.ok()
-	case m[len(m)-1] == myDropTable.String():
+	}
+	if m := myDropTable.FindStringSubmatch(sql); m != nil {
 		db, dbName, t, err := table(m, 1)
 		if t == nil {
 			return cmp.Or(err, s.fail(1051, "42S02", fmt.Sprintf("Unknown table '%s.%s'", dbName, m[2])))
@@ -388,7 +391,8 @@ func (my *myServer) query(s *mySession, sql string) error {
 		delete(db, m[2])
 		my.setDatabase(dbName, db)
 		return s.ok()
-	case m[len(m)-1] == myInsert.String():
+	}
+	if m := myInsert.FindStringSubmatch(sql); m != nil {
 		db, dbName, t, err := table(m, 1)
 		if t == nil {
 			return cmp.Or(err, noTable(dbName, m[2]))
@@ -396,7 +400,8 @@ func (my *myServer) query(s *mySession, sql string) error {
 		t.Rows = append(t.Rows, strings.ReplaceAll(m[3], "''", "'"))
 		my.setDatabase(dbName, db)
 		return s.ok()
-	case m[len(m)-1] == myInsertSelect.String():
+	}
+	if m := myInsertSelect.FindStringSubmatch(sql); m != nil {
 		db, dbName, t, err := table(m, 1)
 		if t == nil {
 			return cmp.Or(err, noTable(dbName, m[2]))
@@ -408,7 +413,8 @@ func (my *myServer) query(s *mySession, sql string) error {
 		t.Rows = append(t.Rows, from.Rows...)
 		my.setDatabase(dbName, db)
 		return s.ok()
-	default: // mySelect
+	}
+	if m := mySelect.FindStringSubmatch(sql); m != nil {
 		_, dbName, t, err := table(m, 1)
 		if t == nil {
 			return cmp.Or(err, noTable(dbName, m[2]))
@@ -419,4 +425,5 @@ func (my *myServer) query(s *mySession, sql string) error {
 		}
 		return s.rows([]string{t.Column}, rows)
 	}
+	return s.fail(1064, "42000", fmt.Sprintf("the fake MySQL doesn't understand %q", sql))
 }

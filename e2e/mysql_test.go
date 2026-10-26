@@ -230,3 +230,34 @@ func TestACopyCutShortIsCopiedAgainRatherThanKept(t *testing.T) {
 		t.Fatalf("the Worktree's database has notes %q, want the main Worktree's", got)
 	}
 }
+
+func TestWithTestDatabasesOnEachWorktreeGetsAnEmptyMySQLTestDatabaseInEnvTesting(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	repo := mysqlProject(t, "my-tdb", `test = "on"`)
+	repo.WriteFile(".env.testing", "APP_ENV=testing\nDB_CONNECTION=mysql\nDB_DATABASE=laravel_test\n").
+		Commit("add the test env")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	main := dialMySQL(t, d, 3306, "my_tdb")
+	myExec(t, main, "CREATE TABLE notes (body text)")
+	myExec(t, main, "INSERT INTO notes VALUES ('main-data')")
+
+	wt := repo.AddWorktree("Feature.T")
+	d.MustRunCLI(wt.Dir, "worktree", "ready")
+
+	testing := filepath.Join(wt.Dir, ".env.testing")
+	for key, want := range map[string]string{"APP_ENV": "testing", "DB_DATABASE": "my_tdb__feature_t_test",
+		"DB_HOST": d.ServiceHost(), "DB_PORT": "3306", "DB_USERNAME": "portby", "DB_PASSWORD": "portby"} {
+		if got := envValue(t, testing, key); got != want {
+			t.Errorf(".env.testing has %s=%s, want %s", key, got, want)
+		}
+	}
+	if tables := myColumn(t, dialMySQL(t, d, 3306, "my_tdb__feature_t_test"), "SHOW TABLES"); len(tables) != 0 {
+		t.Fatalf("the Test Database has tables %v, want none (never copied)", tables)
+	}
+	// The Worktree's own database is still the copy.
+	if got := envValue(t, filepath.Join(wt.Dir, ".env"), "DB_DATABASE"); got != "my_tdb__feature_t" {
+		t.Fatalf(".env has DB_DATABASE=%s, want the Worktree's own database", got)
+	}
+}
