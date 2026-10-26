@@ -69,6 +69,14 @@ func (c *Client) Daemon(ctx context.Context) (api.DaemonInfo, error) {
 	return info, err
 }
 
+// Control acts on a Worktree or one of its Processes: action is "up", "down"
+// or "restart". It returns the Worktree afterwards.
+func (c *Client) Control(ctx context.Context, action string, req api.ControlRequest) (api.Worktree, error) {
+	var w api.Worktree
+	err := c.do(ctx, http.MethodPost, "/v1/worktree/"+action, req, &w)
+	return w, err
+}
+
 // LogsRequest picks which Process output Logs returns.
 type LogsRequest struct {
 	// Dir is an absolute path inside the Worktree whose output is wanted.

@@ -1,0 +1,5 @@
+# I don't need a queue worker running all the time.
+idle_timeout = "1h"
+
+[processes.queue]
+start_mode = "lazy"

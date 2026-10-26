@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"cmp"
 	"io"
+	"maps"
 	"slices"
 	"time"
 )
@@ -57,6 +58,14 @@ func (o *output) add(l Line) {
 // lines returns the kept lines, oldest first.
 func (o *output) lines() []Line {
 	return append(slices.Clone(o.recent[o.next:]), o.recent[:o.next]...)
+}
+
+// OutputNames returns the names of group's Processes that have output kept,
+// sorted, whether or not they are still running.
+func (s *Supervisor) OutputNames(group string) []string {
+	s.outMu.Lock()
+	defer s.outMu.Unlock()
+	return slices.Sorted(maps.Keys(s.outputs[group]))
 }
 
 // outputOf returns the output kept for Process name of group, creating it.

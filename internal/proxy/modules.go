@@ -45,6 +45,7 @@ func (h *routeHandler) Provision(caddy.Context) error {
 
 func (h *routeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	domain := requestDomain(r)
+	defer h.router.Begin(domain)()
 	// Browsers are shown the starting page rather than left hanging; every
 	// other client is held until the Process is up.
 	addr, err := h.router.Upstream(r.Context(), domain, !isNavigation(r))

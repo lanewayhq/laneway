@@ -44,15 +44,7 @@ func TestLinkUsesNameFromPortbyToml(t *testing.T) {
 	assertContains(t, res.Stdout, `Linked Project "shop"`)
 
 	status := d.MustRunCLI(repo.Dir, "status")
-	assertContains(t, status.Stdout, "shop")
-	assertNotContains(t, status.Stdout, "shop-checkout ")
-}
-
-func assertNotContains(t *testing.T, got, unwanted string) {
-	t.Helper()
-	if strings.Contains(got, unwanted) {
-		t.Fatalf("output contains %q:\n%s", unwanted, got)
-	}
+	assertStatusRows(t, status.Stdout, [][2]string{{"shop", repo.Dir}})
 }
 
 func TestLinkRefusesTakenNameAndSuggestsNameFlag(t *testing.T) {

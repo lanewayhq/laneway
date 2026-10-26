@@ -19,6 +19,9 @@ func Encode(w io.Writer, l Layer) error {
 	if l.StartTimeout != nil {
 		fmt.Fprintf(&b, "start_timeout = %s\n", quote(l.StartTimeout.String()))
 	}
+	if l.IdleTimeout != nil {
+		fmt.Fprintf(&b, "idle_timeout = %s\n", quote(l.IdleTimeout.String()))
+	}
 	for _, name := range slices.Sorted(maps.Keys(l.Processes)) {
 		p := l.Processes[name]
 		if b.Len() > 0 {
@@ -30,6 +33,9 @@ func Encode(w io.Writer, l Layer) error {
 		}
 		if p.Primary != nil {
 			fmt.Fprintf(&b, "primary = %t\n", *p.Primary)
+		}
+		if p.StartMode != nil {
+			fmt.Fprintf(&b, "start_mode = %s\n", quote(*p.StartMode))
 		}
 		if p.Disabled != nil {
 			fmt.Fprintf(&b, "disabled = %t\n", *p.Disabled)

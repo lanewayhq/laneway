@@ -12,6 +12,7 @@ import (
 
 	"github.com/mrsafalpiya/portby.dev/internal/api"
 	"github.com/mrsafalpiya/portby.dev/internal/gitrepo"
+	"github.com/mrsafalpiya/portby.dev/internal/recipe"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
 )
 
@@ -52,10 +53,7 @@ func (d *Daemon) handleLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	group := checkout.Dir
 	if process != "" {
-		var names []string
-		for _, st := range d.supervisor.Processes(group) {
-			names = append(names, st.Name)
-		}
+		names := d.processNames(group)
 		if !slices.Contains(names, process) {
 			d.writeError(w, unknownProcess(process, names))
 			return
@@ -88,6 +86,22 @@ func (d *Daemon) handleLogs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+// processNames are the names of the Processes whose output can be asked for:
+// those in the Worktree's config, and any others with output kept (such as
+// one removed from the config since it ran), sorted. The Worktree's
+// directory is its group.
+func (d *Daemon) processNames(group string) []string {
+	names := d.supervisor.OutputNames(group)
+	// A broken config still leaves the kept output readable.
+	if cfg, err := recipe.ResolveDir(group); err == nil {
+		for _, p := range cfg.Processes {
+			names = append(names, p.Name)
+		}
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
 }
 
 func unknownProcess(name string, names []string) error {

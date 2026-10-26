@@ -249,9 +249,10 @@ func TestEachWorktreeHasItsOwnProcessStatesAndLogs(t *testing.T) {
 	res := d.MustRunCLI(d.Home, "status")
 	lines := strings.Split(strings.TrimRight(res.Stdout, "\n"), "\n")
 	want := [][]string{
-		{"PROJECT", "DOMAIN", "PATH", "PROCESSES"},
-		{"wt-logs", "wt-logs.localhost", repo.Dir, "web:running"},
-		{"feature-y", "feature-y.wt-logs.localhost", wt.Dir, "web:running"},
+		{"PROJECT", "DOMAIN", "PATH", "STATE", "PROCESSES"},
+		// web never accepts connections, so the Worktrees are still starting.
+		{"wt-logs", "wt-logs.localhost", repo.Dir, "starting", "web:running"},
+		{"feature-y", "feature-y.wt-logs.localhost", wt.Dir, "starting", "web:running"},
 	}
 	if len(lines) != len(want) {
 		t.Fatalf("status has %d lines, want %d:\n%s", len(lines), len(want), res.Stdout)

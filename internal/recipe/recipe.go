@@ -49,6 +49,9 @@ type Resolved struct {
 	// StartTimeout is how long the Primary Process gets to accept
 	// connections when its Worktree starts; 0 means the daemon's default.
 	StartTimeout time.Duration
+	// IdleTimeout is how long a Worktree may go without traffic before it
+	// is Idle; 0 means the global default.
+	IdleTimeout time.Duration
 	// Warnings are problems that didn't stop resolution, such as unknown
 	// keys. Each names the file it comes from.
 	Warnings []string
@@ -60,6 +63,30 @@ type Process struct {
 	Command string
 	// Primary marks the Primary Process. At most one Process has it.
 	Primary bool
+	// StartMode says when the Process runs.
+	StartMode StartMode
+}
+
+// StartMode is when a Process runs. The zero value is Lazy.
+type StartMode string
+
+const (
+	// Lazy Processes start with their Worktree on its first request and
+	// stop when it is Idle. It is the default.
+	Lazy StartMode = ""
+	// Always Processes start with the daemon and are never stopped by
+	// Idle.
+	Always StartMode = "always"
+	// Manual Processes only start through `portby up <process>`.
+	Manual StartMode = "manual"
+)
+
+// String is the Start Mode as written in config: lazy, always or manual.
+func (m StartMode) String() string {
+	if m == Lazy {
+		return "lazy"
+	}
+	return string(m)
 }
 
 // Layer is r as a config layer: what `portby init` writes to portby.toml.
@@ -73,6 +100,9 @@ func (r Resolved) Layer() config.Layer {
 	if r.StartTimeout != 0 {
 		l.StartTimeout = &r.StartTimeout
 	}
+	if r.IdleTimeout != 0 {
+		l.IdleTimeout = &r.IdleTimeout
+	}
 	if len(r.Processes)+len(r.Disabled) > 0 {
 		l.Processes = map[string]config.ProcessLayer{}
 	}
@@ -80,6 +110,10 @@ func (r Resolved) Layer() config.Layer {
 		pl := config.ProcessLayer{Command: &p.Command}
 		if p.Primary {
 			pl.Primary = &p.Primary
+		}
+		if p.StartMode != Lazy {
+			mode := p.StartMode.String()
+			pl.StartMode = &mode
 		}
 		l.Processes[p.Name] = pl
 	}
@@ -136,6 +170,9 @@ func Resolve(in Input) (Resolved, error) {
 		if l.StartTimeout != nil {
 			res.StartTimeout = *l.StartTimeout
 		}
+		if l.IdleTimeout != nil {
+			res.IdleTimeout = *l.IdleTimeout
+		}
 		for name, pl := range l.Processes {
 			p := procs[name]
 			if p == nil {
@@ -158,6 +195,12 @@ func Resolve(in Input) (Resolved, error) {
 			if pl.Disabled != nil {
 				p.disabled = *pl.Disabled
 			}
+			if pl.StartMode != nil {
+				p.StartMode = StartMode(*pl.StartMode)
+				if p.StartMode == "lazy" {
+					p.StartMode = Lazy
+				}
+			}
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(procs)) {
@@ -174,6 +217,12 @@ func Resolve(in Input) (Resolved, error) {
 	}
 	if len(res.Processes) == 1 {
 		res.Processes[0].Primary = true
+	}
+	for _, p := range res.Processes {
+		if p.Primary && p.StartMode == Manual {
+			return Resolved{}, fmt.Errorf("%s: processes.%s.start_mode: the Primary Process can't be manual, "+
+				"because requests to the Worktree need it; make it lazy or always", procs[p.Name].source, p.Name)
+		}
 	}
 	return res, nil
 }

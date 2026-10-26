@@ -18,6 +18,7 @@ func (d *Daemon) routes() http.Handler {
 	mux.HandleFunc("GET /v1/worktree", d.handleWorktree)
 	mux.HandleFunc("GET /v1/daemon", d.handleDaemonInfo)
 	mux.HandleFunc("GET /v1/logs", d.handleLogs)
+	mux.HandleFunc("POST /v1/worktree/{action}", d.handleControl)
 	return mux
 }
 
@@ -26,10 +27,7 @@ func (d *Daemon) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	for _, p := range d.registry.Projects() {
 		ap := d.apiProject(p)
 		for i, w := range ap.Worktrees {
-			for _, st := range d.supervisor.Processes(w.Path) {
-				w.Processes = append(w.Processes, api.Process{Name: st.Name, State: string(st.State)})
-			}
-			ap.Worktrees[i] = w
+			ap.Worktrees[i] = d.withState(w)
 		}
 		list.Projects = append(list.Projects, ap)
 	}
@@ -58,6 +56,19 @@ func (d *Daemon) handleWorktree(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, info)
 }
 
+func (d *Daemon) handleControl(w http.ResponseWriter, r *http.Request) {
+	var req api.ControlRequest
+	if !readJSON(w, r, &req) {
+		return
+	}
+	res, err := d.control(r.Context(), r.PathValue("action"), req)
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
 func (d *Daemon) handleDaemonInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, api.DaemonInfo{PID: os.Getpid(), ProxyAddr: d.proxy.Addr().String()})
 }
@@ -82,11 +93,13 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 // statusFor maps API error codes to HTTP statuses.
 var statusFor = map[string]int{
-	api.CodeBadRequest:     http.StatusBadRequest,
-	api.CodeNameTaken:      http.StatusConflict,
-	api.CodeNotGitRepo:     http.StatusUnprocessableEntity,
-	api.CodeNotLinked:      http.StatusNotFound,
-	api.CodeUnknownProcess: http.StatusNotFound,
+	api.CodeBadRequest:      http.StatusBadRequest,
+	api.CodeNameTaken:       http.StatusConflict,
+	api.CodeNotGitRepo:      http.StatusUnprocessableEntity,
+	api.CodeNotLinked:       http.StatusNotFound,
+	api.CodeUnknownProcess:  http.StatusNotFound,
+	api.CodeUnknownWorktree: http.StatusNotFound,
+	api.CodeStartFailed:     http.StatusBadGateway,
 
 	api.CodeInvalidConfig: http.StatusUnprocessableEntity,
 }

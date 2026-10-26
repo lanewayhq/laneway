@@ -9,6 +9,9 @@
 //	GET  /v1/worktree?dir=<abs path> -> WorktreeInfo  (the Worktree containing dir)
 //	GET  /v1/daemon     -> DaemonInfo
 //	GET  /v1/logs?dir=&process=&follow=  -> stream of LogLine, one JSON object per line
+//	POST /v1/worktree/up       ControlRequest -> Worktree  (start it, or one Process)
+//	POST /v1/worktree/down     ControlRequest -> Worktree  (stop it, or one Process)
+//	POST /v1/worktree/restart  ControlRequest -> Worktree
 //
 // GET /v1/logs acts on the Worktree containing dir. Without process it
 // returns every Process's output, interleaved in the order it was written.
@@ -46,9 +49,25 @@ type Worktree struct {
 	Main bool   `json:"main"`
 	// Domain is the hostname the Worktree is served at.
 	Domain string `json:"domain,omitempty"`
-	// Processes are the Worktree's Processes, sorted by name. Only
-	// GET /v1/projects fills them in.
+	// State is "stopped" (nothing has started it, or `portby down`
+	// stopped it), "starting", "running" or "idle" (it had no traffic
+	// for its idle timeout, so its lazy Processes were stopped). Only
+	// GET /v1/projects and the up/down/restart routes fill it in.
+	State string `json:"state,omitempty"`
+	// Processes are the Worktree's running Processes, sorted by name.
+	// Only GET /v1/projects and the up/down/restart routes fill them in.
 	Processes []Process `json:"processes,omitempty"`
+}
+
+// ControlRequest is the body of POST /v1/worktree/up, /down and /restart.
+type ControlRequest struct {
+	// Dir is an absolute path inside the Linked Project to act on.
+	Dir string `json:"dir"`
+	// Worktree picks one of the Project's Worktrees by git's name, its
+	// Domain or its path; empty means the Worktree containing Dir.
+	Worktree string `json:"worktree,omitempty"`
+	// Process names one Process; empty means the whole Worktree.
+	Process string `json:"process,omitempty"`
 }
 
 // ProjectList is the body of GET /v1/projects.
@@ -108,6 +127,11 @@ const (
 	CodeNotLinked      = "not_linked"
 	CodeUnknownProcess = "unknown_process"
 	CodeInternal       = "internal"
+	// CodeUnknownWorktree: --worktree names none of the Project's Worktrees.
+	CodeUnknownWorktree = "unknown_worktree"
+	// CodeStartFailed: `portby up` or `restart` started the Worktree, but its
+	// Primary Process exited or never accepted connections.
+	CodeStartFailed = "start_failed"
 
 	// CodeInvalidConfig: portby.toml or portby.local.toml can't be used.
 	// The message names the file and the key.
