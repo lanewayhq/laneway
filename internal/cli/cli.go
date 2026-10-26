@@ -58,6 +58,7 @@ var commands = map[string]command{
 	"down":     {"Stop the current Worktree's Processes (or one Process)", control("down")},
 	"exec":     {"Run a command in the current Worktree with its Runtimes", runExec},
 	"harness":  {"Add Portby config for a Harness (add <claude|t3>)", runHarness},
+	"info":     {"Show the current Worktree's URL, Processes, databases and Services (--json for scripts)", runInfo},
 	"init":     {"Write the resolved config to portby.toml", runInit},
 	"install":  {"Set up Portby on this machine (service, ports 80/443, CA trust)", runInstall},
 	"link":     {"Link the current git repository as a Project", runLink},

@@ -11,6 +11,8 @@
 //	POST /v1/projects   LinkRequest -> LinkResponse   (Link a repository and apply
 //	                    its Env Patch; with preview, only report the Env Patch)
 //	GET  /v1/worktree?dir=<abs path> -> WorktreeInfo  (the Worktree containing dir)
+//	GET  /v1/info?dir=<abs path> -> Info  (everything about the Worktree containing
+//	                    dir: the stable contract `portby info --json` prints)
 //	GET  /v1/daemon     -> DaemonInfo
 //	GET  /v1/logs?dir=&process=&follow=  -> stream of LogLine, one JSON object per line
 //	POST /v1/worktree/up       ControlRequest -> Worktree  (start it, or one Process)
