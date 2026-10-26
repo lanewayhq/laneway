@@ -54,6 +54,9 @@ type Resolved struct {
 	// StartTimeout is how long the Primary Process gets to accept
 	// connections when its Worktree starts; 0 means the daemon's default.
 	StartTimeout time.Duration
+	// Env is the Env Patch: env key → template, merged by key. nil if no
+	// layer declares any.
+	Env map[string]string
 	// Warnings are problems that didn't stop resolution, such as unknown
 	// keys. Each names the file it comes from.
 	Warnings []string
@@ -96,6 +99,7 @@ func (r Resolved) Layer() config.Layer {
 	for _, name := range r.Disabled {
 		l.Processes[name] = config.ProcessLayer{Disabled: &disabled}
 	}
+	l.Env = maps.Clone(r.Env)
 	return l
 }
 
@@ -145,6 +149,12 @@ func Resolve(in Input) (Resolved, error) {
 		}
 		if l.StartTimeout != nil {
 			res.StartTimeout = *l.StartTimeout
+		}
+		for key, template := range l.Env {
+			if res.Env == nil {
+				res.Env = map[string]string{}
+			}
+			res.Env[key] = template
 		}
 		for name, pl := range l.Processes {
 			p := procs[name]

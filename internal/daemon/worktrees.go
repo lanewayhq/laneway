@@ -33,29 +33,10 @@ func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
 		return
 	default:
 	}
-	list, err := gitrepo.Worktrees(ctx, p.Path)
+	found, pending, err := d.foundWorktrees(ctx, p)
 	if err != nil {
 		d.log.Error("listing Worktrees", "project", p.Name, "err", err)
 		return
-	}
-	knownAt := map[string]registry.Worktree{}
-	for _, w := range d.registry.Worktrees(p.Path) {
-		knownAt[w.Path] = w
-	}
-	var found []registry.Found
-	pending := false
-	for _, w := range list {
-		switch {
-		case w.Main || w.Gone:
-		case w.Initializing:
-			// Not ready to be read yet: keep what we know and look again.
-			pending = true
-			if k, ok := knownAt[w.Dir]; ok {
-				found = append(found, registry.Found{Name: k.Name, Path: k.Path})
-			}
-		default:
-			found = append(found, registry.Found{Name: w.Name, Path: w.Dir})
-		}
 	}
 	// Removed Worktrees stop first, so a moved one can start again at the
 	// same Domain. Added ones are served before the Registry (and so the
@@ -67,6 +48,7 @@ func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
 	}
 	for _, w := range changes.Added {
 		d.log.Info("Worktree discovered", "project", p.Name, "worktree", w.Name, "path", w.Path)
+		d.applyEnvPatch(p, linkedEnvWorktree(p, w))
 		d.serveWorktree(p, worktreeDomain(p, w), w.Path)
 	}
 	if err := d.registry.ApplyWorktrees(changes); err != nil {
@@ -86,6 +68,34 @@ func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
 	}
 }
 
+// foundWorktrees lists the Project's linked worktrees in git's worktree
+// registry, for PlanWorktrees. pending reports a worktree that git is still
+// creating, so the list should be read again soon. The caller holds syncMu.
+func (d *Daemon) foundWorktrees(ctx context.Context, p registry.Project) (found []registry.Found, pending bool, err error) {
+	list, err := gitrepo.Worktrees(ctx, p.Path)
+	if err != nil {
+		return nil, false, err
+	}
+	knownAt := map[string]registry.Worktree{}
+	for _, w := range d.registry.Worktrees(p.Path) {
+		knownAt[w.Path] = w
+	}
+	for _, w := range list {
+		switch {
+		case w.Main || w.Gone:
+		case w.Initializing:
+			// Not ready to be read yet: keep what we know and look again.
+			pending = true
+			if k, ok := knownAt[w.Dir]; ok {
+				found = append(found, registry.Found{Name: k.Name, Path: k.Path})
+			}
+		default:
+			found = append(found, registry.Found{Name: w.Name, Path: w.Dir})
+		}
+	}
+	return found, pending, nil
+}
+
 // serveKnownWorktrees serves the Project's linked Worktrees that the Registry
 // already knew about, at daemon start. (syncWorktrees only serves the ones it
 // discovers.)
@@ -98,6 +108,7 @@ func (d *Daemon) serveKnownWorktrees(p registry.Project) {
 		_, ok := d.served[domain]
 		d.servedMu.Unlock()
 		if !ok {
+			d.applyEnvPatch(p, linkedEnvWorktree(p, w))
 			d.serveWorktree(p, domain, w.Path)
 		}
 	}

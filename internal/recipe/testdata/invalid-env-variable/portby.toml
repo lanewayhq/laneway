@@ -1,0 +1,2 @@
+[env]
+APP_URL = "https://{domian}"

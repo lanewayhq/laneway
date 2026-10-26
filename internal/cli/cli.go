@@ -29,7 +29,8 @@ type Env struct {
 	// Environ returns the whole environment, for commands Portby runs
 	// (`portby exec`) and Runtime resolution. If nil, os.Environ.
 	Environ func() []string
-	// Stdin is what `portby exec` passes to its command; nil is no input.
+	// Stdin is where commands read answers to questions, and what `portby
+	// exec` passes to its command; nil reads as empty, which answers no.
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer

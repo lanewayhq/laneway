@@ -54,8 +54,10 @@ func domainOf(p registry.Project) string {
 	return naming.DomainLabel(p.Name) + ".localhost"
 }
 
-// serveProject serves the main Worktree at its Domain.
+// serveProject applies the main Worktree's Env Patch and serves it at its
+// Domain.
 func (d *Daemon) serveProject(p registry.Project) {
+	d.applyEnvPatch(p, mainEnvWorktree(p))
 	d.serveWorktree(p, domainOf(p), p.Path)
 }
 
@@ -118,6 +120,7 @@ func (d *Daemon) starting(s *served) *start {
 // and waits for the Primary Process to accept connections. It returns the
 // Primary Process's name.
 func (d *Daemon) bootWorktree(s *served) (string, error) {
+	d.applyServedEnvPatch(s)
 	cfg, err := d.resolveWorktree(s.ctx, s.dir)
 	if err != nil {
 		return "", fmt.Errorf("Project %q could not be started: %w", s.project, err)

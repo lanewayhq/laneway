@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/mrsafalpiya/portby.dev/internal/api"
+	"github.com/mrsafalpiya/portby.dev/internal/envpatch"
 	"github.com/mrsafalpiya/portby.dev/internal/gitrepo"
 	"github.com/mrsafalpiya/portby.dev/internal/recipe"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
@@ -41,6 +42,24 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 	}
 	res := api.LinkResponse{}
 	project := registry.Project{Name: name, Path: checkout.MainDir}
+	if existing, ok := d.registry.ProjectAt(checkout.MainDir); ok {
+		project = existing
+	} else if d.nameTaken(name) {
+		return api.LinkResponse{}, nameTakenError(name)
+	}
+	// Every Worktree's Env Patch is worked out (and, unless previewing,
+	// applied) before anything is Linked or started, so a Project whose
+	// templates are broken isn't Linked, and Processes never start against
+	// an unpatched .env.
+	if res.EnvPatch, err = d.linkEnvPatch(ctx, project, !req.Preview); err != nil {
+		return api.LinkResponse{}, err
+	}
+	if req.Preview {
+		_, res.AlreadyLinked = d.registry.ProjectAt(checkout.MainDir)
+		res.Project = api.Project{Name: project.Name, Path: project.Path}
+		res.Worktree = api.Worktree{Name: checkout.Name, Path: checkout.Dir, Main: checkout.Main()}
+		return res, nil
+	}
 	err = d.registry.AddProject(project)
 	switch {
 	case errors.Is(err, registry.ErrAlreadyLinked):
@@ -49,11 +68,7 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 		// Linking from a Worktree the Watcher hasn't reported yet finds it.
 		d.syncWorktrees(ctx, project)
 	case errors.Is(err, registry.ErrNameTaken):
-		return api.LinkResponse{}, &api.Error{
-			Code: api.CodeNameTaken,
-			Message: fmt.Sprintf("the Project name %q is already taken by another repository; "+
-				"choose a different one with --name <name>", name),
-		}
+		return api.LinkResponse{}, nameTakenError(name)
 	case err != nil:
 		return api.LinkResponse{}, err
 	default:
@@ -66,6 +81,54 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 		if w.Path == checkout.Dir {
 			res.Worktree = w
 		}
+	}
+	return res, nil
+}
+
+func nameTakenError(name string) error {
+	return &api.Error{
+		Code: api.CodeNameTaken,
+		Message: fmt.Sprintf("the Project name %q is already taken by another repository; "+
+			"choose a different one with --name <name>", name),
+	}
+}
+
+// nameTaken reports whether a Project is Linked as name.
+func (d *Daemon) nameTaken(name string) bool {
+	for _, p := range d.registry.Projects() {
+		if p.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// linkEnvPatch works out the Env Patch of every Worktree of p and, with
+// apply, applies it. It returns the env files that change.
+func (d *Daemon) linkEnvPatch(ctx context.Context, p registry.Project, apply bool) ([]api.EnvFilePatch, error) {
+	worktrees, err := d.projectEnvWorktrees(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	var plans []envpatch.Plan
+	for _, w := range worktrees {
+		plan, err := d.planEnvPatch(p, w)
+		if err != nil {
+			return nil, &api.Error{Code: api.CodeInvalidConfig, Message: fmt.Sprintf("the Env Patch for %s: %v", w.dir, err)}
+		}
+		plans = append(plans, plan)
+	}
+	var res []api.EnvFilePatch
+	for i, plan := range plans {
+		if plan.Empty() {
+			continue
+		}
+		if apply {
+			if err := plan.Apply(); err != nil {
+				return nil, fmt.Errorf("applying the Env Patch to %s: %w", plan.Path, err)
+			}
+		}
+		res = append(res, envPatchFor(worktrees[i], plan))
 	}
 	return res, nil
 }

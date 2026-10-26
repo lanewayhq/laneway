@@ -178,7 +178,8 @@ func (d *Daemon) RunCLI(dir string, args ...string) CLIResult {
 	return d.RunCLIWithInput(dir, "", args...)
 }
 
-// RunCLIWithInput is RunCLI with input as the command's stdin.
+// RunCLIWithInput is RunCLI with input as the command's stdin, such as
+// "y\n" to answer a confirmation.
 func (d *Daemon) RunCLIWithInput(dir, input string, args ...string) CLIResult {
 	d.t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), cliTimeout)

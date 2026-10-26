@@ -46,6 +46,10 @@ command = "worker"
 
 [processes.scheduler]
 command = "scheduler"
+
+[env]
+APP_URL = "{url}"
+APP_ENV = "local"
 `))
 }
 
@@ -165,6 +169,27 @@ func TestTheStartTimeoutIsUnsetByDefault(t *testing.T) {
 	}
 }
 
+func TestEnvPatchTemplatesMergeByKeyOverTheRecipesDefaults(t *testing.T) {
+	res := mustResolveFixture(t, "env-layers", fixtureStack{})
+
+	want := map[string]string{
+		"APP_ENV":        "local",
+		"APP_URL":        "{url}/app",
+		"SESSION_DOMAIN": "{domain}",
+		"LOG_CHANNEL":    "stderr",
+		"CACHE_PREFIX":   "{{literal}} {project}_{worktree}_",
+	}
+	if !reflect.DeepEqual(res.Env, want) {
+		t.Errorf("Env =\n  %q\nwant\n  %q", res.Env, want)
+	}
+}
+
+func TestAProjectWithoutEnvTemplatesHasNoEnvPatch(t *testing.T) {
+	if res := mustResolveFixture(t, "committed-only"); res.Env != nil {
+		t.Errorf("Env = %q, want none", res.Env)
+	}
+}
+
 func TestInvalidConfigNamesTheFileAndTheKey(t *testing.T) {
 	tests := []struct {
 		fixture string
@@ -181,6 +206,9 @@ func TestInvalidConfigNamesTheFileAndTheKey(t *testing.T) {
 		{"invalid-empty-name", config.FileName, []string{"name", "empty"}},
 		{"invalid-start-timeout", config.FileName, []string{"start_timeout"}},
 		{"invalid-start-timeout-negative", config.FileName, []string{"start_timeout", "positive"}},
+		{"invalid-env-variable", config.FileName, []string{"env.APP_URL", "{domian}", "{domain}"}},
+		{"invalid-env-key", config.FileName, []string{`env."APP URL"`, "letters, digits"}},
+		{"invalid-env-not-table", config.FileName, []string{"env", "table"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.fixture, func(t *testing.T) {
@@ -244,7 +272,7 @@ func TestResolveDirReportsInvalidConfig(t *testing.T) {
 // What `portby init` writes must mean the same thing as the config it was
 // resolved from, whether or not the Recipe still detects the Project.
 func TestTheResolvedConfigWrittenAsALayerResolvesToItself(t *testing.T) {
-	for _, fixture := range []string{"committed-only", "local-overrides", "recipe-defaults", "recipe-reenabled", "primary-moved", "start-timeout"} {
+	for _, fixture := range []string{"committed-only", "local-overrides", "recipe-defaults", "recipe-reenabled", "primary-moved", "start-timeout", "env-layers"} {
 		t.Run(fixture, func(t *testing.T) {
 			res := mustResolveFixture(t, fixture, fixtureStack{})
 
