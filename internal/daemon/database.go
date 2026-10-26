@@ -15,7 +15,7 @@ import (
 )
 
 // databaseEngine is the Engine of the database config describes, or nil if
-// the Project has no database. Each engine (#21 MySQL) adds a case here.
+// the Project has no database. Each engine adds a case here.
 // server is how to reach the Service a Service engine's databases live in;
 // naming databases doesn't need it, so the zero Server will do for that.
 func databaseEngine(db recipe.Database, server database.Server) database.Engine {
@@ -24,6 +24,8 @@ func databaseEngine(db recipe.Database, server database.Server) database.Engine 
 		return database.SQLite{Path: db.Path}
 	case "postgres":
 		return database.Postgres{Server: server}
+	case "mysql":
+		return database.MySQL{Server: server}
 	default:
 		return nil
 	}

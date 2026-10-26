@@ -62,6 +62,14 @@ func (c *Client) Worktree(ctx context.Context, dir string) (api.WorktreeInfo, er
 	return info, err
 }
 
+// Info returns everything about the Worktree containing dir, which must be
+// absolute: what `portby info` prints.
+func (c *Client) Info(ctx context.Context, dir string) (api.Info, error) {
+	var info api.Info
+	err := c.do(ctx, http.MethodGet, "/v1/info?dir="+url.QueryEscape(dir), nil, &info)
+	return info, err
+}
+
 // WorktreeReady finds the Worktree containing req.Dir, begins (or with
 // req.Retry, retries) its setup and returns its state. With req.Wait it
 // returns once the Worktree is Ready or its setup failed: check

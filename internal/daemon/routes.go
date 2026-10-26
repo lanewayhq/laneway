@@ -18,6 +18,7 @@ func (d *Daemon) routes() http.Handler {
 	mux.HandleFunc("POST /v1/projects", d.handleLink)
 	mux.HandleFunc("DELETE /v1/projects", d.handleUnlink)
 	mux.HandleFunc("GET /v1/worktree", d.handleWorktree)
+	mux.HandleFunc("GET /v1/info", d.handleInfo)
 	mux.HandleFunc("GET /v1/daemon", d.handleDaemonInfo)
 	mux.HandleFunc("GET /v1/logs", d.handleLogs)
 	mux.HandleFunc("POST /v1/worktree/ready", d.handleWorktreeReady)
@@ -59,6 +60,15 @@ func (d *Daemon) handleUnlink(w http.ResponseWriter, r *http.Request) {
 
 func (d *Daemon) handleWorktree(w http.ResponseWriter, r *http.Request) {
 	info, err := d.worktreeInfo(r.Context(), r.URL.Query().Get("dir"))
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
+func (d *Daemon) handleInfo(w http.ResponseWriter, r *http.Request) {
+	info, err := d.info(r.Context(), r.URL.Query().Get("dir"))
 	if err != nil {
 		d.writeError(w, err)
 		return
