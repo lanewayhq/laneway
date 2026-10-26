@@ -503,6 +503,11 @@ func Resolve(in Input) (Resolved, error) {
 			return Resolved{}, fmt.Errorf("%s: processes.%s.command uses {port}, but %q isn't an HTTP Process, "+
 				"so it gets no port; set processes.%s.http = true if it serves HTTP", p.commandSource, p.Name, p.Name, p.Name)
 		}
+		if !p.HTTP && strings.Contains(p.Command, "{vite_config}") {
+			return Resolved{}, fmt.Errorf("%s: processes.%s.command uses {vite_config}, but %q isn't an HTTP Process, "+
+				"so it has no host for Vite's live reload; set processes.%s.http = true if it serves HTTP",
+				p.commandSource, p.Name, p.Name, p.Name)
+		}
 		if !p.HTTP && p.StaticDir != "" {
 			return Resolved{}, fmt.Errorf("%s: processes.%s.static_dir is set, but %q isn't an HTTP Process, "+
 				"so no requests reach it; set processes.%s.http = true if it serves HTTP", p.staticDirSource, p.Name, p.Name, p.Name)

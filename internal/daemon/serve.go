@@ -184,9 +184,14 @@ func (d *Daemon) specs(s *served, cfg worktreeConfig, procs []recipe.Process) []
 		if proc.Primary {
 			primary = proc.Name
 		}
+		command, err := d.withViteConfig(s, proc)
+		if err != nil {
+			d.log.Error("writing the Vite config", "project", s.project, "process", proc.Name, "err", err)
+			command = "echo " + shellQuote("portby: could not write the Vite config: "+err.Error()) + " >&2; exit 1"
+		}
 		specs = append(specs, supervisor.Spec{
 			Name:    proc.Name,
-			Command: proc.Command,
+			Command: command,
 			HTTP:    proc.HTTP,
 			Dir:     s.dir,
 			LogFile: filepath.Join(d.cfg.Paths.Logs(), s.domain, proc.Name+".log"),
@@ -347,6 +352,7 @@ func (d *Daemon) bootWorktree(s *served, st *start) (string, error) {
 	proc, _ := d.supervisor.Process(s.group, primary)
 	err = proc.WaitUp(ctx)
 	if err == nil {
+		d.waitForRouted(ctx, s, st, started)
 		st.release = d.useServices(cfg.Services)
 		return primary, nil
 	}
@@ -360,6 +366,27 @@ func (d *Daemon) bootWorktree(s *served, st *start) (string, error) {
 			"if it needs longer, raise start_timeout in %s", primary, timeout, config.FileName)
 	}
 	return "", se
+}
+
+// waitForRouted waits, within ctx, for the other HTTP Processes in started
+// to accept connections, so the start's first page sees them up: a Laravel
+// page names Vite's address only once Vite has written public/hot, which it
+// does when it starts listening (spike #2). Only the Primary Process decides
+// whether the start succeeds; one that doesn't come up is just logged.
+func (d *Daemon) waitForRouted(ctx context.Context, s *served, st *start, started []recipe.Process) {
+	var wg sync.WaitGroup
+	for _, proc := range started {
+		p, ok := d.supervisor.Process(s.group, proc.Name)
+		if !st.routed[proc.Name] || !ok {
+			continue
+		}
+		wg.Go(func() {
+			if err := p.WaitUp(ctx); err != nil {
+				d.log.Warn("Process didn't come up with its Worktree", "project", s.project, "process", proc.Name, "err", err)
+			}
+		})
+	}
+	wg.Wait()
 }
 
 // stopProcesses stops the Worktree's Processes named in names.

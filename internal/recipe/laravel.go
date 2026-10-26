@@ -40,8 +40,11 @@ func (Laravel) Defaults(dir string) (config.Layer, error) {
 	if env.setting("QUEUE_CONNECTION", "database") != "sync" {
 		l.Processes["queue"] = config.ProcessLayer{Command: ptr("php artisan queue:work")}
 	}
-	// The vite Process (#27) goes here: an HTTP Process, served at
-	// vite.<domain>, when package.json uses laravel-vite-plugin.
+	// The vite Process: an HTTP Process, served at vite.<domain>, when
+	// package.json uses laravel-vite-plugin.
+	if usesLaravelVitePlugin(dir) {
+		l.Processes["vite"] = config.ProcessLayer{Command: ptr(viteCommand), HTTP: ptr(true)}
+	}
 	l.Env = map[string]string{"APP_URL": "{url}"}
 	l.Services = map[string]string{}
 	laravelDatabase(&l, dir, env)

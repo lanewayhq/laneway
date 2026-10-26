@@ -382,7 +382,7 @@ func TestProjectConfigLayersOverTheLaravelRecipe(t *testing.T) {
 }
 
 func TestTheLaravelRecipesConfigWrittenAsALayerResolvesToItself(t *testing.T) {
-	for _, fixture := range []string{"laravel-mysql", "laravel-pgsql", "laravel-sqlite", "laravel-sqlsrv", "laravel-queue-sync", "laravel-linked-env", "laravel-layers"} {
+	for _, fixture := range []string{"laravel-mysql", "laravel-pgsql", "laravel-sqlite", "laravel-sqlsrv", "laravel-queue-sync", "laravel-linked-env", "laravel-layers", "laravel-vite"} {
 		t.Run(fixture, func(t *testing.T) {
 			res := resolveLaravel(t, fixture)
 

@@ -111,7 +111,10 @@ var DatabaseTests = []string{"on", "off", "auto"}
 type ProcessLayer struct {
 	// Command is run with `sh -c` in the Worktree. Every `{port}` in it is
 	// replaced with the port Portby picked for the Process, which is also
-	// in $PORT.
+	// in $PORT. In an HTTP Process, every `{vite_config}` is replaced with
+	// the path of a Vite config Portby writes around the Worktree's own, for
+	// `vite --config {vite_config}`: Vite's live reload then goes through
+	// the Process's host on Portby's proxy.
 	Command *string `toml:"command"`
 	// Primary marks the Process that serves the Worktree's Domain. A Project
 	// with a single Process doesn't need to set it.

@@ -9,6 +9,9 @@
 // (checked from when it starts listening), like an app that crashes once it
 // is up. The test decides when, so the crash can't race the test's requests.
 //
+// With --ready-file it creates the given file once it is listening, so a
+// test can tell the moment it accepts connections.
+//
 // With --bind-only it stands in for an app that never finishes booting: it
 // binds the port, so nothing else can take it, but never listens, so
 // connections are refused.
@@ -51,6 +54,7 @@ func main() {
 	delay := flag.Duration("delay", 0, "how long to wait before listening")
 	bindOnly := flag.Bool("bind-only", false, "bind the port but never listen")
 	exitWhen := flag.String("exit-when", "", "once listening, exit with status 1 as soon as this file exists")
+	readyFile := flag.String("ready-file", "", "create this file once listening")
 	flag.Parse()
 	go exitWhenOrphaned()
 	if *port == "" {
@@ -81,6 +85,12 @@ func main() {
 				time.Sleep(10 * time.Millisecond)
 			}
 		}()
+	}
+	if *readyFile != "" {
+		if err := os.WriteFile(*readyFile, nil, 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, "testserver:", err)
+			os.Exit(1)
+		}
 	}
 	err = http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/ws" {
