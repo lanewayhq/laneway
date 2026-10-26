@@ -263,6 +263,73 @@ func TestAServiceStaysUpWhileAWorktreeUsingItRuns(t *testing.T) {
 	waitForServiceState(t, d, "redis", "7", "idle")
 }
 
+// alwaysServiceProject is a repo using Redis whose Processes are web, the
+// Primary Process (with the given Start Mode), and worker, always kept
+// running, and the files their pids are written to.
+func alwaysServiceProject(t *testing.T, name, webMode string) (repo *gitfixture.Repo, webPID, workerPID string) {
+	t.Helper()
+	dir := gitfixture.TempDir(t)
+	webPID, workerPID = filepath.Join(dir, "web.pid"), filepath.Join(dir, "worker.pid")
+	repo = gitfixture.New(t, name).
+		WriteFile("portby.toml", fmt.Sprintf("idle_timeout = \"1h\"\n[services]\nredis = \"7\"\n"+
+			"[processes.web]\ncommand = %q\nprimary = true\nstart_mode = %q\n"+
+			"[processes.worker]\ncommand = %q\nstart_mode = \"always\"\n",
+			"echo $$ > "+webPID+"; exec "+testkit.TestServer(t), webMode,
+			"echo $$ > "+workerPID+"; exec sleep 600")).
+		Commit("declare Processes using Redis")
+	return repo, webPID, workerPID
+}
+
+func TestAServiceStaysUpWhileAWorktreeRunsOnlyAlwaysProcesses(t *testing.T) {
+	t.Parallel()
+	d, clk := idleDaemon(t)
+	repo, _, workerPID := alwaysServiceProject(t, "svc-always", "always")
+	d.MustRunCLI(repo.Dir, "link")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	waitForPID(t, workerPID)
+
+	// Started by hand, with no Worktree using it, the Service would
+	// schedule its idle timeout at once.
+	d.MustRunCLI(d.Home, "services", "up", "redis")
+	if n := clk.Pending(); n != 0 {
+		t.Fatalf("%d timers pending while the Worktree's always Processes run, want none", n)
+	}
+
+	d.MustRunCLI(repo.Dir, "down")
+	if delay := waitForTimer(t, clk); delay != 15*time.Minute {
+		t.Fatalf("first timer after down is %s, want the Service's 15m", delay)
+	}
+	clk.Advance(15 * time.Minute)
+	waitForServiceState(t, d, "redis", "7", "idle")
+}
+
+func TestAServiceStaysUpWhileAnIdleWorktreesAlwaysProcessesRun(t *testing.T) {
+	t.Parallel()
+	d, clk := idleDaemon(t)
+	repo, webPID, workerPID := alwaysServiceProject(t, "svc-idle-always", "lazy")
+	d.MustRunCLI(repo.Dir, "link")
+	d.GetServer("https://svc-idle-always.localhost/")
+	web := waitForPID(t, webPID)
+	waitForPID(t, workerPID)
+	c := dialRedis(t, d, 6379)
+	c.do("AUTH", "portby")
+	c.conn.Close()
+
+	if delay := waitForTimer(t, clk); delay != time.Hour {
+		t.Fatalf("first timer after %s, want the Worktree's 1h idle_timeout", delay)
+	}
+	clk.Advance(time.Hour)
+	waitForState(t, d, "svc-idle-always.localhost", "idle")
+	// Idle lets go of the Services before it stops the lazy Processes.
+	waitForExit(t, web)
+	if n := clk.Pending(); n != 0 {
+		t.Fatalf("%d timers pending while the Idle Worktree's always Process runs, want none", n)
+	}
+	if state := serviceState(t, d, "redis", "7"); state != "running" {
+		t.Fatalf("Service %s while an always Process using it runs, want running", state)
+	}
+}
+
 func TestDownReleasesTheWorktreesServices(t *testing.T) {
 	t.Parallel()
 	d, clk := idleDaemon(t)

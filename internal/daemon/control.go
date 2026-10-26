@@ -151,8 +151,12 @@ func (d *Daemon) down(ctx context.Context, s *served, proc *recipe.Process) {
 	defer s.lifecycle.Unlock()
 	if proc != nil {
 		d.supervisor.Stop(ctx, s.group, proc.Name)
+		if proc.StartMode == recipe.Always && !d.runsAlways(s) {
+			releaseAlwaysServices(s)
+		}
 		return
 	}
+	releaseAlwaysServices(s)
 	s.mu.Lock()
 	if s.start != nil && isDone(s.start) {
 		s.start.releaseServices()
@@ -161,6 +165,20 @@ func (d *Daemon) down(ctx context.Context, s *served, proc *recipe.Process) {
 	s.mu.Unlock()
 	s.activity.Reset()
 	d.supervisor.StopGroup(ctx, s.group)
+}
+
+// runsAlways reports whether any of the Worktree's always Processes runs.
+func (d *Daemon) runsAlways(s *served) bool {
+	cfg, err := recipe.ResolveDir(s.dir)
+	if err != nil {
+		return false
+	}
+	for _, p := range cfg.Processes {
+		if _, running := d.supervisor.Process(s.group, p.Name); running && p.StartMode == recipe.Always {
+			return true
+		}
+	}
+	return false
 }
 
 // restart stops and starts proc, or the whole Worktree if proc is nil. A

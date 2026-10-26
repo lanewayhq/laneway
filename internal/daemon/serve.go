@@ -47,6 +47,10 @@ type served struct {
 	// lifecycle serialises changes to which Processes run: starts and
 	// going Idle.
 	lifecycle sync.Mutex
+	// alwaysServices ends the hold its always Processes have on the
+	// Worktree's Services (holdAlwaysServices); nil when there is none.
+	// Guarded by lifecycle.
+	alwaysServices func()
 
 	mu    sync.Mutex
 	start *start // the running or last start; nil until the first request
@@ -156,6 +160,7 @@ func (d *Daemon) startAlways(s *served) {
 				always = append(always, proc)
 			}
 		}
+		d.holdAlwaysServices(s, cfg.Resolved)
 		for _, spec := range d.specs(s, cfg, always) {
 			if _, err := d.startProcess(s, spec, false); err != nil {
 				d.log.Error("starting always Process", "project", s.project, "dir", s.dir, "err", err)
@@ -241,6 +246,7 @@ func (d *Daemon) stopWorktree(ctx context.Context, domain, dir string) {
 		// A startAlways that got the lock first finishes before StopGroup;
 		// one that gets it later sees s.ctx cancelled.
 		s.lifecycle.Lock()
+		releaseAlwaysServices(s)
 		s.lifecycle.Unlock()
 	}
 	d.supervisor.StopGroup(ctx, dir)
@@ -304,6 +310,7 @@ func (d *Daemon) bootWorktree(s *served, st *start) (string, error) {
 		d.log.Warn("config", "project", s.project, "warning", w)
 	}
 	d.serveServices(cfg.Services)
+	d.holdAlwaysServices(s, cfg.Resolved)
 	global, err := config.LoadGlobal(d.cfg.Paths.GlobalConfig())
 	if err != nil {
 		return "", fmt.Errorf("Project %q could not be started: %w", s.project, err)

@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -93,6 +94,29 @@ func (d *Daemon) useServices(services []recipe.Service) func() {
 			release()
 		}
 	})
+}
+
+// holdAlwaysServices makes the Worktree hold its Services up while its
+// always Processes run, whether or not its lazy ones do (it may only have
+// always Processes, or have gone Idle): they use them too. Call it, holding
+// s.lifecycle, before starting them; down and stopWorktree release the hold.
+func (d *Daemon) holdAlwaysServices(s *served, cfg recipe.Resolved) {
+	if !slices.ContainsFunc(cfg.Processes, func(p recipe.Process) bool { return p.StartMode == recipe.Always }) {
+		releaseAlwaysServices(s)
+		return
+	}
+	if s.alwaysServices == nil {
+		s.alwaysServices = d.useServices(cfg.Services)
+	}
+}
+
+// releaseAlwaysServices ends the hold of holdAlwaysServices, if any. The
+// caller holds s.lifecycle.
+func releaseAlwaysServices(s *served) {
+	if s.alwaysServices != nil {
+		s.alwaysServices()
+		s.alwaysServices = nil
+	}
 }
 
 // releaseServices ends the use of Services by the Worktree st started,
