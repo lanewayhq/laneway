@@ -19,6 +19,9 @@ func Encode(w io.Writer, l Layer) error {
 	if l.StartTimeout != nil {
 		fmt.Fprintf(&b, "start_timeout = %s\n", quote(l.StartTimeout.String()))
 	}
+	if l.IdleTimeout != nil {
+		fmt.Fprintf(&b, "idle_timeout = %s\n", quote(l.IdleTimeout.String()))
+	}
 	if l.WorktreeRoot != nil {
 		fmt.Fprintf(&b, "worktree_root = %s\n", quote(*l.WorktreeRoot))
 	}
@@ -49,6 +52,9 @@ func Encode(w io.Writer, l Layer) error {
 		}
 		if p.Primary != nil {
 			fmt.Fprintf(&b, "primary = %t\n", *p.Primary)
+		}
+		if p.StartMode != nil {
+			fmt.Fprintf(&b, "start_mode = %s\n", quote(*p.StartMode))
 		}
 		if p.HTTP != nil {
 			fmt.Fprintf(&b, "http = %t\n", *p.HTTP)

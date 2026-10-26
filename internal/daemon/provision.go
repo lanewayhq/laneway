@@ -118,7 +118,17 @@ func (d *Daemon) worktreeReady(ctx context.Context, req api.ReadyRequest) (api.W
 			}
 		}
 	}
+	retried := req.Retry && d.provisioner.Status(w.dir).State == provision.Failed
 	d.provision(p, w, req.Retry)
+	if retried {
+		// The always Processes didn't start while setup was Failed.
+		d.servedMu.Lock()
+		s := d.served[w.domain]
+		d.servedMu.Unlock()
+		if s != nil {
+			d.startAlways(s)
+		}
+	}
 	if req.Wait {
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()

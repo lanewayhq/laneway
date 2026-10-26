@@ -180,6 +180,31 @@ func TestTheStartTimeoutIsUnsetByDefault(t *testing.T) {
 	}
 }
 
+func TestStartModesAndTheIdleTimeoutMergeLaterWinning(t *testing.T) {
+	res := mustResolveFixture(t, "start-modes")
+
+	want := []recipe.Process{
+		{Name: "queue", Command: "worker", StartMode: recipe.Lazy},
+		{Name: "scheduler", Command: "scheduler", StartMode: recipe.Always},
+		{Name: "tinker", Command: "tinker", StartMode: recipe.Manual},
+		{Name: "web", Command: "serve --port={port}", Primary: true, HTTP: true, StartMode: recipe.Lazy},
+	}
+	if !reflect.DeepEqual(res.Processes, want) {
+		t.Errorf("Processes =\n  %+v\nwant\n  %+v", res.Processes, want)
+	}
+	if res.IdleTimeout != time.Hour {
+		t.Errorf("IdleTimeout = %v, want 1h", res.IdleTimeout)
+	}
+}
+
+func TestTheIdleTimeoutIsUnsetByDefault(t *testing.T) {
+	res := mustResolveFixture(t, "committed-only")
+
+	if res.IdleTimeout != 0 {
+		t.Errorf("IdleTimeout = %v, want 0 (the global default)", res.IdleTimeout)
+	}
+}
+
 func TestEnvPatchTemplatesMergeByKeyOverTheRecipesDefaults(t *testing.T) {
 	res := mustResolveFixture(t, "env-layers", fixtureStack{})
 
@@ -220,6 +245,9 @@ func TestInvalidConfigNamesTheFileAndTheKey(t *testing.T) {
 		{"invalid-port-not-http", config.FileName, []string{"processes.queue.command", "{port}", "http = true"}},
 		{"invalid-start-timeout", config.FileName, []string{"start_timeout"}},
 		{"invalid-start-timeout-negative", config.FileName, []string{"start_timeout", "positive"}},
+		{"invalid-idle-timeout-negative", config.FileName, []string{"idle_timeout", "positive"}},
+		{"invalid-start-mode", config.FileName, []string{"processes.web.start_mode", "lazy, always or manual", "eager"}},
+		{"invalid-manual-primary", config.FileName, []string{"processes.web.start_mode", "Primary Process", "manual"}},
 		{"invalid-env-variable", config.FileName, []string{"env.APP_URL", "{domian}", "{domain}"}},
 		{"invalid-env-key", config.FileName, []string{`env."APP URL"`, "letters, digits"}},
 		{"invalid-env-not-table", config.FileName, []string{"env", "table"}},
@@ -286,7 +314,7 @@ func TestResolveDirReportsInvalidConfig(t *testing.T) {
 // What `portby init` writes must mean the same thing as the config it was
 // resolved from, whether or not the Recipe still detects the Project.
 func TestTheResolvedConfigWrittenAsALayerResolvesToItself(t *testing.T) {
-	for _, fixture := range []string{"committed-only", "local-overrides", "recipe-defaults", "recipe-reenabled", "primary-moved", "start-timeout", "env-layers", "no-http"} {
+	for _, fixture := range []string{"committed-only", "local-overrides", "recipe-defaults", "recipe-reenabled", "primary-moved", "start-timeout", "env-layers", "no-http", "start-modes"} {
 		t.Run(fixture, func(t *testing.T) {
 			res := mustResolveFixture(t, fixture, fixtureStack{})
 

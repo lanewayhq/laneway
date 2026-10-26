@@ -2,6 +2,7 @@ package clock
 
 import (
 	"context"
+	"math"
 	"slices"
 	"sync"
 	"time"
@@ -66,14 +67,22 @@ func (f *Fake) Advance(d time.Duration) {
 // time must be advanced for the earliest one to run. Tests use it to learn
 // that the daemon has scheduled something, and when for.
 func (f *Fake) WaitForTimer(ctx context.Context) (time.Duration, error) {
+	return f.WaitForTimerWithin(ctx, math.MaxInt64)
+}
+
+// WaitForTimerWithin is WaitForTimer for calls due within limit of now:
+// calls due later are ignored, so a test can wait for a crash restart while
+// an idle timeout minutes away is pending too.
+func (f *Fake) WaitForTimerWithin(ctx context.Context, limit time.Duration) (time.Duration, error) {
 	for {
 		f.mu.Lock()
 		changed := f.changed
 		if len(f.timers) > 0 {
 			next := slices.MinFunc(f.timers, func(a, b *fakeTimer) int { return a.at.Compare(b.at) })
-			d := next.at.Sub(f.now)
-			f.mu.Unlock()
-			return d, nil
+			if d := next.at.Sub(f.now); d <= limit {
+				f.mu.Unlock()
+				return d, nil
+			}
 		}
 		f.mu.Unlock()
 		select {

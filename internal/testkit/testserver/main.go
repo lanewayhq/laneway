@@ -100,6 +100,11 @@ func bind(port string) error {
 	if err != nil {
 		return err
 	}
+	// Like net.Listen, so a connection in TIME_WAIT from an earlier server
+	// on this port doesn't stop it.
+	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1); err != nil {
+		return err
+	}
 	return syscall.Bind(fd, &syscall.SockaddrInet4{Port: n, Addr: [4]byte{127, 0, 0, 1}})
 }
 

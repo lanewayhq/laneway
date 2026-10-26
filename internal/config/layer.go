@@ -40,6 +40,10 @@ type Layer struct {
 	// StartTimeout is how long the Primary Process gets to accept
 	// connections when its Worktree starts, such as "90s".
 	StartTimeout *time.Duration `toml:"start_timeout"`
+	// IdleTimeout is how long a Worktree may go without requests or open
+	// connections before it is Idle and its lazy Processes stop, such as
+	// "30m". It overrides the global idle_timeout.
+	IdleTimeout *time.Duration `toml:"idle_timeout"`
 	// Env is the Env Patch: the keys Portby owns in each Worktree's .env,
 	// keyed by env key ([env] table). Values are templates such as
 	// "{url}"; see envpatch.Variables.
@@ -71,11 +75,19 @@ type ProcessLayer struct {
 	// Disabled turns off a Process an earlier layer declared, such as one
 	// from the Recipe. A later layer can set it back to false.
 	Disabled *bool `toml:"disabled"`
+	// StartMode is when the Process runs: "lazy" (the default) starts it
+	// with its Worktree on the first request and stops it when the
+	// Worktree is Idle, "always" keeps it running from when the daemon
+	// starts, and "manual" only runs it through `portby up <process>`.
+	StartMode *string `toml:"start_mode"`
 	// HTTP marks a Process that serves HTTP on its {port}. Other than the
 	// Primary Process, which always does, it is served at
 	// <process>.<domain>. Processes that aren't HTTP get no port.
 	HTTP *bool `toml:"http"`
 }
+
+// StartModes are the valid values of processes.<name>.start_mode.
+var StartModes = []string{"lazy", "always", "manual"}
 
 // LoadLayers reads dir's portby.toml and then portby.local.toml, in the
 // order they apply. Missing files are skipped.
@@ -153,6 +165,9 @@ func (l Layer) validate() error {
 	if l.StartTimeout != nil && *l.StartTimeout <= 0 {
 		return fmt.Errorf("start_timeout must be positive, such as \"90s\", not %s", *l.StartTimeout)
 	}
+	if l.IdleTimeout != nil && *l.IdleTimeout <= 0 {
+		return fmt.Errorf("idle_timeout must be positive, such as \"30m\", not %s", *l.IdleTimeout)
+	}
 	if l.WorktreeRoot != nil && strings.TrimSpace(*l.WorktreeRoot) == "" {
 		return errors.New("worktree_root is empty")
 	}
@@ -179,6 +194,9 @@ func (l Layer) validate() error {
 		p := l.Processes[name]
 		if p.Command != nil && strings.TrimSpace(*p.Command) == "" {
 			return fmt.Errorf("processes.%s.command is empty", name)
+		}
+		if p.StartMode != nil && !slices.Contains(StartModes, *p.StartMode) {
+			return fmt.Errorf("processes.%s.start_mode must be lazy, always or manual, not %q", name, *p.StartMode)
 		}
 		if p.Primary != nil && *p.Primary {
 			primaries = append(primaries, "processes."+name+".primary")

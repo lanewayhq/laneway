@@ -47,13 +47,6 @@ func TestLinkUsesNameFromPortbyToml(t *testing.T) {
 	assertStatusRows(t, status.Stdout, [][2]string{{"shop", repo.Dir}})
 }
 
-func assertNotContains(t *testing.T, got, unwanted string) {
-	t.Helper()
-	if strings.Contains(got, unwanted) {
-		t.Fatalf("output contains %q:\n%s", unwanted, got)
-	}
-}
-
 func TestLinkRefusesTakenNameAndSuggestsNameFlag(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
@@ -166,5 +159,12 @@ func TestLinkOutsideGitRepositoryFailsClearly(t *testing.T) {
 	}
 	if len(projects) != 0 {
 		t.Fatalf("projects = %+v, want none", projects)
+	}
+}
+
+func assertNotContains(t *testing.T, got, unwanted string) {
+	t.Helper()
+	if strings.Contains(got, unwanted) {
+		t.Fatalf("output contains %q:\n%s", unwanted, got)
 	}
 }

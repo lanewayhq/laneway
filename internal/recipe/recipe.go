@@ -56,6 +56,9 @@ type Resolved struct {
 	// StartTimeout is how long the Primary Process gets to accept
 	// connections when its Worktree starts; 0 means the daemon's default.
 	StartTimeout time.Duration
+	// IdleTimeout is how long a Worktree may go without traffic before it
+	// is Idle; 0 means the global default.
+	IdleTimeout time.Duration
 	// Env is the Env Patch: env key → template, merged by key. nil if no
 	// layer declares any.
 	Env map[string]string
@@ -90,6 +93,30 @@ type Process struct {
 	// a port, and those other than the Primary Process are served at
 	// <process>.<domain>.
 	HTTP bool
+	// StartMode says when the Process runs.
+	StartMode StartMode
+}
+
+// StartMode is when a Process runs. The zero value is Lazy.
+type StartMode string
+
+const (
+	// Lazy Processes start with their Worktree on its first request and
+	// stop when it is Idle. It is the default.
+	Lazy StartMode = ""
+	// Always Processes start with the daemon and are never stopped by
+	// Idle.
+	Always StartMode = "always"
+	// Manual Processes only start through `portby up <process>`.
+	Manual StartMode = "manual"
+)
+
+// String is the Start Mode as written in config: lazy, always or manual.
+func (m StartMode) String() string {
+	if m == Lazy {
+		return "lazy"
+	}
+	return string(m)
 }
 
 // Layer is r as a config layer: what `portby init` writes to portby.toml.
@@ -103,6 +130,9 @@ func (r Resolved) Layer() config.Layer {
 	if r.StartTimeout != 0 {
 		l.StartTimeout = &r.StartTimeout
 	}
+	if r.IdleTimeout != 0 {
+		l.IdleTimeout = &r.IdleTimeout
+	}
 	if len(r.Processes)+len(r.Disabled) > 0 {
 		l.Processes = map[string]config.ProcessLayer{}
 	}
@@ -114,6 +144,10 @@ func (r Resolved) Layer() config.Layer {
 		case p.HTTP, len(r.Processes) == 1:
 			// A lone Process would otherwise become the Primary Process.
 			pl.HTTP = &p.HTTP
+		}
+		if p.StartMode != Lazy {
+			mode := p.StartMode.String()
+			pl.StartMode = &mode
 		}
 		l.Processes[p.Name] = pl
 	}
@@ -200,8 +234,9 @@ func Resolve(in Input) (Resolved, error) {
 		disabled bool
 		http     *bool
 		source   string // the layer that declared the Process
-		// The layers that last set the command and http, for errors.
-		commandSource, httpSource string
+		// The layers that last set the command, http and start_mode, for
+		// errors.
+		commandSource, httpSource, startModeSource string
 	}
 	procs := map[string]*merged{}
 	for i, l := range layers {
@@ -211,6 +246,9 @@ func Resolve(in Input) (Resolved, error) {
 		}
 		if l.StartTimeout != nil {
 			res.StartTimeout = *l.StartTimeout
+		}
+		if l.IdleTimeout != nil {
+			res.IdleTimeout = *l.IdleTimeout
 		}
 		if l.WorktreeRoot != nil {
 			res.WorktreeRoot = *l.WorktreeRoot
@@ -255,6 +293,12 @@ func Resolve(in Input) (Resolved, error) {
 			if pl.Disabled != nil {
 				p.disabled = *pl.Disabled
 			}
+			if pl.StartMode != nil {
+				p.StartMode, p.startModeSource = StartMode(*pl.StartMode), l.Source
+				if p.StartMode == "lazy" {
+					p.StartMode = Lazy
+				}
+			}
 		}
 	}
 	if inherit {
@@ -291,6 +335,10 @@ func Resolve(in Input) (Resolved, error) {
 			return Resolved{}, fmt.Errorf("%s: processes.%s.http is true, but no Process is the Primary Process; "+
 				"a Worktree with HTTP Processes needs exactly one: set primary = true on the Process that serves the Domain",
 				p.httpSource, p.Name)
+		}
+		if p.Primary && p.StartMode == Manual {
+			return Resolved{}, fmt.Errorf("%s: processes.%s.start_mode: the Primary Process can't be manual, "+
+				"because requests to the Worktree need it; make it lazy or always", p.startModeSource, p.Name)
 		}
 		p.HTTP = p.Primary || (p.http != nil && *p.http)
 		if !p.HTTP && strings.Contains(p.Command, "{port}") {
