@@ -1,0 +1,4 @@
+# Serve the Domain from Octane instead of the Recipe's web Process.
+[processes.octane]
+command = "php artisan octane:start --port={port}"
+primary = true

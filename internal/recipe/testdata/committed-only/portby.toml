@@ -1,0 +1,8 @@
+name = "shop"
+
+[processes.web]
+command = "php -S 127.0.0.1:{port}"
+primary = true
+
+[processes.queue]
+command = "php artisan queue:work"

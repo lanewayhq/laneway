@@ -1,0 +1,6 @@
+[processes.web]
+command = "serve"
+start_mod = "lazy"
+
+[future]
+option = true

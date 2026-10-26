@@ -5,14 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
-	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/mrsafalpiya/portby.dev/internal/config"
 	"github.com/mrsafalpiya/portby.dev/internal/proxy"
+	"github.com/mrsafalpiya/portby.dev/internal/recipe"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
 	"github.com/mrsafalpiya/portby.dev/internal/supervisor"
 )
@@ -83,21 +82,27 @@ func (d *Daemon) starting(s *served) *start {
 	return s.start
 }
 
-// startWorktree reads the Project's config, starts the Worktree's Processes
+// startWorktree resolves the Project's config, starts the Worktree's Processes
 // and waits for the Primary Process to accept connections.
 func (d *Daemon) startWorktree(s *served) (string, error) {
-	cfg, err := config.Load(s.dir)
+	cfg, err := recipe.ResolveDir(s.dir)
 	if err != nil {
 		return "", fmt.Errorf("Project %q could not be started: %w", s.project, err)
 	}
-	primary, ok := cfg.PrimaryProcess()
-	if !ok {
+	for _, w := range cfg.Warnings {
+		d.log.Warn("config", "project", s.project, "warning", w)
+	}
+	var primary string
+	var specs []supervisor.Spec
+	for _, proc := range cfg.Processes {
+		if proc.Primary {
+			primary = proc.Name
+		}
+		specs = append(specs, supervisor.Spec{Name: proc.Name, Command: proc.Command, Dir: s.dir})
+	}
+	if primary == "" {
 		return "", fmt.Errorf("Project %q has no Primary Process: declare one in %s, "+
 			"for example [processes.web] with command = \"…\" and primary = true", s.project, config.FileName)
-	}
-	var specs []supervisor.Spec
-	for _, name := range slices.Sorted(maps.Keys(cfg.Processes)) {
-		specs = append(specs, supervisor.Spec{Name: name, Command: cfg.Processes[name].Command, Dir: s.dir})
 	}
 	timeout := cmp.Or(cfg.StartTimeout, StartTimeout)
 	ctx, cancel := context.WithTimeout(d.stopping, timeout)
