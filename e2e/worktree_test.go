@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -224,6 +225,38 @@ func TestClashingWorktreeNamesGetAHashSuffix(t *testing.T) {
 	for name, domain := range map[string]string{"feat_x": first.Domain, "feat-x": second.Domain} {
 		if got, _ := findWorktree(t, d, "wt-clash", name); got.Domain != domain {
 			t.Fatalf("after restart, Domain of %s = %q, want %q", name, got.Domain, domain)
+		}
+	}
+}
+
+func TestEachWorktreeHasItsOwnProcessStatesAndLogs(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	repo := gitfixture.New(t, "wt-logs").
+		WriteFile("portby.toml", processConfig(`echo "boot $(basename "$(pwd)")"; exec sleep 600`)).
+		Commit("declare web Process")
+	d.MustRunCLI(repo.Dir, "link")
+	wt := repo.AddWorktree("feature-y")
+	waitForWorktree(t, d, "wt-logs", "feature-y")
+
+	assertLines(t, waitForLogs(t, d, wt.Dir, []string{"logs", "web"}, "boot"), "boot feature-y")
+	assertLines(t, waitForLogs(t, d, repo.Dir, []string{"logs", "web"}, "boot"), "boot wt-logs")
+	waitForFile(t, filepath.Join(d.Paths.StateDir, "logs", "feature-y.wt-logs.localhost", "web.log"), "boot feature-y\n")
+	waitForFile(t, filepath.Join(d.Paths.StateDir, "logs", "wt-logs.localhost", "web.log"), "boot wt-logs\n")
+
+	res := d.MustRunCLI(d.Home, "status")
+	lines := strings.Split(strings.TrimRight(res.Stdout, "\n"), "\n")
+	want := [][]string{
+		{"PROJECT", "DOMAIN", "PATH", "PROCESSES"},
+		{"wt-logs", "wt-logs.localhost", repo.Dir, "web:running"},
+		{"feature-y", "feature-y.wt-logs.localhost", wt.Dir, "web:running"},
+	}
+	if len(lines) != len(want) {
+		t.Fatalf("status has %d lines, want %d:\n%s", len(lines), len(want), res.Stdout)
+	}
+	for i, fields := range want {
+		if got := strings.Fields(lines[i]); !slices.Equal(got, fields) {
+			t.Fatalf("status line %d = %q, want %v\n%s", i, lines[i], fields, res.Stdout)
 		}
 	}
 }

@@ -61,7 +61,7 @@ func TestStatusListsWorktreesUnderTheirProjects(t *testing.T) {
 
 	res := d.MustRunCLI(d.Home, "status")
 	want := [][]string{
-		{"PROJECT", "DOMAIN", "PATH"},
+		{"PROJECT", "DOMAIN", "PATH", "PROCESSES"},
 		{"blog", "blog.localhost", blog.Dir},
 		{"shop", "shop.localhost", shop.Dir},
 		{"checkout-v2", "checkout-v2.shop.localhost", wt.Dir},

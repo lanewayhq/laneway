@@ -27,8 +27,10 @@ func (d *Daemon) worktreesChanged(main string) {
 func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
 	d.syncMu.Lock()
 	defer d.syncMu.Unlock()
-	if d.closing {
+	select {
+	case <-d.closing:
 		return
+	default:
 	}
 	list, err := gitrepo.Worktrees(ctx, p.Path)
 	if err != nil {

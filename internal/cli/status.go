@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 	"text/tabwriter"
 )
 
@@ -24,7 +25,7 @@ func runStatus(ctx context.Context, env Env, args []string) error {
 		return nil
 	}
 	tw := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "PROJECT\tDOMAIN\tPATH")
+	fmt.Fprintln(tw, "PROJECT\tDOMAIN\tPATH\tPROCESSES")
 	for _, p := range projects {
 		// The main Worktree is the Project's own row; the others are
 		// indented under it.
@@ -33,7 +34,15 @@ func runStatus(ctx context.Context, env Env, args []string) error {
 			if !w.Main {
 				name = "  " + w.Name
 			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\n", name, w.Domain, w.Path)
+			fmt.Fprintf(tw, "%s\t%s\t%s", name, w.Domain, w.Path)
+			if len(w.Processes) > 0 {
+				var procs []string
+				for _, proc := range w.Processes {
+					procs = append(procs, proc.Name+":"+proc.State)
+				}
+				fmt.Fprintf(tw, "\t%s", strings.Join(procs, ","))
+			}
+			fmt.Fprintln(tw)
 		}
 	}
 	return tw.Flush()

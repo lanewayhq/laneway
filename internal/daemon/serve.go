@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/mrsafalpiya/portby.dev/internal/config"
@@ -51,7 +52,12 @@ func (d *Daemon) startWorktree(ctx context.Context, p registry.Project, domain, 
 			if proc.Primary {
 				s.primary = proc.Name
 			}
-			specs = append(specs, supervisor.Spec{Name: proc.Name, Command: proc.Command, Dir: dir})
+			specs = append(specs, supervisor.Spec{
+				Name:    proc.Name,
+				Command: proc.Command,
+				Dir:     dir,
+				LogFile: filepath.Join(d.cfg.Paths.Logs(), domain, proc.Name+".log"),
+			})
 		}
 		err = d.supervisor.StartGroup(ctx, s.group, specs)
 	}

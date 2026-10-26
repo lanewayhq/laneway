@@ -14,13 +14,21 @@ func (d *Daemon) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/projects", d.handleListProjects)
 	mux.HandleFunc("POST /v1/projects", d.handleLink)
+	mux.HandleFunc("GET /v1/logs", d.handleLogs)
 	return mux
 }
 
 func (d *Daemon) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	list := api.ProjectList{Projects: []api.Project{}}
 	for _, p := range d.registry.Projects() {
-		list.Projects = append(list.Projects, d.apiProject(p))
+		ap := d.apiProject(p)
+		for i, w := range ap.Worktrees {
+			for _, st := range d.supervisor.Processes(w.Path) {
+				w.Processes = append(w.Processes, api.Process{Name: st.Name, State: string(st.State)})
+			}
+			ap.Worktrees[i] = w
+		}
+		list.Projects = append(list.Projects, ap)
 	}
 	writeJSON(w, http.StatusOK, list)
 }
@@ -58,9 +66,11 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 // statusFor maps API error codes to HTTP statuses.
 var statusFor = map[string]int{
-	api.CodeBadRequest: http.StatusBadRequest,
-	api.CodeNameTaken:  http.StatusConflict,
-	api.CodeNotGitRepo: http.StatusUnprocessableEntity,
+	api.CodeBadRequest:     http.StatusBadRequest,
+	api.CodeNameTaken:      http.StatusConflict,
+	api.CodeNotGitRepo:     http.StatusUnprocessableEntity,
+	api.CodeNotLinked:      http.StatusNotFound,
+	api.CodeUnknownProcess: http.StatusNotFound,
 
 	api.CodeInvalidConfig: http.StatusUnprocessableEntity,
 }

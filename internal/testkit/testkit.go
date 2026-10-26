@@ -17,13 +17,21 @@ import (
 
 	"github.com/mrsafalpiya/portby.dev/internal/cli"
 	"github.com/mrsafalpiya/portby.dev/internal/client"
+	"github.com/mrsafalpiya/portby.dev/internal/clock"
 	"github.com/mrsafalpiya/portby.dev/internal/daemon"
 	"github.com/mrsafalpiya/portby.dev/internal/paths"
 )
 
 // Option adjusts the daemon's Config before every start, including restarts.
-// Later tickets add options here for the fake clock and container engine.
+// A later ticket adds one for the fake container engine.
 type Option func(*daemon.Config)
+
+// WithClock makes the daemon read time from c, normally a *clock.Fake that
+// the test moves forward instead of waiting. The same clock is kept across
+// restarts.
+func WithClock(c clock.Clock) Option {
+	return func(cfg *daemon.Config) { cfg.Clock = c }
+}
 
 // Daemon is a running test daemon and the temporary home it owns.
 type Daemon struct {

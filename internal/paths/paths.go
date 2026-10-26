@@ -54,3 +54,9 @@ func (p Paths) CertStorage() string {
 func (p Paths) CARootCert() string {
 	return filepath.Join(p.CertStorage(), "pki", "authorities", "local", "root.crt")
 }
+
+// Logs is the directory Process log files are written under, one directory
+// per Worktree named after its Domain.
+func (p Paths) Logs() string {
+	return filepath.Join(p.StateDir, "logs")
+}
