@@ -93,6 +93,9 @@ type start struct {
 	lazy []string
 	// manual are the manual Processes, which requests don't start.
 	manual map[string]bool
+	// static are the static directories of the HTTP Processes that have
+	// one (absolute), by Process name.
+	static map[string]string
 	// release ends the running Worktree's use of its Services (see
 	// services.go), once the start succeeded; nil before.
 	release func()
@@ -283,10 +286,13 @@ func (d *Daemon) bootWorktree(s *served, st *start) (string, error) {
 	if !current {
 		return "", fmt.Errorf("Project %q was stopped while it was starting", s.project)
 	}
-	d.applyServedEnvPatch(s)
+	envChanged := d.applyServedEnvPatch(s)
 	cfg, err := d.resolveWorktree(s.ctx, s.dir)
 	if err != nil {
 		return "", fmt.Errorf("Project %q could not be started: %w", s.project, err)
+	}
+	if envChanged {
+		d.restartForEnv(s, cfg)
 	}
 	for _, w := range cfg.Warnings {
 		d.log.Warn("config", "project", s.project, "warning", w)
@@ -305,8 +311,11 @@ func (d *Daemon) bootWorktree(s *served, st *start) (string, error) {
 	s.activity.Touch()
 	var primary string
 	var started []recipe.Process
-	st.routed, st.manual = map[string]bool{}, map[string]bool{}
+	st.routed, st.manual, st.static = map[string]bool{}, map[string]bool{}, map[string]string{}
 	for _, proc := range cfg.Processes {
+		if proc.StaticDir != "" {
+			st.static[proc.Name] = filepath.Join(s.dir, proc.StaticDir)
+		}
 		if proc.Primary {
 			primary = proc.Name
 		} else if proc.HTTP {
@@ -491,6 +500,28 @@ func (r router) Upstream(ctx context.Context, domain string, wait bool) (string,
 	}
 	return proc.Addr(), nil
 }
+
+// StaticDir is the static directory of the Process requests for domain go
+// to, from the config the Worktree started with ("" if it has none or isn't
+// running).
+func (r router) StaticDir(domain string) string {
+	s, process, ok := r.d.route(domain)
+	if !ok {
+		return ""
+	}
+	s.mu.Lock()
+	st := s.start
+	s.mu.Unlock()
+	if st == nil || !isDone(st) || st.err != nil {
+		return ""
+	}
+	if process == "" {
+		process = st.primary
+	}
+	return st.static[process]
+}
+
+var _ proxy.StaticRouter = router{}
 
 // worktreeState is the state of the Worktree served at domain.
 func (d *Daemon) worktreeState(domain string) string {

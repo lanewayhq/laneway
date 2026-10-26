@@ -59,6 +59,9 @@ func Encode(w io.Writer, l Layer) error {
 		if p.HTTP != nil {
 			fmt.Fprintf(&b, "http = %t\n", *p.HTTP)
 		}
+		if p.StaticDir != nil {
+			fmt.Fprintf(&b, "static_dir = %s\n", quote(*p.StaticDir))
+		}
 		if p.Disabled != nil {
 			fmt.Fprintf(&b, "disabled = %t\n", *p.Disabled)
 		}
@@ -77,13 +80,19 @@ func Encode(w io.Writer, l Layer) error {
 			}
 		}
 	}
-	if len(l.Env) > 0 {
+	for _, env := range []struct {
+		table     string
+		templates map[string]string
+	}{{"env", l.Env}, {"linked_env", l.LinkedEnv}} {
+		if len(env.templates) == 0 {
+			continue
+		}
 		if b.Len() > 0 {
 			b.WriteString("\n")
 		}
-		b.WriteString("[env]\n")
-		for _, k := range slices.Sorted(maps.Keys(l.Env)) {
-			fmt.Fprintf(&b, "%s = %s\n", key(k), quote(l.Env[k]))
+		fmt.Fprintf(&b, "[%s]\n", env.table)
+		for _, k := range slices.Sorted(maps.Keys(env.templates)) {
+			fmt.Fprintf(&b, "%s = %s\n", key(k), quote(env.templates[k]))
 		}
 	}
 	if len(l.Services) > 0 {

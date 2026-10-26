@@ -251,6 +251,11 @@ func TestInvalidConfigNamesTheFileAndTheKey(t *testing.T) {
 		{"invalid-env-variable", config.FileName, []string{"env.APP_URL", "{domian}", "{domain}"}},
 		{"invalid-env-key", config.FileName, []string{`env."APP URL"`, "letters, digits"}},
 		{"invalid-env-not-table", config.FileName, []string{"env", "table"}},
+		{"invalid-static-dir-outside", config.FileName, []string{"processes.web.static_dir", "inside the Worktree", "../public"}},
+		{"invalid-static-dir-not-http", config.FileName, []string{"processes.queue.static_dir", "isn't an HTTP Process", "http = true"}},
+		{"invalid-linked-env-variable", config.FileName, []string{"linked_env.REDIS_PREFIX", "{wroktree}", "{worktree}"}},
+		{"invalid-linked-env-key", config.FileName, []string{`linked_env."REDIS PREFIX"`, "letters, digits"}},
+		{"invalid-linked-env-not-table", config.FileName, []string{"linked_env", "table"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.fixture, func(t *testing.T) {

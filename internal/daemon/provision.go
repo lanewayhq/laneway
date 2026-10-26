@@ -52,7 +52,7 @@ func (d *Daemon) setupPlan(p registry.Project, w envWorktree) provision.Plan {
 			if err != nil {
 				return fmt.Errorf("the Env Patch for %s: %w", w.dir, err)
 			}
-			if err := plan.Apply(); err != nil {
+			if err := d.applyPlan(p, plan); err != nil {
 				return err
 			}
 			testPlan, missing, err := d.planTestEnvPatch(p, w)
@@ -62,7 +62,7 @@ func (d *Daemon) setupPlan(p registry.Project, w envWorktree) provision.Plan {
 			if missing != "" {
 				provision.Warn(ctx, testEnvWarning(p, missing))
 			}
-			return testPlan.Apply()
+			return d.applyPlan(p, testPlan)
 		}})
 		env := d.setupEnv(ctx, p, w, w.dir, cfg)
 		for _, command := range cfg.OnCreate {

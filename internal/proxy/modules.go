@@ -7,6 +7,9 @@ import (
 	"html"
 	"net"
 	"net/http"
+	"os"
+	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -75,8 +78,36 @@ func (h *routeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 			"<pre>"+html.EscapeString(err.Error())+"</pre>")
 		return nil
 	}
+	if sr, ok := h.router.(StaticRouter); ok && serveStatic(w, r, sr.StaticDir(domain)) {
+		return nil
+	}
 	caddyhttp.SetVar(r.Context(), upstreamVar, addr)
 	return next.ServeHTTP(w, r)
+}
+
+// serveStatic serves the file under dir that r asks for, if r is a GET or
+// HEAD for an existing regular file that isn't a .php script, as Laravel's
+// server.php does, and reports whether it did. Symlinks are followed (Laravel's
+// public/storage is one); the request path can't climb out of dir.
+func serveStatic(w http.ResponseWriter, r *http.Request, dir string) bool {
+	if dir == "" || (r.Method != http.MethodGet && r.Method != http.MethodHead) {
+		return false
+	}
+	p := r.URL.Path
+	if strings.HasSuffix(p, "/") || strings.HasSuffix(strings.ToLower(p), ".php") {
+		return false
+	}
+	f, err := os.Open(filepath.Join(dir, filepath.FromSlash(path.Clean("/"+p))))
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil || !fi.Mode().IsRegular() {
+		return false
+	}
+	http.ServeContent(w, r, fi.Name(), fi.ModTime(), f)
+	return true
 }
 
 // requestDomain is the request's host without any port, lowercased.

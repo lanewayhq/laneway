@@ -43,6 +43,16 @@ type Recipe interface {
 	Defaults(dir string) (config.Layer, error)
 }
 
+// TestDatabaseRecipe is a Recipe that decides whether a Project it detected
+// has a Test Database when database.test is auto (or unset), for instance
+// from how the Project's tests are configured. Without it, auto is off.
+type TestDatabaseRecipe interface {
+	Recipe
+	// AutoTestDatabase reports whether the Project in dir uses a Test
+	// Database.
+	AutoTestDatabase(dir string) bool
+}
+
 // Resolved is the Project's resolved config.
 type Resolved struct {
 	// Recipe is the name of the Recipe that detected the Project; "" if
@@ -63,6 +73,10 @@ type Resolved struct {
 	// Env is the Env Patch: env key → template, merged by key. nil if no
 	// layer declares any.
 	Env map[string]string
+	// LinkedEnv is the rest of the Env Patch of the Worktrees other than
+	// the main one ([linked_env]), merged by key; nil if no layer declares
+	// any. See EnvFor.
+	LinkedEnv map[string]string
 	// Services are the Services the Project uses, one per engine, sorted
 	// by engine.
 	Services []Service
@@ -82,8 +96,9 @@ type Resolved struct {
 	Database Database
 	// TestDatabase is the Test Database decision: whether each Worktree
 	// also gets an empty Test Database, <database>_test, in the database's
-	// Service. True only when database.test is on and the database is in
-	// a Service (DatabaseService). auto is off until a Recipe decides it.
+	// Service. True only when the database is in a Service
+	// (DatabaseService) and database.test is on, or auto and the Recipe
+	// decides so (TestDatabaseRecipe).
 	TestDatabase bool
 	// Warnings are problems that didn't stop resolution, such as unknown
 	// keys. Each names the file it comes from.
@@ -107,6 +122,10 @@ type Process struct {
 	HTTP bool
 	// StartMode says when the Process runs.
 	StartMode StartMode
+	// StaticDir is the directory, relative to the Worktree, whose existing
+	// files Portby serves itself instead of sending the request to this
+	// HTTP Process; "" for none.
+	StaticDir string
 }
 
 // Service is a Service the Project uses: an engine at a version, such as
@@ -165,6 +184,20 @@ func (r Resolved) DatabaseService() (Service, bool) {
 	return Service{}, false
 }
 
+// EnvFor is the Env Patch templates of the main Worktree (main) or of any
+// other Worktree: Env, plus LinkedEnv for the others. nil if there are none.
+func (r Resolved) EnvFor(main bool) map[string]string {
+	if main || len(r.LinkedEnv) == 0 {
+		return r.Env
+	}
+	env := maps.Clone(r.Env)
+	if env == nil {
+		env = map[string]string{}
+	}
+	maps.Copy(env, r.LinkedEnv)
+	return env
+}
+
 // DefaultDatabaseMode is how a Worktree gets its database unless
 // database.worktree says otherwise: as a copy of the main Worktree's.
 const DefaultDatabaseMode = "clone"
@@ -199,6 +232,9 @@ func (r Resolved) Layer() config.Layer {
 			mode := p.StartMode.String()
 			pl.StartMode = &mode
 		}
+		if p.StaticDir != "" {
+			pl.StaticDir = &p.StaticDir
+		}
 		l.Processes[p.Name] = pl
 	}
 	disabled := true
@@ -206,6 +242,7 @@ func (r Resolved) Layer() config.Layer {
 		l.Processes[name] = config.ProcessLayer{Disabled: &disabled}
 	}
 	l.Env = maps.Clone(r.Env)
+	l.LinkedEnv = maps.Clone(r.LinkedEnv)
 	for _, svc := range r.Services {
 		if l.Services == nil {
 			l.Services = map[string]string{}
@@ -259,9 +296,8 @@ func (r Resolved) WorktreeRootOf(mainDir string) string {
 	}
 }
 
-// Builtin are the Recipes Portby ships, in detection order. There are none
-// yet; the Laravel Recipe will be the first.
-var Builtin []Recipe
+// Builtin are the Recipes Portby ships, in detection order.
+var Builtin = []Recipe{Laravel{}}
 
 // ResolveDir resolves the Project in dir from its portby.toml and
 // portby.local.toml with the Builtin Recipes, checking the Runtimes found
@@ -279,6 +315,7 @@ func ResolveDir(dir string, found ...runtimes.Runtime) (Resolved, error) {
 func Resolve(in Input) (Resolved, error) {
 	var res Resolved
 	layers := in.Layers
+	var detected Recipe
 	for _, r := range in.Recipes {
 		if !r.Detect(in.Dir) {
 			continue
@@ -287,7 +324,7 @@ func Resolve(in Input) (Resolved, error) {
 		if err != nil {
 			return Resolved{}, err
 		}
-		res.Recipe = r.Name()
+		res.Recipe, detected = r.Name(), r
 		layers = append([]config.Layer{defaults}, layers...)
 		break
 	}
@@ -301,9 +338,9 @@ func Resolve(in Input) (Resolved, error) {
 		disabled bool
 		http     *bool
 		source   string // the layer that declared the Process
-		// The layers that last set the command, http and start_mode, for
-		// errors.
-		commandSource, httpSource, startModeSource string
+		// The layers that last set the command, http, start_mode and
+		// static_dir, for errors.
+		commandSource, httpSource, startModeSource, staticDirSource string
 	}
 	procs := map[string]*merged{}
 	var engineSource, pathSource, testSource string // the layers that last set database.engine, .path and .test
@@ -351,6 +388,12 @@ func Resolve(in Input) (Resolved, error) {
 			}
 			res.Env[key] = template
 		}
+		for key, template := range l.LinkedEnv {
+			if res.LinkedEnv == nil {
+				res.LinkedEnv = map[string]string{}
+			}
+			res.LinkedEnv[key] = template
+		}
 		maps.Copy(services, l.Services)
 		for name, pl := range l.Processes {
 			p := procs[name]
@@ -376,6 +419,9 @@ func Resolve(in Input) (Resolved, error) {
 			}
 			if pl.Disabled != nil {
 				p.disabled = *pl.Disabled
+			}
+			if pl.StaticDir != nil {
+				p.StaticDir, p.staticDirSource = *pl.StaticDir, l.Source
 			}
 			if pl.StartMode != nil {
 				p.StartMode, p.startModeSource = StartMode(*pl.StartMode), l.Source
@@ -406,7 +452,13 @@ func Resolve(in Input) (Resolved, error) {
 		return Resolved{}, fmt.Errorf("%s: database.test is on, but Test Databases are only for databases in a Service "+
 			"and database.engine is %s; set database.test to off", testSource, res.Database.Engine)
 	}
-	res.TestDatabase = res.Database.Test == "on" && inService
+	switch res.Database.Test {
+	case "on":
+		res.TestDatabase = inService
+	case "", "auto":
+		r, ok := detected.(TestDatabaseRecipe)
+		res.TestDatabase = inService && ok && r.AutoTestDatabase(in.Dir)
+	}
 	if inherit {
 		res.OnCreate = append(slices.Clone(recipeCreate), res.OnCreate...)
 		res.OnRemove = append(slices.Clone(recipeRemove), res.OnRemove...)
@@ -450,6 +502,10 @@ func Resolve(in Input) (Resolved, error) {
 		if !p.HTTP && strings.Contains(p.Command, "{port}") {
 			return Resolved{}, fmt.Errorf("%s: processes.%s.command uses {port}, but %q isn't an HTTP Process, "+
 				"so it gets no port; set processes.%s.http = true if it serves HTTP", p.commandSource, p.Name, p.Name, p.Name)
+		}
+		if !p.HTTP && p.StaticDir != "" {
+			return Resolved{}, fmt.Errorf("%s: processes.%s.static_dir is set, but %q isn't an HTTP Process, "+
+				"so no requests reach it; set processes.%s.http = true if it serves HTTP", p.staticDirSource, p.Name, p.Name, p.Name)
 		}
 		res.Processes = append(res.Processes, p.Process)
 	}

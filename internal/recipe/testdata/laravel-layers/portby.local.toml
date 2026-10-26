@@ -1,0 +1,5 @@
+[processes.web]
+command = "PHP_CLI_SERVER_WORKERS=4 php -d xdebug.mode=debug artisan serve --host=127.0.0.1 --port={port} --no-reload"
+
+[env]
+MAIL_MAILER = "log"
