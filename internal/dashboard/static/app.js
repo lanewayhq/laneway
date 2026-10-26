@@ -1,7 +1,7 @@
 // The Dashboard's core. It owns the connection to the daemon and gives each
 // panel a `dash` object; panels do the rendering.
 //
-// Adding a panel (e.g. live logs, Services):
+// Adding a panel (e.g. Services; panels/logs.js is a small example):
 //   1. Write panels/<name>.js whose default export is
 //        { id: "<name>", title: "<Heading>", mount(el, dash) { … } }
 //      mount runs once, with the panel's (empty) body element.
