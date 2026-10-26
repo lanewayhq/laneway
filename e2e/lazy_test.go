@@ -100,6 +100,8 @@ func TestBrowserGetsAnAutoRefreshingStartingPageUntilTheAppIsUp(t *testing.T) {
 		WriteFile("portby.toml", processConfig(testkit.TestServer(t)+" --name web --delay 2s")).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
+	// Until then a navigation gets the setup page (#15), not this one.
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
 
 	page := d.Navigate("https://lazy-page.localhost/dashboard")
 
