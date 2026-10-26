@@ -6,6 +6,7 @@ package recipe
 import (
 	"fmt"
 	"maps"
+	"path/filepath"
 	"slices"
 	"time"
 
@@ -52,6 +53,17 @@ type Resolved struct {
 	// Env is the Env Patch: env key → template, merged by key. nil if no
 	// layer declares any.
 	Env map[string]string
+	// OnCreate are the setup steps (shell commands) run in a new Worktree:
+	// the Recipe's first, then the Project's layers' in order, unless a
+	// Project layer sets inherit_setup = false.
+	OnCreate []string
+	// OnRemove are the shell commands run in the main Worktree when a
+	// Worktree is removed, merged like OnCreate.
+	OnRemove []string
+	// WorktreeRoot is where `portby worktree add` creates worktrees, as
+	// configured (maybe relative to the main Worktree); "" means the
+	// default, see DefaultWorktreeRoot.
+	WorktreeRoot string
 	// Warnings are problems that didn't stop resolution, such as unknown
 	// keys. Each names the file it comes from.
 	Warnings []string
@@ -91,7 +103,40 @@ func (r Resolved) Layer() config.Layer {
 		l.Processes[name] = config.ProcessLayer{Disabled: &disabled}
 	}
 	l.Env = maps.Clone(r.Env)
+	l.OnCreate = slices.Clone(r.OnCreate)
+	l.OnRemove = slices.Clone(r.OnRemove)
+	if r.Recipe != "" && len(r.OnCreate)+len(r.OnRemove) > 0 {
+		// The Recipe's steps are written out, so they mustn't be
+		// inherited again.
+		inherit := false
+		l.InheritSetup = &inherit
+	}
+	if r.WorktreeRoot != "" {
+		l.WorktreeRoot = &r.WorktreeRoot
+	}
 	return l
+}
+
+// DefaultWorktreeRoot is where `portby worktree add` creates worktrees unless
+// worktree_root says otherwise: a directory next to the main Worktree named
+// after it, such as ../shop.worktrees for a main Worktree at shop. Worktrees
+// stay out of the repository, so nothing needs ignoring and tools scanning the
+// repository don't see them, but they stay next to it.
+func DefaultWorktreeRoot(mainDir string) string {
+	return filepath.Join(filepath.Dir(mainDir), filepath.Base(mainDir)+".worktrees")
+}
+
+// WorktreeRootOf is the absolute directory `portby worktree add` creates the
+// worktrees of the Project whose main Worktree is mainDir in.
+func (r Resolved) WorktreeRootOf(mainDir string) string {
+	switch {
+	case r.WorktreeRoot == "":
+		return DefaultWorktreeRoot(mainDir)
+	case filepath.IsAbs(r.WorktreeRoot):
+		return filepath.Clean(r.WorktreeRoot)
+	default:
+		return filepath.Join(mainDir, r.WorktreeRoot)
+	}
 }
 
 // Builtin are the Recipes Portby ships, in detection order. There are none
@@ -125,6 +170,10 @@ func Resolve(in Input) (Resolved, error) {
 		layers = append([]config.Layer{defaults}, layers...)
 		break
 	}
+	// Setup steps append, the Recipe's first, unless a Project layer turns
+	// inheriting them off.
+	inherit := true
+	var recipeCreate, recipeRemove []string
 
 	type merged struct {
 		Process
@@ -132,13 +181,25 @@ func Resolve(in Input) (Resolved, error) {
 		source   string // the layer that declared the Process
 	}
 	procs := map[string]*merged{}
-	for _, l := range layers {
+	for i, l := range layers {
 		res.Warnings = append(res.Warnings, l.Warnings...)
 		if l.Name != nil {
 			res.Name = *l.Name
 		}
 		if l.StartTimeout != nil {
 			res.StartTimeout = *l.StartTimeout
+		}
+		if l.WorktreeRoot != nil {
+			res.WorktreeRoot = *l.WorktreeRoot
+		}
+		if res.Recipe != "" && i == 0 {
+			recipeCreate, recipeRemove = l.OnCreate, l.OnRemove
+		} else {
+			res.OnCreate = append(res.OnCreate, l.OnCreate...)
+			res.OnRemove = append(res.OnRemove, l.OnRemove...)
+			if l.InheritSetup != nil {
+				inherit = *l.InheritSetup
+			}
 		}
 		for key, template := range l.Env {
 			if res.Env == nil {
@@ -169,6 +230,10 @@ func Resolve(in Input) (Resolved, error) {
 				p.disabled = *pl.Disabled
 			}
 		}
+	}
+	if inherit {
+		res.OnCreate = append(slices.Clone(recipeCreate), res.OnCreate...)
+		res.OnRemove = append(slices.Clone(recipeRemove), res.OnRemove...)
 	}
 	for _, name := range slices.Sorted(maps.Keys(procs)) {
 		p := procs[name]

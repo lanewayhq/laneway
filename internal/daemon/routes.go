@@ -18,6 +18,7 @@ func (d *Daemon) routes() http.Handler {
 	mux.HandleFunc("GET /v1/worktree", d.handleWorktree)
 	mux.HandleFunc("GET /v1/daemon", d.handleDaemonInfo)
 	mux.HandleFunc("GET /v1/logs", d.handleLogs)
+	mux.HandleFunc("POST /v1/worktree/ready", d.handleWorktreeReady)
 	return mux
 }
 
@@ -29,6 +30,7 @@ func (d *Daemon) handleListProjects(w http.ResponseWriter, r *http.Request) {
 			for _, st := range d.supervisor.Processes(w.Path) {
 				w.Processes = append(w.Processes, api.Process{Name: st.Name, State: string(st.State)})
 			}
+			w.Setup = d.setupOf(w.Path)
 			ap.Worktrees[i] = w
 		}
 		list.Projects = append(list.Projects, ap)
@@ -51,6 +53,19 @@ func (d *Daemon) handleLink(w http.ResponseWriter, r *http.Request) {
 
 func (d *Daemon) handleWorktree(w http.ResponseWriter, r *http.Request) {
 	info, err := d.worktreeInfo(r.Context(), r.URL.Query().Get("dir"))
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
+func (d *Daemon) handleWorktreeReady(w http.ResponseWriter, r *http.Request) {
+	var req api.ReadyRequest
+	if !readJSON(w, r, &req) {
+		return
+	}
+	info, err := d.worktreeReady(r.Context(), req)
 	if err != nil {
 		d.writeError(w, err)
 		return
@@ -89,6 +104,9 @@ var statusFor = map[string]int{
 	api.CodeUnknownProcess: http.StatusNotFound,
 
 	api.CodeInvalidConfig: http.StatusUnprocessableEntity,
+
+	api.CodeUnknownWorktree: http.StatusNotFound,
+	api.CodeShuttingDown:    http.StatusServiceUnavailable,
 }
 
 // writeError sends err to the client. An *api.Error is passed through as is;

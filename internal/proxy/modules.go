@@ -52,7 +52,14 @@ func (h *routeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 		writeStartErrorPage(w, domain, se)
 		return nil
 	}
+	if se, ok := errors.AsType[*SetupError](err); ok {
+		writeSetupErrorPage(w, domain, se)
+		return nil
+	}
 	switch {
+	case errors.Is(err, ErrSettingUp):
+		writeSettingUpPage(w, domain)
+		return nil
 	case errors.Is(err, ErrStarting):
 		writeStartingPage(w, domain)
 		return nil

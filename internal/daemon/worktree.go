@@ -23,6 +23,7 @@ func (d *Daemon) worktreeInfo(ctx context.Context, dir string) (api.WorktreeInfo
 	info.Worktree.Domain = info.Domain
 	if info.Domain != "" {
 		info.URL = "https://" + info.Domain + "/"
+		info.Worktree.Setup = d.setupOf(checkout.Dir)
 	}
 	return info, nil
 }

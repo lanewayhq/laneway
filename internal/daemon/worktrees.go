@@ -45,6 +45,7 @@ func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
 	for _, w := range changes.Removed {
 		d.log.Info("Worktree removed", "project", p.Name, "worktree", w.Name, "path", w.Path)
 		d.stopWorktree(ctx, worktreeDomain(p, w), w.Path)
+		d.teardown(p, linkedEnvWorktree(p, w))
 	}
 	for _, w := range changes.Added {
 		d.log.Info("Worktree discovered", "project", p.Name, "worktree", w.Name, "path", w.Path)
@@ -57,6 +58,11 @@ func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
 			d.stopWorktree(ctx, worktreeDomain(p, w), w.Path)
 		}
 		return
+	}
+	// Setup begins once the Registry knows the Worktree, so its setup
+	// steps see it as `portby` reports it.
+	for _, w := range changes.Added {
+		d.provision(p, linkedEnvWorktree(p, w), false)
 	}
 	var dirs []string
 	for _, w := range d.registry.Worktrees(p.Path) {
@@ -111,5 +117,7 @@ func (d *Daemon) serveKnownWorktrees(p registry.Project) {
 			d.applyEnvPatch(p, linkedEnvWorktree(p, w))
 			d.serveWorktree(p, domain, w.Path)
 		}
+		// A setup the daemon was stopped in the middle of runs again.
+		d.provision(p, linkedEnvWorktree(p, w), false)
 	}
 }

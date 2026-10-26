@@ -1,0 +1,2 @@
+on_create = ["php artisan migrate"]
+on_remove = ["./scripts/forget-worktree"]

@@ -11,6 +11,7 @@ import (
 
 	"github.com/mrsafalpiya/portby.dev/internal/config"
 	"github.com/mrsafalpiya/portby.dev/internal/naming"
+	"github.com/mrsafalpiya/portby.dev/internal/provision"
 	"github.com/mrsafalpiya/portby.dev/internal/proxy"
 	"github.com/mrsafalpiya/portby.dev/internal/recipe"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
@@ -55,11 +56,12 @@ func domainOf(p registry.Project) string {
 	return naming.DomainLabel(p.Name) + ".localhost"
 }
 
-// serveProject applies the main Worktree's Env Patch and serves it at its
-// Domain.
+// serveProject applies the main Worktree's Env Patch, serves it at its
+// Domain and begins its setup if it hasn't been set up.
 func (d *Daemon) serveProject(p registry.Project) {
 	d.applyEnvPatch(p, mainEnvWorktree(p))
 	d.serveWorktree(p, domainOf(p), p.Path)
+	d.provision(p, mainEnvWorktree(p), false)
 }
 
 // serveWorktree makes the Worktree at dir known to the proxy at domain,
@@ -96,7 +98,7 @@ func (d *Daemon) stopWorktree(ctx context.Context, domain, dir string) {
 func (d *Daemon) starting(s *served) *start {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.start == nil || s.start.retry {
+	if s.start == nil || s.start.retry || d.setupRetried(s) {
 		st := &start{done: make(chan struct{})}
 		s.start = st
 		d.startsMu.Lock()
@@ -121,6 +123,9 @@ func (d *Daemon) starting(s *served) *start {
 // and waits for the Primary Process to accept connections. It returns the
 // Primary Process's name.
 func (d *Daemon) bootWorktree(s *served) (string, error) {
+	if err := d.waitForSetup(s); err != nil {
+		return "", err
+	}
 	d.applyServedEnvPatch(s)
 	cfg, err := recipe.ResolveDir(s.dir)
 	if err != nil {
@@ -198,6 +203,9 @@ func (r router) Upstream(ctx context.Context, domain string, wait bool) (string,
 	case <-st.done:
 	default:
 		if !wait {
+			if d.provisioner.Status(s.dir).State != provision.Ready {
+				return "", proxy.ErrSettingUp
+			}
 			return "", proxy.ErrStarting
 		}
 		select {

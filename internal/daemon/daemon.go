@@ -19,6 +19,7 @@ import (
 
 	"github.com/mrsafalpiya/portby.dev/internal/clock"
 	"github.com/mrsafalpiya/portby.dev/internal/paths"
+	"github.com/mrsafalpiya/portby.dev/internal/provision"
 	"github.com/mrsafalpiya/portby.dev/internal/proxy"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
 	"github.com/mrsafalpiya/portby.dev/internal/supervisor"
@@ -77,6 +78,8 @@ type Daemon struct {
 	watcher *watcher.Watcher
 	syncMu  sync.Mutex // serialises Worktree syncs
 
+	provisioner *provision.Provisioner // Worktree setup, see provision.go
+
 	// closing is closed (under syncMu) when Shutdown begins. It ends
 	// streaming responses, and Worktree syncs that start afterwards don't
 	// change anything.
@@ -109,6 +112,11 @@ func Start(cfg Config) (*Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
+	prov, err := provision.Open(cfg.Paths.Setup(), log)
+	if err != nil {
+		ln.Close()
+		return nil, err
+	}
 	sup := supervisor.New(log, supervisor.Options{Clock: cfg.Clock, LogMaxBytes: cfg.LogFileMaxBytes})
 	d := &Daemon{
 		cfg:        cfg,
@@ -120,6 +128,7 @@ func Start(cfg Config) (*Daemon, error) {
 		closing:    make(chan struct{}),
 		done:       make(chan struct{}),
 	}
+	d.provisioner = prov
 	d.stopping, d.stop = context.WithCancel(context.Background())
 	d.proxy, err = proxy.Start(proxy.Config{
 		Addr:       cfg.ProxyAddr,
@@ -193,6 +202,7 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 	d.startsMu.Unlock()
 	d.stop()
 	d.starts.Wait()
+	d.provisioner.Close()
 	d.supervisor.StopAll(ctx)
 	return err
 }

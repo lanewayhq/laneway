@@ -49,20 +49,30 @@ type command struct {
 }
 
 var commands = map[string]command{
-	"daemon":  {"Run the Portby daemon in the foreground", runDaemon},
-	"doctor":  {"Check that Portby is set up and working", runDoctor},
-	"init":    {"Write the resolved config to portby.toml", runInit},
-	"install": {"Set up Portby on this machine (service, ports 80/443, CA trust)", runInstall},
-	"link":    {"Link the current git repository as a Project", runLink},
-	"logs":    {"Show (or follow with -f) Process output", runLogs},
-	"open":    {"Open the current Worktree's Domain in the browser", runOpen},
-	"status":  {"List Linked Projects and their Processes", runStatus},
+	"daemon":   {"Run the Portby daemon in the foreground", runDaemon},
+	"doctor":   {"Check that Portby is set up and working", runDoctor},
+	"init":     {"Write the resolved config to portby.toml", runInit},
+	"install":  {"Set up Portby on this machine (service, ports 80/443, CA trust)", runInstall},
+	"link":     {"Link the current git repository as a Project", runLink},
+	"logs":     {"Show (or follow with -f) Process output", runLogs},
+	"open":     {"Open the current Worktree's Domain in the browser", runOpen},
+	"status":   {"List Linked Projects and their Processes", runStatus},
+	"worktree": {"Manage Worktrees (add <name> [--branch], ready [--retry])", runWorktree},
 }
 
 // usageError makes Run print the error and exit with exitUsage.
 type usageError struct{ msg string }
 
 func (e usageError) Error() string { return e.msg }
+
+// exitCode makes Run exit with code, printing msg first unless it is empty
+// (a command `portby exec` ran has already said why it failed).
+type exitCode struct {
+	code int
+	msg  string
+}
+
+func (e exitCode) Error() string { return fmt.Sprintf("exit status %d: %s", e.code, e.msg) }
 
 // Run executes one CLI invocation and returns its exit code.
 func Run(ctx context.Context, env Env) int {
@@ -78,9 +88,15 @@ func Run(ctx context.Context, env Env) int {
 	}
 	err := cmd.run(ctx, env, env.Args[1:])
 	var uerr usageError
+	var xerr exitCode
 	switch {
 	case err == nil:
 		return exitOK
+	case errors.As(err, &xerr):
+		if xerr.msg != "" {
+			fmt.Fprintf(env.Stderr, "portby %s: %s\n", env.Args[0], xerr.msg)
+		}
+		return xerr.code
 	case errors.Is(err, flag.ErrHelp):
 		return exitOK
 	case errors.As(err, &uerr):

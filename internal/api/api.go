@@ -10,6 +10,8 @@
 //	GET  /v1/worktree?dir=<abs path> -> WorktreeInfo  (the Worktree containing dir)
 //	GET  /v1/daemon     -> DaemonInfo
 //	GET  /v1/logs?dir=&process=&follow=  -> stream of LogLine, one JSON object per line
+//	POST /v1/worktree/ready  ReadyRequest -> WorktreeInfo  (find the Worktree containing
+//	                    dir now, begin or retry its setup and, with wait, wait for it)
 //
 // GET /v1/logs acts on the Worktree containing dir. Without process it
 // returns every Process's output, interleaved in the order it was written.
@@ -50,6 +52,43 @@ type Worktree struct {
 	// Processes are the Worktree's Processes, sorted by name. Only
 	// GET /v1/projects fills them in.
 	Processes []Process `json:"processes,omitempty"`
+	// Setup is where the Worktree is in setup. GET /v1/projects,
+	// GET /v1/worktree and POST /v1/worktree/ready fill it in.
+	Setup *Setup `json:"setup,omitempty"`
+}
+
+// Setup states.
+const (
+	SetupDiscovered   = "discovered"
+	SetupProvisioning = "provisioning"
+	SetupReady        = "ready"
+	SetupFailed       = "failed"
+)
+
+// Setup is a Worktree's setup state: discovered → provisioning → ready or
+// failed.
+type Setup struct {
+	// State is one of the Setup* constants.
+	State string `json:"state"`
+	// Step is the step running (provisioning) or the step that failed
+	// (failed), such as "env" or "on_create: composer install".
+	Step string `json:"step,omitempty"`
+	// Error is why Step failed.
+	Error string `json:"error,omitempty"`
+	// Output is the last lines the failed step printed.
+	Output []string `json:"output,omitempty"`
+}
+
+// ReadyRequest is the body of POST /v1/worktree/ready.
+type ReadyRequest struct {
+	// Dir is an absolute path inside the Worktree. A Worktree git has but
+	// the Worktree Watcher hasn't reported yet is discovered at once.
+	Dir string `json:"dir"`
+	// Retry runs a failed setup again.
+	Retry bool `json:"retry,omitempty"`
+	// Wait holds the response until the Worktree is Ready or its setup has
+	// failed. Without it, the current state is returned at once.
+	Wait bool `json:"wait,omitempty"`
 }
 
 // ProjectList is the body of GET /v1/projects.
@@ -146,6 +185,11 @@ const (
 	// CodeInvalidConfig: portby.toml or portby.local.toml can't be used.
 	// The message names the file and the key.
 	CodeInvalidConfig = "invalid_config"
+
+	// CodeUnknownWorktree: git doesn't list the directory's worktree (yet).
+	CodeUnknownWorktree = "unknown_worktree"
+	// CodeShuttingDown: the daemon stopped while the request was waiting.
+	CodeShuttingDown = "shutting_down"
 )
 
 // ErrorResponse is the body of every non-2xx response.

@@ -60,3 +60,8 @@ func (p Paths) CARootCert() string {
 func (p Paths) Logs() string {
 	return filepath.Join(p.StateDir, "logs")
 }
+
+// Setup is the file the Provisioner records Worktrees' setup states in.
+func (p Paths) Setup() string {
+	return filepath.Join(p.StateDir, "setup.json")
+}
