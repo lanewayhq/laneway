@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"os"
 	"slices"
 	"strings"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/mrsafalpiya/portby.dev/internal/proxy"
 	"github.com/mrsafalpiya/portby.dev/internal/recipe"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
+	"github.com/mrsafalpiya/portby.dev/internal/runtimes"
 )
 
 // setupPlan is what setting up the Worktree w does, in the spec's order:
@@ -31,7 +31,7 @@ import (
 // stopping) and should be safe to run again: a Failed setup is retried from
 // the first step, and so is one the daemon stopped in the middle of.
 func (d *Daemon) setupPlan(p registry.Project, w envWorktree) provision.Plan {
-	return func() ([]provision.Step, error) {
+	return func(ctx context.Context) ([]provision.Step, error) {
 		cfg, err := recipe.ResolveDir(w.dir)
 		if err != nil {
 			return nil, err
@@ -45,7 +45,7 @@ func (d *Daemon) setupPlan(p registry.Project, w envWorktree) provision.Plan {
 				return plan.Apply()
 			}},
 		}
-		env := setupEnv(p, w)
+		env := d.setupEnv(ctx, p, w, w.dir)
 		for _, command := range cfg.OnCreate {
 			steps = append(steps, provision.Shell("on_create: "+command, command, w.dir, env))
 		}
@@ -64,27 +64,29 @@ func (d *Daemon) provision(p registry.Project, w envWorktree, retry bool) {
 // Worktree's directory in the background.
 func (d *Daemon) teardown(p registry.Project, w envWorktree) {
 	d.provisioner.Forget(w.dir)
-	cfg, err := recipe.ResolveDir(p.Path)
-	if err != nil {
-		d.log.Error("running on_remove", "project", p.Name, "worktree", w.name, "err", err)
-		return
-	}
-	env := setupEnv(p, w)
-	var steps []provision.Step
-	for _, command := range cfg.OnRemove {
-		steps = append(steps, provision.Shell("on_remove: "+command, command, p.Path, env))
-	}
-	if len(steps) > 0 {
-		d.provisioner.Go(fmt.Sprintf("on_remove for Worktree %q of Project %q", w.name, p.Name), steps)
-	}
+	d.provisioner.Go(fmt.Sprintf("on_remove for Worktree %q of Project %q", w.name, p.Name),
+		func(ctx context.Context) ([]provision.Step, error) {
+			cfg, err := recipe.ResolveDir(p.Path)
+			if err != nil || len(cfg.OnRemove) == 0 {
+				return nil, err
+			}
+			env := d.setupEnv(ctx, p, w, p.Path)
+			var steps []provision.Step
+			for _, command := range cfg.OnRemove {
+				steps = append(steps, provision.Shell("on_remove: "+command, command, p.Path, env))
+			}
+			return steps, nil
+		})
 }
 
-// setupEnv is the environment setup steps run with: the daemon's, plus
-// PORTBY_<VARIABLE> for every Env Patch template variable (PORTBY_PROJECT,
-// PORTBY_WORKTREE, PORTBY_DOMAIN, PORTBY_URL, …) and PORTBY_WORKTREE_PATH,
-// so on_remove steps know which Worktree went.
-func setupEnv(p registry.Project, w envWorktree) []string {
-	env := os.Environ()
+// setupEnv is the environment setup steps for the Worktree w run with in
+// dir: the one Processes start from (daemon.Config.Env) with dir's Runtimes
+// resolved into it, as for Processes, so `composer install` finds the
+// Project's PHP; plus PORTBY_<VARIABLE> for every Env Patch template
+// variable (PORTBY_PROJECT, PORTBY_WORKTREE, PORTBY_DOMAIN, PORTBY_URL, …)
+// and PORTBY_WORKTREE_PATH, so on_remove steps know which Worktree went.
+func (d *Daemon) setupEnv(ctx context.Context, p registry.Project, w envWorktree, dir string) []string {
+	env := runtimes.Environ(ctx, dir, d.cfg.Env).Vars
 	vars := envVars(p, w)
 	for _, k := range slices.Sorted(maps.Keys(vars)) {
 		env = append(env, "PORTBY_"+strings.ToUpper(k)+"="+vars[k])

@@ -355,3 +355,21 @@ func TestWorktreeAddUsesTheConfiguredRootAndTheGivenBranch(t *testing.T) {
 		t.Fatalf("a name with a slash: exit %d, want the usage error 2:\n%s", res.ExitCode, res.Output())
 	}
 }
+
+func TestSetupStepsRunWithTheRuntimesMiseResolvesForTheWorktree(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	testkit.StubPHP(t, d.Bin, "8.1.0") // the system PHP
+	miseBin := filepath.Join(d.Home, "mise-installs", "php", "bin")
+	testkit.StubPHP(t, miseBin, "8.4.2")
+	testkit.StubMise(t, d.Bin, map[string]string{"PATH": miseBin + ":" + d.Path})
+	out := filepath.Join(gitfixture.TempDir(t), "ran")
+	repo := gitfixture.New(t, "setup-runtime").
+		WriteFile("portby.toml", "on_create = "+tomlList("php --version >> "+out)+"\n").
+		Commit("declare a setup step using PHP")
+	d.MustRunCLI(repo.Dir, "link")
+
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+
+	assertFile(t, out, "PHP 8.4.2 (stub) --version\n")
+}

@@ -50,9 +50,10 @@ type Step struct {
 	Run func(ctx context.Context, out io.Writer) error
 }
 
-// Plan works out a Worktree's steps when its setup starts, so config is read
-// then. An error fails setup at the step "config".
-type Plan func() ([]Step, error)
+// Plan works out a Worktree's steps when its setup starts, so config (and the
+// environment, such as the Runtimes) is read then. An error fails setup at
+// the step "config". It must stop when ctx is cancelled.
+type Plan func(ctx context.Context) ([]Step, error)
 
 // Status is a Worktree's setup state.
 type Status struct {
@@ -190,7 +191,7 @@ func (p *Provisioner) Begin(dir string, plan Plan, retry bool) {
 
 // run runs the plan's steps in order and returns the outcome.
 func (p *Provisioner) run(ctx context.Context, dir string, j *job, plan Plan) Status {
-	steps, err := plan()
+	steps, err := plan(ctx)
 	if err != nil {
 		return Status{State: Failed, Step: "config", Error: err.Error()}
 	}
@@ -261,16 +262,21 @@ func (p *Provisioner) Forget(dir string) {
 	}
 }
 
-// Go runs steps in the background, in order, stopping at the first failure,
-// which is logged. It is for steps that aren't part of any Worktree's setup,
-// such as on_remove. Close stops them.
-func (p *Provisioner) Go(what string, steps []Step) {
+// Go runs plan's steps in the background, in order, stopping at the first
+// failure, which is logged. It is for steps that aren't part of any
+// Worktree's setup, such as on_remove. Close stops them.
+func (p *Provisioner) Go(what string, plan Plan) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.closed {
 		return
 	}
 	p.jobs.Go(func() {
+		steps, err := plan(p.ctx)
+		if err != nil {
+			p.log.Error(what+" failed", "step", "config", "err", err)
+			return
+		}
 		for _, step := range steps {
 			out := &tail{}
 			if err := step.Run(p.ctx, out); err != nil {
