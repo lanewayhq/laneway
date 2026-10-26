@@ -1,0 +1,6 @@
+# The scheduler isn't needed in this Project.
+[processes.scheduler]
+disabled = true
+
+[processes.queue]
+command = "worker --tries=3"

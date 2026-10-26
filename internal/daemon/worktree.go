@@ -2,35 +2,18 @@ package daemon
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"path/filepath"
 
 	"github.com/mrsafalpiya/portby.dev/internal/api"
 	"github.com/mrsafalpiya/portby.dev/internal/gitrepo"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
 )
 
-// worktreeAt describes the Worktree containing dir, which must be inside a
-// Linked Project.
-func (d *Daemon) worktreeAt(ctx context.Context, dir string) (api.WorktreeInfo, error) {
-	if !filepath.IsAbs(dir) {
-		return api.WorktreeInfo{}, &api.Error{Code: api.CodeBadRequest, Message: "dir must be an absolute path"}
-	}
-	notLinked := &api.Error{
-		Code:    api.CodeNotLinked,
-		Message: fmt.Sprintf("%s is not inside a Linked Project; run `portby link` in the repository first", dir),
-	}
-	checkout, err := gitrepo.Resolve(ctx, dir)
-	if errors.Is(err, gitrepo.ErrNotGitRepo) {
-		return api.WorktreeInfo{}, notLinked
-	}
+// worktreeInfo describes the Worktree containing dir, which must be inside a
+// Linked Project, and where it is served.
+func (d *Daemon) worktreeInfo(ctx context.Context, dir string) (api.WorktreeInfo, error) {
+	p, checkout, err := d.worktreeAt(ctx, dir)
 	if err != nil {
 		return api.WorktreeInfo{}, err
-	}
-	p, ok := d.registry.ProjectAt(checkout.MainDir)
-	if !ok {
-		return api.WorktreeInfo{}, notLinked
 	}
 	info := api.WorktreeInfo{
 		Project:  apiProject(p.Name, p.Path),

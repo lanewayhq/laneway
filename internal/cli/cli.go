@@ -48,10 +48,12 @@ type command struct {
 var commands = map[string]command{
 	"daemon":  {"Run the Portby daemon in the foreground", runDaemon},
 	"doctor":  {"Check that Portby is set up and working", runDoctor},
+	"init":    {"Write the resolved config to portby.toml", runInit},
 	"install": {"Set up Portby on this machine (service, ports 80/443, CA trust)", runInstall},
 	"link":    {"Link the current git repository as a Project", runLink},
+	"logs":    {"Show (or follow with -f) Process output", runLogs},
 	"open":    {"Open the current Worktree's Domain in the browser", runOpen},
-	"status":  {"List Linked Projects", runStatus},
+	"status":  {"List Linked Projects and their Processes", runStatus},
 }
 
 // usageError makes Run print the error and exit with exitUsage.

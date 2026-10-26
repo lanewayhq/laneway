@@ -8,15 +8,35 @@
 //	POST /v1/projects   LinkRequest -> LinkResponse   (Link a repository)
 //	GET  /v1/worktree?dir=<abs path> -> WorktreeInfo  (the Worktree containing dir)
 //	GET  /v1/daemon     -> DaemonInfo
+//	GET  /v1/logs?dir=&process=&follow=  -> stream of LogLine, one JSON object per line
+//
+// GET /v1/logs acts on the Worktree containing dir. Without process it
+// returns every Process's output, interleaved in the order it was written.
+// It sends the kept recent output, then with follow=true keeps the response
+// open and sends new lines as they are written.
 //
 // Errors are returned with a non-2xx status and an ErrorResponse body.
 package api
+
+import "time"
 
 // Project is a Linked git repository.
 type Project struct {
 	Name string `json:"name"`
 	// Path is the main Worktree's directory.
 	Path string `json:"path"`
+	// Processes are the main Worktree's Processes, sorted by name. Only
+	// GET /v1/projects fills them in.
+	Processes []Process `json:"processes,omitempty"`
+}
+
+// Process is one of a Worktree's Processes and what it is doing.
+type Process struct {
+	Name string `json:"name"`
+	// State is "running", "restarting" (it crashed and is waiting out its
+	// backoff), "failed" (it kept crashing and won't be restarted) or
+	// "stopped".
+	State string `json:"state"`
 }
 
 // Worktree is one checkout of a Project.
@@ -69,13 +89,25 @@ type DaemonInfo struct {
 	ProxyAddr string `json:"proxyAddr"`
 }
 
+// LogLine is one line of a Process's output, from GET /v1/logs.
+type LogLine struct {
+	Process string    `json:"process"`
+	Time    time.Time `json:"time"`
+	Text    string    `json:"text"`
+}
+
 // Error codes returned in ErrorResponse.
 const (
-	CodeBadRequest = "bad_request"
-	CodeNameTaken  = "name_taken"
-	CodeNotGitRepo = "not_git_repo"
-	CodeNotLinked  = "not_linked"
-	CodeInternal   = "internal"
+	CodeBadRequest     = "bad_request"
+	CodeNameTaken      = "name_taken"
+	CodeNotGitRepo     = "not_git_repo"
+	CodeNotLinked      = "not_linked"
+	CodeUnknownProcess = "unknown_process"
+	CodeInternal       = "internal"
+
+	// CodeInvalidConfig: portby.toml or portby.local.toml can't be used.
+	// The message names the file and the key.
+	CodeInvalidConfig = "invalid_config"
 )
 
 // ErrorResponse is the body of every non-2xx response.

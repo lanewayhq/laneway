@@ -17,13 +17,18 @@ func (d *Daemon) routes() http.Handler {
 	mux.HandleFunc("POST /v1/projects", d.handleLink)
 	mux.HandleFunc("GET /v1/worktree", d.handleWorktree)
 	mux.HandleFunc("GET /v1/daemon", d.handleDaemonInfo)
+	mux.HandleFunc("GET /v1/logs", d.handleLogs)
 	return mux
 }
 
 func (d *Daemon) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	list := api.ProjectList{Projects: []api.Project{}}
 	for _, p := range d.registry.Projects() {
-		list.Projects = append(list.Projects, apiProject(p.Name, p.Path))
+		ap := apiProject(p.Name, p.Path)
+		for _, st := range d.supervisor.Processes(p.Path) {
+			ap.Processes = append(ap.Processes, api.Process{Name: st.Name, State: string(st.State)})
+		}
+		list.Projects = append(list.Projects, ap)
 	}
 	writeJSON(w, http.StatusOK, list)
 }
@@ -42,7 +47,7 @@ func (d *Daemon) handleLink(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Daemon) handleWorktree(w http.ResponseWriter, r *http.Request) {
-	info, err := d.worktreeAt(r.Context(), r.URL.Query().Get("dir"))
+	info, err := d.worktreeInfo(r.Context(), r.URL.Query().Get("dir"))
 	if err != nil {
 		d.writeError(w, err)
 		return
@@ -74,10 +79,13 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 // statusFor maps API error codes to HTTP statuses.
 var statusFor = map[string]int{
-	api.CodeBadRequest: http.StatusBadRequest,
-	api.CodeNameTaken:  http.StatusConflict,
-	api.CodeNotGitRepo: http.StatusUnprocessableEntity,
-	api.CodeNotLinked:  http.StatusNotFound,
+	api.CodeBadRequest:     http.StatusBadRequest,
+	api.CodeNameTaken:      http.StatusConflict,
+	api.CodeNotGitRepo:     http.StatusUnprocessableEntity,
+	api.CodeNotLinked:      http.StatusNotFound,
+	api.CodeUnknownProcess: http.StatusNotFound,
+
+	api.CodeInvalidConfig: http.StatusUnprocessableEntity,
 }
 
 // writeError sends err to the client. An *api.Error is passed through as is;
