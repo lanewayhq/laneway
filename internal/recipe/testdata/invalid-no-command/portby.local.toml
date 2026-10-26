@@ -1,0 +1,3 @@
+# A typo: this declares a new Process with no command.
+[processes.wbe]
+primary = true

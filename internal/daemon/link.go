@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 
 	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/config"
 	"github.com/mrsafalpiya/portby.dev/internal/gitrepo"
+	"github.com/mrsafalpiya/portby.dev/internal/recipe"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
 )
 
@@ -28,9 +28,9 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 	if err != nil {
 		return api.LinkResponse{}, err
 	}
-	cfg, err := config.Load(checkout.MainDir)
+	cfg, err := recipe.ResolveDir(checkout.MainDir)
 	if err != nil {
-		return api.LinkResponse{}, err
+		return api.LinkResponse{}, &api.Error{Code: api.CodeInvalidConfig, Message: err.Error()}
 	}
 	name := req.Name
 	if name == "" {
