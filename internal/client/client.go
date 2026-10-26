@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"syscall"
 
 	"github.com/mrsafalpiya/portby.dev/internal/api"
@@ -54,20 +55,74 @@ func (c *Client) Link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 	return res, err
 }
 
-// do sends one request. A non-2xx response is returned as an *api.Error.
+// LogsRequest picks which Process output Logs returns.
+type LogsRequest struct {
+	// Dir is an absolute path inside the Worktree whose output is wanted.
+	Dir string
+	// Process names one Process; empty means all of the Worktree's.
+	Process string
+	// Follow keeps reading new output until ctx is done or the daemon stops.
+	Follow bool
+}
+
+// Logs calls fn with each line of Process output, oldest first.
+func (c *Client) Logs(ctx context.Context, req LogsRequest, fn func(api.LogLine) error) error {
+	q := url.Values{"dir": {req.Dir}}
+	if req.Process != "" {
+		q.Set("process", req.Process)
+	}
+	if req.Follow {
+		q.Set("follow", "true")
+	}
+	resp, err := c.send(ctx, http.MethodGet, "/v1/logs?"+q.Encode(), nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	dec := json.NewDecoder(resp.Body)
+	for {
+		var line api.LogLine
+		err := dec.Decode(&line)
+		if errors.Is(err, io.EOF) || (err != nil && ctx.Err() != nil) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := fn(line); err != nil {
+			return err
+		}
+	}
+}
+
+// do sends one request and decodes the response into out.
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
+	resp, err := c.send(ctx, method, path, body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if out == nil {
+		return nil
+	}
+	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+// send sends one request and returns the response if it is a 2xx. Anything
+// else is returned as an *api.Error.
+func (c *Client) send(ctx context.Context, method, path string, body any) (*http.Response, error) {
 	var reqBody io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		reqBody = bytes.NewReader(data)
 	}
 	// The host is ignored: every request goes to the socket.
 	req, err := http.NewRequestWithContext(ctx, method, "http://portby"+path, reqBody)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -75,20 +130,17 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	resp, err := c.http.Do(req)
 	if err != nil {
 		if errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ECONNREFUSED) {
-			return fmt.Errorf("%w (no daemon listening on %s)", ErrDaemonNotRunning, c.socket)
+			return nil, fmt.Errorf("%w (no daemon listening on %s)", ErrDaemonNotRunning, c.socket)
 		}
-		return err
+		return nil, err
 	}
-	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
+		defer resp.Body.Close()
 		var e api.ErrorResponse
 		if err := json.NewDecoder(resp.Body).Decode(&e); err != nil || e.Error.Message == "" {
-			return fmt.Errorf("daemon returned %s", resp.Status)
+			return nil, fmt.Errorf("daemon returned %s", resp.Status)
 		}
-		return &e.Error
+		return nil, &e.Error
 	}
-	if out == nil {
-		return nil
-	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return resp, nil
 }

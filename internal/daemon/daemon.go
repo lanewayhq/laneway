@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mrsafalpiya/portby.dev/internal/clock"
 	"github.com/mrsafalpiya/portby.dev/internal/paths"
 	"github.com/mrsafalpiya/portby.dev/internal/proxy"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
@@ -27,11 +28,18 @@ import (
 // it through testkit; `portby daemon` builds it from the environment.
 //
 // The spec's Seam 1 swaps exactly two things in tests: the clock and the
-// container engine. Both will be added here as interface-typed fields with
-// real defaults filled in by Start, so tests can inject fakes.
+// container engine. Both are interface-typed fields with real defaults filled
+// in by Start, so tests can inject fakes. (The container engine isn't here
+// yet.)
 type Config struct {
 	Paths  paths.Paths
 	Logger *slog.Logger
+	// Clock is what everything time-based reads (crash backoff, and later
+	// Idle and Orphan grace). Defaults to the real clock; see package clock.
+	Clock clock.Clock
+	// LogFileMaxBytes is the size Process log files are rotated at;
+	// supervisor.DefaultLogMaxBytes if 0.
+	LogFileMaxBytes int64
 	// ProxyAddr is the HTTPS proxy's listen address, DefaultProxyAddr if
 	// empty. It must be a loopback address; tests use port 0.
 	ProxyAddr string
@@ -61,6 +69,7 @@ type Daemon struct {
 	starts       sync.WaitGroup
 	shuttingDown bool
 
+	closing  chan struct{} // closed when Shutdown begins, to end streaming responses
 	done     chan struct{} // closed once the server stops
 	serveErr error         // why it stopped; read only after done is closed
 }
@@ -76,6 +85,9 @@ func Start(cfg Config) (*Daemon, error) {
 	if cfg.ProxyAddr == "" {
 		cfg.ProxyAddr = DefaultProxyAddr
 	}
+	if cfg.Clock == nil {
+		cfg.Clock = clock.Real()
+	}
 	reg, err := registry.Open(cfg.Paths.Registry())
 	if err != nil {
 		return nil, err
@@ -86,13 +98,15 @@ func Start(cfg Config) (*Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
+	sup := supervisor.New(log, supervisor.Options{Clock: cfg.Clock, LogMaxBytes: cfg.LogFileMaxBytes})
 	d := &Daemon{
 		cfg:        cfg,
 		log:        log,
 		registry:   reg,
 		listener:   ln,
-		supervisor: supervisor.New(log),
+		supervisor: sup,
 		served:     map[string]*served{},
+		closing:    make(chan struct{}),
 		done:       make(chan struct{}),
 	}
 	d.stopping, d.stop = context.WithCancel(context.Background())
@@ -113,6 +127,7 @@ func Start(cfg Config) (*Daemon, error) {
 		Handler:           d.routes(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	d.server.RegisterOnShutdown(func() { close(d.closing) })
 	go func() {
 		err := d.server.Serve(ln)
 		if !errors.Is(err, http.ErrServerClosed) {

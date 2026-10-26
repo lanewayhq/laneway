@@ -5,6 +5,9 @@
 // Requests to /ws are upgraded to a WebSocket that echoes back every byte it
 // receives.
 //
+// With --exit-after it exits with status 1 that long after it starts
+// listening, like an app that crashes once it is up.
+//
 // With --bind-only it stands in for an app that never finishes booting: it
 // binds the port, so nothing else can take it, but never listens, so
 // connections are refused.
@@ -42,6 +45,7 @@ func main() {
 	name := flag.String("name", "testserver", "name to report in responses")
 	delay := flag.Duration("delay", 0, "how long to wait before listening")
 	bindOnly := flag.Bool("bind-only", false, "bind the port but never listen")
+	exitAfter := flag.Duration("exit-after", 0, "exit with status 1 this long after listening")
 	flag.Parse()
 	if *port == "" {
 		fmt.Fprintln(os.Stderr, "testserver: no --port and no $PORT")
@@ -61,6 +65,12 @@ func main() {
 		os.Exit(1)
 	}
 	_, listenPort, _ := net.SplitHostPort(ln.Addr().String())
+	if *exitAfter > 0 {
+		time.AfterFunc(*exitAfter, func() {
+			fmt.Fprintln(os.Stderr, "testserver: exiting as asked")
+			os.Exit(1)
+		})
+	}
 	err = http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/ws" {
 			echoWebSocket(w, r)

@@ -174,8 +174,9 @@ func TestBrowserGetsAnErrorPageWhenThePrimaryProcessExitsWhileStarting(t *testin
 	}
 	assertContains(t, page.Body, "Portby")
 	assertContains(t, page.Body, html.EscapeString(command))
-	// The last 50 lines of output, from both stdout and stderr.
-	assertContains(t, page.Body, "line-12\n")
+	// The last 50 lines of output, from both stdout and stderr. The last
+	// may be Portby's own note that the Process exited.
+	assertContains(t, page.Body, "line-13\n")
 	assertContains(t, page.Body, "line-60\n")
 	assertContains(t, page.Body, "to-stderr")
 	if strings.Contains(page.Body, "line-11\n") {
@@ -265,4 +266,28 @@ func waitForPID(t *testing.T, file string) int {
 	}
 	t.Fatalf("no pid in %s", file)
 	return 0
+}
+
+// startByBrowsing starts the main Worktree of the Project the way a browser
+// visiting its Domain does, without waiting for its Primary Process to come
+// up, and waits until `portby status` shows its Processes running.
+func startByBrowsing(t *testing.T, d *testkit.Daemon, project string) {
+	t.Helper()
+	url := "https://" + project + ".localhost/"
+	if page := d.Navigate(url); page.StatusCode != http.StatusServiceUnavailable && page.StatusCode != http.StatusOK {
+		t.Fatalf("visiting %s: status %d:\n%s", url, page.StatusCode, page.Body)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		status := d.MustRunCLI(d.Home, "status").Stdout
+		for line := range strings.Lines(status) {
+			if fields := strings.Fields(line); len(fields) > 0 && fields[0] == project && strings.Contains(line, ":running") {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s's Processes never showed as running:\n%s", project, status)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }

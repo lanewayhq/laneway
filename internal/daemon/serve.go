@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +25,7 @@ const StartTimeout = 60 * time.Second
 // nothing runs until the first request for the Domain starts them.
 type served struct {
 	project string
+	domain  string
 	dir     string // the Worktree's directory
 	group   string // the Supervisor group running the Worktree's Processes
 
@@ -33,9 +35,9 @@ type served struct {
 
 // start is one attempt to start a Worktree's Processes.
 type start struct {
-	done chan struct{} // closed once the Primary Process is up or has failed
-	addr string        // the Primary Process's address, once up
-	err  error         // why it failed
+	done    chan struct{} // closed once the Primary Process is up or has failed
+	primary string        // the Primary Process's name, once up
+	err     error         // why it failed
 	// retry is set (under served.mu) once a browser has been shown the
 	// failure. Until then every request gets the failure, so the starting
 	// page's refreshes end on the error page instead of starting again; the
@@ -52,7 +54,7 @@ func domainOf(p registry.Project) string {
 // starting anything.
 func (d *Daemon) serveProject(p registry.Project) {
 	d.servedMu.Lock()
-	d.served[domainOf(p)] = &served{project: p.Name, dir: p.Path, group: p.Path}
+	d.served[domainOf(p)] = &served{project: p.Name, domain: domainOf(p), dir: p.Path, group: p.Path}
 	d.servedMu.Unlock()
 }
 
@@ -73,7 +75,7 @@ func (d *Daemon) starting(s *served) *start {
 		}
 		d.starts.Go(func() {
 			defer close(st.done)
-			st.addr, st.err = d.startWorktree(s)
+			st.primary, st.err = d.startWorktree(s)
 			if st.err != nil {
 				d.log.Error("starting Worktree", "project", s.project, "dir", s.dir, "err", st.err)
 			}
@@ -83,7 +85,8 @@ func (d *Daemon) starting(s *served) *start {
 }
 
 // startWorktree resolves the Project's config, starts the Worktree's Processes
-// and waits for the Primary Process to accept connections.
+// and waits for the Primary Process to accept connections. It returns the
+// Primary Process's name.
 func (d *Daemon) startWorktree(s *served) (string, error) {
 	cfg, err := recipe.ResolveDir(s.dir)
 	if err != nil {
@@ -98,7 +101,12 @@ func (d *Daemon) startWorktree(s *served) (string, error) {
 		if proc.Primary {
 			primary = proc.Name
 		}
-		specs = append(specs, supervisor.Spec{Name: proc.Name, Command: proc.Command, Dir: s.dir})
+		specs = append(specs, supervisor.Spec{
+			Name:    proc.Name,
+			Command: proc.Command,
+			Dir:     s.dir,
+			LogFile: filepath.Join(d.cfg.Paths.Logs(), s.domain, proc.Name+".log"),
+		})
 	}
 	if primary == "" {
 		return "", fmt.Errorf("Project %q has no Primary Process: declare one in %s, "+
@@ -113,17 +121,31 @@ func (d *Daemon) startWorktree(s *served) (string, error) {
 	proc, _ := d.supervisor.Process(s.group, primary)
 	err = proc.WaitUp(ctx)
 	if err == nil {
-		return proc.Addr(), nil
+		return primary, nil
 	}
 	// The start failed: stop what did start, so a later start begins afresh.
 	d.supervisor.StopGroup(context.Background(), s.group)
-	se := &proxy.StartError{Process: primary, Command: proc.Command(), Output: proc.Output(), Err: err}
+	se := &proxy.StartError{Process: primary, Command: proc.Command(), Output: d.lastOutput(s.group, primary), Err: err}
 	if errors.Is(err, context.DeadlineExceeded) {
 		se.TimedOut = true
 		se.Err = fmt.Errorf("Process %q did not accept connections within %s; "+
 			"if it needs longer, raise start_timeout in %s", primary, timeout, config.FileName)
 	}
 	return "", se
+}
+
+// errorPageLines is how much of a Process's output the error page shows.
+const errorPageLines = 50
+
+// lastOutput is the last errorPageLines lines of the Process's output.
+func (d *Daemon) lastOutput(group, process string) []string {
+	lines, _ := d.supervisor.Output(group, process, 0)
+	lines = lines[max(0, len(lines)-errorPageLines):]
+	text := make([]string, len(lines))
+	for i, l := range lines {
+		text[i] = l.Text
+	}
+	return text
 }
 
 // router is the daemon's proxy.Router.
@@ -138,23 +160,36 @@ func (r router) Upstream(ctx context.Context, domain string, wait bool) (string,
 		return "", fmt.Errorf("%s: %w", domain, proxy.ErrUnknownDomain)
 	}
 	st := d.starting(s)
-	if !wait {
-		select {
-		case <-st.done:
-		default:
+	select {
+	case <-st.done:
+	default:
+		if !wait {
 			return "", proxy.ErrStarting
 		}
-		if st.err != nil {
+		select {
+		case <-st.done:
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+	if st.err != nil {
+		if !wait {
 			s.mu.Lock()
 			st.retry = true
 			s.mu.Unlock()
 		}
-		return st.addr, st.err
+		return "", st.err
 	}
-	select {
-	case <-st.done:
-		return st.addr, st.err
-	case <-ctx.Done():
-		return "", ctx.Err()
+	// Once started, the Supervisor keeps the Primary Process going: a crash
+	// restarts it on a new port, or marks it failed.
+	proc, ok := d.supervisor.Process(s.group, st.primary)
+	if !ok {
+		return "", fmt.Errorf("Process %q of Project %q is not running", st.primary, s.project)
 	}
+	ctx, cancel := context.WithTimeout(ctx, StartTimeout)
+	defer cancel()
+	if err := proc.WaitUp(ctx); err != nil {
+		return "", err
+	}
+	return proc.Addr(), nil
 }
