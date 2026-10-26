@@ -81,6 +81,9 @@ type Setup struct {
 	Error string `json:"error,omitempty"`
 	// Output is the last lines the failed step printed.
 	Output []string `json:"output,omitempty"`
+	// Warnings are problems setup worked around, such as a database
+	// created empty because the main Worktree had none to clone.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // ReadyRequest is the body of POST /v1/worktree/ready.

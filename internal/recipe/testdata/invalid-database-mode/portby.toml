@@ -1,0 +1,4 @@
+[database]
+engine = "sqlite"
+path = "db.sqlite"
+worktree = "copy"

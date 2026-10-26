@@ -70,6 +70,9 @@ type Resolved struct {
 	// configured (maybe relative to the main Worktree); "" means the
 	// default, see DefaultWorktreeRoot.
 	WorktreeRoot string
+	// Database is the database each Worktree gets; its Engine is "" if
+	// the Project has none.
+	Database Database
 	// Warnings are problems that didn't stop resolution, such as unknown
 	// keys. Each names the file it comes from.
 	Warnings []string
@@ -91,6 +94,21 @@ type Process struct {
 	// <process>.<domain>.
 	HTTP bool
 }
+
+// Database is the resolved [database] table, merged key by key.
+type Database struct {
+	// Engine is one of config.DatabaseEngines, or "" for no database.
+	Engine string
+	// Path is the SQLite file, relative to the Worktree.
+	Path string
+	// Mode is how a Worktree other than the main one gets its database,
+	// one of config.DatabaseModes; DefaultDatabaseMode unless configured.
+	Mode string
+}
+
+// DefaultDatabaseMode is how a Worktree gets its database unless
+// database.worktree says otherwise: as a copy of the main Worktree's.
+const DefaultDatabaseMode = "clone"
 
 // Layer is r as a config layer: what `portby init` writes to portby.toml.
 // Every enabled Process is written with its command, the Primary Process is
@@ -132,6 +150,17 @@ func (r Resolved) Layer() config.Layer {
 	}
 	if r.WorktreeRoot != "" {
 		l.WorktreeRoot = &r.WorktreeRoot
+	}
+	if db := r.Database; db != (Database{}) {
+		l.Database = &config.DatabaseLayer{}
+		for _, kv := range []struct {
+			from string
+			to   **string
+		}{{db.Engine, &l.Database.Engine}, {db.Path, &l.Database.Path}, {db.Mode, &l.Database.Worktree}} {
+			if kv.from != "" {
+				*kv.to = &kv.from
+			}
+		}
 	}
 	return l
 }
@@ -204,6 +233,7 @@ func Resolve(in Input) (Resolved, error) {
 		commandSource, httpSource string
 	}
 	procs := map[string]*merged{}
+	var engineSource string // the layer that last set database.engine
 	for i, l := range layers {
 		res.Warnings = append(res.Warnings, l.Warnings...)
 		if l.Name != nil {
@@ -222,6 +252,17 @@ func Resolve(in Input) (Resolved, error) {
 			res.OnRemove = append(res.OnRemove, l.OnRemove...)
 			if l.InheritSetup != nil {
 				inherit = *l.InheritSetup
+			}
+		}
+		if db := l.Database; db != nil {
+			if db.Engine != nil {
+				res.Database.Engine, engineSource = *db.Engine, l.Source
+			}
+			if db.Path != nil {
+				res.Database.Path = *db.Path
+			}
+			if db.Worktree != nil {
+				res.Database.Mode = *db.Worktree
 			}
 		}
 		for key, template := range l.Env {
@@ -256,6 +297,13 @@ func Resolve(in Input) (Resolved, error) {
 				p.disabled = *pl.Disabled
 			}
 		}
+	}
+	if res.Database.Engine != "" && res.Database.Mode == "" {
+		res.Database.Mode = DefaultDatabaseMode
+	}
+	if res.Database.Engine == "sqlite" && res.Database.Path == "" {
+		return Resolved{}, fmt.Errorf("%s: database.engine is sqlite, but database.path isn't set; "+
+			"set it to the SQLite file, relative to the Worktree, such as \"database/database.sqlite\"", engineSource)
 	}
 	if inherit {
 		res.OnCreate = append(slices.Clone(recipeCreate), res.OnCreate...)
