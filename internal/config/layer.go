@@ -88,7 +88,7 @@ type DatabaseLayer struct {
 }
 
 // DatabaseEngines are the values database.engine accepts.
-var DatabaseEngines = []string{"sqlite", "postgres"}
+var DatabaseEngines = []string{"sqlite", "postgres", "mysql"}
 
 // DatabaseModes are the values database.worktree accepts.
 var DatabaseModes = []string{"clone", "fresh", "shared"}

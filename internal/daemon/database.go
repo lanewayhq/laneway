@@ -24,6 +24,8 @@ func databaseEngine(db recipe.Database, server database.Server) database.Engine 
 		return database.SQLite{Path: db.Path}
 	case "postgres":
 		return database.Postgres{Server: server}
+	case "mysql":
+		return database.MySQL{Server: server}
 	default:
 		return nil
 	}
