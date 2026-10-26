@@ -94,8 +94,23 @@ func TestARealLaravelAppLoadsItsAssetsAndLiveReloadsThroughViteDotItsDomain(t *t
 	ws.waitFor(t, `"type":"connected"`)
 	writeFile(t, filepath.Join(repo.Dir, "resources", "css", "app.css"), ".portby { color: tomato; }\n")
 	ws.waitFor(t, `"path":"/resources/css/app.css"`)
+	// A page served a while ago and open in a browser: its view and the
+	// compiled view are old enough for OPcache to cache (it skips files
+	// changed in the last 2s), and OPcache has just checked them.
+	old := time.Now().Add(-time.Hour)
+	views, _ := filepath.Glob(filepath.Join(repo.Dir, "storage", "framework", "views", "*.php"))
+	for _, f := range append(views, filepath.Join(repo.Dir, "resources", "views", "portby-vite.blade.php")) {
+		if err := os.Chtimes(f, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertContains(t, d.Get("https://"+domain+"/portby-vite").Body, "the portby vite page")
 	writeFile(t, filepath.Join(repo.Dir, "resources", "views", "portby-vite.blade.php"), strings.Replace(viteBlade, "page", "edited page", 1))
 	ws.waitFor(t, `"type":"full-reload"`)
+	// The reloaded page shows the edited view at once: Portby's PHP ini
+	// turns off OPcache's revalidation delay (spike #2).
+	page = d.Get("https://" + domain + "/portby-vite")
+	assertContains(t, page.Body, "the portby vite edited page")
 }
 
 // realNodeTools puts node and an npm on the daemon's PATH that installs

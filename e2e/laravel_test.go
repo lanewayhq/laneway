@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -61,8 +62,8 @@ func laravelRepo(t *testing.T, name string) *gitfixture.Repo {
 }
 
 // laravelStubs puts stub php, composer, pnpm and node on the daemon's PATH.
-// `php artisan serve` runs a test server reporting its own arguments and
-// PHP_CLI_SERVER_WORKERS as its name; key:generate and storage:link do what
+// `php artisan serve` runs a test server reporting its own arguments,
+// PHP_CLI_SERVER_WORKERS and PHP_INI_SCAN_DIR as its name; key:generate and storage:link do what
 // Laravel's do to the files; composer and pnpm leave a marker of their run.
 func laravelStubs(t *testing.T, d *testkit.Daemon) {
 	t.Helper()
@@ -72,7 +73,7 @@ func laravelStubs(t *testing.T, d *testkit.Daemon) {
 "artisan serve")
 	shift 2
 	for a in "$@"; do case "$a" in --port=*) port="${a#--port=}" ;; esac; done
-	exec %s --port="$port" --name "artisan serve workers=$PHP_CLI_SERVER_WORKERS $*" ;;
+	exec %s --port="$port" --name "artisan serve workers=$PHP_CLI_SERVER_WORKERS ini=$PHP_INI_SCAN_DIR $*" ;;
 "artisan queue:work") echo "queue:work is working"; exec sleep 600 ;;
 "artisan key:generate") sed -i 's/^APP_KEY=.*/APP_KEY=base64:generated-by-key-generate/' .env ;;
 "artisan storage:link") [ -e public/storage ] || ln -s ../storage/app/public public/storage ;;
@@ -132,6 +133,18 @@ func TestLinkingAFreshLaravelAppSetsItUpAndServesItWithArtisanServe(t *testing.T
 			t.Errorf("the web Process is %q, want %q in it", web.Name, want)
 		}
 	}
+	// PHP's own scan dir, plus Portby's ini turning off OPcache's
+	// revalidation delay, so an edited view shows on the next request.
+	ini := regexp.MustCompile(` ini=(\S*) `).FindStringSubmatch(web.Name)
+	if ini == nil || !strings.HasPrefix(ini[1], ":/") {
+		t.Fatalf("the web Process is %q, want PHP_INI_SCAN_DIR=:<Portby's dir>", web.Name)
+	}
+	inis, _ := filepath.Glob(filepath.Join(ini[1][1:], "*.ini"))
+	var settings string
+	for _, f := range inis {
+		settings += readFile(t, f)
+	}
+	assertContains(t, settings, "opcache.revalidate_freq=0\n")
 	if css := d.Get("https://lara-main.localhost/build/app.css"); css.StatusCode != http.StatusOK || css.Body != "body { color: teal }\n" {
 		t.Errorf("GET /build/app.css = %d %q, want the file from public/", css.StatusCode, css.Body)
 	}

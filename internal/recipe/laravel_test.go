@@ -44,7 +44,7 @@ func TestAProjectWithAnArtisanFileIsLaravelAndServedByArtisanServeWithWorkers(t 
 	}
 	want := recipe.Process{
 		Name:      "web",
-		Command:   "PHP_CLI_SERVER_WORKERS=8 php artisan serve --host=127.0.0.1 --port={port} --no-reload",
+		Command:   "PHP_INI_SCAN_DIR=$PHP_INI_SCAN_DIR:{php_ini_dir} PHP_CLI_SERVER_WORKERS=8 php artisan serve --host=127.0.0.1 --port={port} --no-reload",
 		Primary:   true,
 		HTTP:      true,
 		StaticDir: "public",

@@ -114,7 +114,9 @@ type ProcessLayer struct {
 	// in $PORT. In an HTTP Process, every `{vite_config}` is replaced with
 	// the path of a Vite config Portby writes around the Worktree's own, for
 	// `vite --config {vite_config}`: Vite's live reload then goes through
-	// the Process's host on Portby's proxy.
+	// the Process's host on Portby's proxy. Every `{php_ini_dir}` is replaced
+	// with the directory of PHP settings Portby writes for development, for
+	// `PHP_INI_SCAN_DIR=$PHP_INI_SCAN_DIR:{php_ini_dir} php …`.
 	Command *string `toml:"command"`
 	// Primary marks the Process that serves the Worktree's Domain. A Project
 	// with a single Process doesn't need to set it.

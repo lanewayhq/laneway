@@ -194,6 +194,10 @@ func (d *Daemon) specs(s *served, cfg worktreeConfig, procs []recipe.Process) []
 			d.log.Error("writing the Vite config", "project", s.project, "process", proc.Name, "err", err)
 			command = "echo " + shellQuote("portby: could not write the Vite config: "+err.Error()) + " >&2; exit 1"
 		}
+		if command, err = d.withPHPIniDir(command); err != nil {
+			d.log.Error("writing the PHP ini", "project", s.project, "process", proc.Name, "err", err)
+			command = "echo " + shellQuote("portby: could not write the PHP ini: "+err.Error()) + " >&2; exit 1"
+		}
 		specs = append(specs, supervisor.Spec{
 			Name:    proc.Name,
 			Command: command,
