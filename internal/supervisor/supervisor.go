@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"net"
 	"os"
 	"os/exec"
@@ -142,11 +143,13 @@ func start(spec Spec, log *slog.Logger) (*Process, error) {
 	// started.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
+		releasePort(port)
 		return nil, fmt.Errorf("starting Process %q: %w", spec.Name, err)
 	}
 	p := &Process{spec: spec, port: port, command: command, cmd: cmd, log: log, output: output, exited: make(chan struct{})}
 	go func() {
 		p.exitErr = cmd.Wait()
+		releasePort(port)
 		close(p.exited)
 		log.Info("process exited", "err", p.exitErr)
 	}()
@@ -154,16 +157,43 @@ func start(spec Spec, log *slog.Logger) (*Process, error) {
 	return p, nil
 }
 
-// freePort asks the kernel for a free loopback port. Something else could
-// take it before the Process binds it, but a fresh one is picked on every
-// start.
+// Process ports come from this range rather than from the kernel (port 0):
+// the kernel soon hands a freed ephemeral port to the next program asking
+// for one, often before a slow-booting Process has bound it.
+const minPort, maxPort = 20000, 29999
+
+// ports are the ports given to Processes that haven't exited yet.
+var ports = struct {
+	sync.Mutex
+	inUse map[int]bool
+}{inUse: map[int]bool{}}
+
+// freePort picks a random loopback port in the range that is free now and
+// not given to another Process. Something else could still take it before
+// the Process binds it, but a fresh one is picked on every start.
 func freePort() (int, error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
+	ports.Lock()
+	defer ports.Unlock()
+	for range 100 {
+		port := minPort + rand.IntN(maxPort-minPort+1)
+		if ports.inUse[port] {
+			continue
+		}
+		ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+		if err != nil {
+			continue
+		}
+		ln.Close()
+		ports.inUse[port] = true
+		return port, nil
 	}
-	defer ln.Close()
-	return ln.Addr().(*net.TCPAddr).Port, nil
+	return 0, fmt.Errorf("no free port between %d and %d", minPort, maxPort)
+}
+
+func releasePort(port int) {
+	ports.Lock()
+	delete(ports.inUse, port)
+	ports.Unlock()
 }
 
 // Addr is the loopback address the Process was told to listen on.
