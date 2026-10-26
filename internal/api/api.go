@@ -54,6 +54,10 @@ const (
 	CodeNameTaken  = "name_taken"
 	CodeNotGitRepo = "not_git_repo"
 	CodeInternal   = "internal"
+
+	// CodeInvalidConfig: portby.toml or portby.local.toml can't be used.
+	// The message names the file and the key.
+	CodeInvalidConfig = "invalid_config"
 )
 
 // ErrorResponse is the body of every non-2xx response.
