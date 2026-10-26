@@ -3,6 +3,8 @@ package e2e
 import (
 	"context"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -17,15 +19,17 @@ func TestCrashedProcessRestartsAfterBackoff(t *testing.T) {
 	clk := clock.NewFake(time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC))
 	d := testkit.StartDaemon(t, testkit.WithClock(clk))
 	server := testkit.TestServer(t)
-	// Crashes soon after its first start only. (A Process that exits
+	// Crashes once it is up, on its first start only. (A Process that exits
 	// before it is up fails the lazy start instead: see lazy_test.go.)
+	crash := crashFile(t)
 	repo := gitfixture.New(t, "crash-once").
 		WriteFile("portby.toml", processConfig(
-			"echo boot; if [ -e crashed ]; then exec "+server+"; fi; touch crashed; exec "+server+" --exit-after 300ms")).
+			"echo boot; if [ -e "+crash+" ]; then exec "+server+"; fi; exec "+server+" --exit-when "+crash)).
 		Commit("declare web Process")
 
 	d.MustRunCLI(repo.Dir, "link")
 	d.GetServer("https://crash-once.localhost/")
+	crashNow(t, crash)
 
 	waitForLogs(t, d, repo.Dir, []string{"logs", "web"}, "restarting in 1s")
 	if delay := waitForTimer(t, clk); delay != time.Second {
@@ -39,6 +43,21 @@ func TestCrashedProcessRestartsAfterBackoff(t *testing.T) {
 
 	waitForBoots(t, d, repo.Dir, 2)
 	d.GetServer("https://crash-once.localhost/")
+}
+
+// crashFile is a file for the web Process to crash on, with testserver
+// --exit-when. Creating it (crashNow) makes the running Process, and every
+// later start of it, exit as soon as it is up. Tests create it only after
+// the requests that need the Process up: a crash on a timer races them.
+func crashFile(t *testing.T) string {
+	return filepath.Join(gitfixture.TempDir(t), "crash")
+}
+
+func crashNow(t *testing.T, file string) {
+	t.Helper()
+	if err := os.WriteFile(file, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // waitForTimer waits until the daemon schedules something on clk and returns
@@ -76,11 +95,13 @@ func TestProcessThatKeepsCrashingIsMarkedFailed(t *testing.T) {
 	t.Parallel()
 	clk := clock.NewFake(time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC))
 	d := testkit.StartDaemon(t, testkit.WithClock(clk))
+	crash := crashFile(t)
 	repo := gitfixture.New(t, "crash-loop").
-		WriteFile("portby.toml", processConfig("echo boot; exec "+testkit.TestServer(t)+" --exit-after 300ms")).
+		WriteFile("portby.toml", processConfig("echo boot; exec "+testkit.TestServer(t)+" --exit-when "+crash)).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
 	d.GetServer("https://crash-loop.localhost/")
+	crashNow(t, crash)
 
 	// Each restart waits twice as long as the one before.
 	for i, want := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second} {
@@ -120,11 +141,13 @@ func TestCrashesSpreadOverMoreThanTwoMinutesDoNotFailAProcess(t *testing.T) {
 	t.Parallel()
 	clk := clock.NewFake(time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC))
 	d := testkit.StartDaemon(t, testkit.WithClock(clk))
+	crash := crashFile(t)
 	repo := gitfixture.New(t, "crash-sometimes").
-		WriteFile("portby.toml", processConfig("echo boot; exec "+testkit.TestServer(t)+" --exit-after 300ms")).
+		WriteFile("portby.toml", processConfig("echo boot; exec "+testkit.TestServer(t)+" --exit-when "+crash)).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
 	d.GetServer("https://crash-sometimes.localhost/")
+	crashNow(t, crash)
 
 	// Each restart happens a minute after it's due, so no 2 minutes ever
 	// hold more than 3 crashes.

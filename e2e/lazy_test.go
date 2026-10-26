@@ -146,6 +146,28 @@ func TestHeldRequestFailsWithGatewayTimeoutAfterTheStartTimeout(t *testing.T) {
 	assertContains(t, res.Body, "1s")
 }
 
+func TestAnotherProgramOnThePrimaryProcessPortIsNotMistakenForIt(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	pidFile := filepath.Join(gitfixture.TempDir(t), "pid")
+	// The Process never listens, but starts a program in a session of its
+	// own that listens on the Process's port, as another program that took
+	// the port would.
+	command := "setsid " + testkit.TestServer(t) + " --name intruder & echo $! > " + pidFile + "; exec sleep 600"
+	repo := gitfixture.New(t, "lazy-intruder").
+		WriteFile("portby.toml", "start_timeout = \"1s\"\n"+processConfig(command)).
+		Commit("declare a web Process whose port another program takes")
+	d.MustRunCLI(repo.Dir, "link")
+
+	res := d.Get("https://lazy-intruder.localhost/")
+	pid := waitForPID(t, pidFile)
+	t.Cleanup(func() { syscall.Kill(pid, syscall.SIGKILL) })
+
+	if res.StatusCode != http.StatusGatewayTimeout {
+		t.Fatalf("status %d, want 504 (the Process never listened):\n%s", res.StatusCode, res.Body)
+	}
+}
+
 // navigateUntilStarted navigates to url, as the starting page's refreshes do,
 // until it gets something other than the starting page.
 func navigateUntilStarted(t *testing.T, d *testkit.Daemon, url string) testkit.Response {
