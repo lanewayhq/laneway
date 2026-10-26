@@ -8,6 +8,7 @@ import (
 	"maps"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/mrsafalpiya/portby.dev/internal/config"
@@ -84,6 +85,11 @@ type Process struct {
 	Command string
 	// Primary marks the Primary Process. At most one Process has it.
 	Primary bool
+	// HTTP marks a Process that serves HTTP: the Primary Process, and any
+	// other Process config marks with http = true. Only HTTP Processes get
+	// a port, and those other than the Primary Process are served at
+	// <process>.<domain>.
+	HTTP bool
 }
 
 // Layer is r as a config layer: what `portby init` writes to portby.toml.
@@ -102,8 +108,12 @@ func (r Resolved) Layer() config.Layer {
 	}
 	for _, p := range r.Processes {
 		pl := config.ProcessLayer{Command: &p.Command}
-		if p.Primary {
+		switch {
+		case p.Primary:
 			pl.Primary = &p.Primary
+		case p.HTTP, len(r.Processes) == 1:
+			// A lone Process would otherwise become the Primary Process.
+			pl.HTTP = &p.HTTP
 		}
 		l.Processes[p.Name] = pl
 	}
@@ -188,7 +198,10 @@ func Resolve(in Input) (Resolved, error) {
 	type merged struct {
 		Process
 		disabled bool
+		http     *bool
 		source   string // the layer that declared the Process
+		// The layers that last set the command and http, for errors.
+		commandSource, httpSource string
 	}
 	procs := map[string]*merged{}
 	for i, l := range layers {
@@ -224,7 +237,7 @@ func Resolve(in Input) (Resolved, error) {
 				procs[name] = p
 			}
 			if pl.Command != nil {
-				p.Command = *pl.Command
+				p.Command, p.commandSource = *pl.Command, l.Source
 			}
 			if pl.Primary != nil {
 				if *pl.Primary {
@@ -236,6 +249,9 @@ func Resolve(in Input) (Resolved, error) {
 				}
 				p.Primary = *pl.Primary
 			}
+			if pl.HTTP != nil {
+				p.http, p.httpSource = pl.HTTP, l.Source
+			}
 			if pl.Disabled != nil {
 				p.disabled = *pl.Disabled
 			}
@@ -245,6 +261,7 @@ func Resolve(in Input) (Resolved, error) {
 		res.OnCreate = append(slices.Clone(recipeCreate), res.OnCreate...)
 		res.OnRemove = append(slices.Clone(recipeRemove), res.OnRemove...)
 	}
+	var enabled []*merged
 	for _, name := range slices.Sorted(maps.Keys(procs)) {
 		p := procs[name]
 		if p.disabled {
@@ -255,10 +272,32 @@ func Resolve(in Input) (Resolved, error) {
 			return Resolved{}, fmt.Errorf("%s: processes.%s: Process %q has no command; "+
 				"set processes.%s.command, or check the Process name for a typo", p.source, name, name, name)
 		}
-		res.Processes = append(res.Processes, p.Process)
+		enabled = append(enabled, p)
 	}
-	if len(res.Processes) == 1 {
-		res.Processes[0].Primary = true
+	// A lone Process is the Primary Process unless it says it isn't HTTP.
+	if len(enabled) == 1 && (enabled[0].http == nil || *enabled[0].http) {
+		enabled[0].Primary = true
+	}
+	var primary bool
+	for _, p := range enabled {
+		primary = primary || p.Primary
+	}
+	for _, p := range enabled {
+		switch {
+		case p.Primary && p.http != nil && !*p.http:
+			return Resolved{}, fmt.Errorf("%s: processes.%s.http is false, but %q is the Primary Process, "+
+				"which serves the Domain over HTTP", p.httpSource, p.Name, p.Name)
+		case !p.Primary && p.http != nil && *p.http && !primary:
+			return Resolved{}, fmt.Errorf("%s: processes.%s.http is true, but no Process is the Primary Process; "+
+				"a Worktree with HTTP Processes needs exactly one: set primary = true on the Process that serves the Domain",
+				p.httpSource, p.Name)
+		}
+		p.HTTP = p.Primary || (p.http != nil && *p.http)
+		if !p.HTTP && strings.Contains(p.Command, "{port}") {
+			return Resolved{}, fmt.Errorf("%s: processes.%s.command uses {port}, but %q isn't an HTTP Process, "+
+				"so it gets no port; set processes.%s.http = true if it serves HTTP", p.commandSource, p.Name, p.Name, p.Name)
+		}
+		res.Processes = append(res.Processes, p.Process)
 	}
 	if in.Runtimes != nil {
 		res.RuntimeWarnings = runtimes.Check(in.Dir, in.Runtimes)

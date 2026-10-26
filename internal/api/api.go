@@ -12,6 +12,8 @@
 //	GET  /v1/logs?dir=&process=&follow=  -> stream of LogLine, one JSON object per line
 //	POST /v1/worktree/ready  ReadyRequest -> WorktreeInfo  (find the Worktree containing
 //	                    dir now, begin or retry its setup and, with wait, wait for it)
+//	POST   /v1/aliases  AliasRequest -> AliasResponse  (add an Alias to the Worktree containing dir)
+//	DELETE /v1/aliases/{name}?dir=<abs path> -> AliasResponse  (remove one)
 //
 // GET /v1/logs acts on the Worktree containing dir. Without process it
 // returns every Process's output, interleaved in the order it was written.
@@ -49,6 +51,8 @@ type Worktree struct {
 	Main bool   `json:"main"`
 	// Domain is the hostname the Worktree is served at.
 	Domain string `json:"domain,omitempty"`
+	// Aliases are the Worktree's extra Domains, sorted.
+	Aliases []string `json:"aliases,omitempty"`
 	// Processes are the Worktree's Processes, sorted by name. Only
 	// GET /v1/projects fills them in.
 	Processes []Process `json:"processes,omitempty"`
@@ -159,6 +163,23 @@ type WorktreeInfo struct {
 	URL string `json:"url"`
 }
 
+// AliasRequest is the body of POST /v1/aliases.
+type AliasRequest struct {
+	// Dir is an absolute path inside the Worktree to add the Alias to.
+	Dir string `json:"dir"`
+	// Name is the Alias's part of the Domain: "api-v2" adds
+	// api-v2.<project>.localhost.
+	Name string `json:"name"`
+}
+
+// AliasResponse is the body returned after adding or removing an Alias.
+type AliasResponse struct {
+	// Domain is the Alias's Domain, such as "api-v2.shop.localhost".
+	Domain string `json:"domain"`
+	// Worktree is the Worktree afterwards.
+	Worktree WorktreeInfo `json:"worktree"`
+}
+
 // DaemonInfo is the body of GET /v1/daemon.
 type DaemonInfo struct {
 	PID int `json:"pid"`
@@ -180,6 +201,9 @@ const (
 	CodeNotGitRepo     = "not_git_repo"
 	CodeNotLinked      = "not_linked"
 	CodeUnknownProcess = "unknown_process"
+	CodeInvalidAlias   = "invalid_alias"
+	CodeAliasTaken     = "alias_taken"
+	CodeUnknownAlias   = "unknown_alias"
 	CodeInternal       = "internal"
 
 	// CodeInvalidConfig: portby.toml or portby.local.toml can't be used.

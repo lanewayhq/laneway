@@ -48,7 +48,7 @@ func runWorktreeReady(ctx context.Context, env Env, args []string) error {
 	req := api.ReadyRequest{Dir: env.Dir, Retry: *retry}
 	info, err := c.WorktreeReady(ctx, req)
 	if err == nil && !setupDone(info) {
-		fmt.Fprintf(env.Stderr, "Waiting for %s of %q to be set up…\n", worktreeName(info.Worktree), info.Project.Name)
+		fmt.Fprintf(env.Stderr, "Waiting for %s of %q to be set up…\n", describeWorktree(info.Worktree), info.Project.Name)
 		req.Retry, req.Wait = false, true
 		info, err = c.WorktreeReady(ctx, req)
 	}
@@ -58,14 +58,14 @@ func runWorktreeReady(ctx context.Context, env Env, args []string) error {
 	if setup := info.Worktree.Setup; setup.State == api.SetupFailed {
 		var b strings.Builder
 		fmt.Fprintf(&b, "setup of %s of %q failed at step %q: %s\n",
-			worktreeName(info.Worktree), info.Project.Name, setup.Step, setup.Error)
+			describeWorktree(info.Worktree), info.Project.Name, setup.Step, setup.Error)
 		for _, line := range setup.Output {
 			fmt.Fprintf(&b, "  %s\n", line)
 		}
 		b.WriteString("Fix the problem, then run `portby worktree ready --retry`.")
 		return exitCode{readyFailed, b.String()}
 	}
-	fmt.Fprintf(env.Stdout, "%s of %q is Ready: %s\n", worktreeName(info.Worktree), info.Project.Name, info.URL)
+	fmt.Fprintf(env.Stdout, "%s of %q is Ready: %s\n", describeWorktree(info.Worktree), info.Project.Name, info.URL)
 	return nil
 }
 

@@ -71,6 +71,10 @@ type ProcessLayer struct {
 	// Disabled turns off a Process an earlier layer declared, such as one
 	// from the Recipe. A later layer can set it back to false.
 	Disabled *bool `toml:"disabled"`
+	// HTTP marks a Process that serves HTTP on its {port}. Other than the
+	// Primary Process, which always does, it is served at
+	// <process>.<domain>. Processes that aren't HTTP get no port.
+	HTTP *bool `toml:"http"`
 }
 
 // LoadLayers reads dir's portby.toml and then portby.local.toml, in the

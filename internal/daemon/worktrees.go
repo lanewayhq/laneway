@@ -41,7 +41,7 @@ func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
 	// Removed Worktrees stop first, so a moved one can start again at the
 	// same Domain. Added ones are served before the Registry (and so the
 	// API) reports them.
-	changes := d.registry.PlanWorktrees(p.Path, found)
+	changes := d.registry.PlanWorktrees(p.Path, found, reservedLabels(p))
 	for _, w := range changes.Removed {
 		d.log.Info("Worktree removed", "project", p.Name, "worktree", w.Name, "path", w.Path)
 		d.stopWorktree(ctx, worktreeDomain(p, w), w.Path)

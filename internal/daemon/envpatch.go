@@ -109,7 +109,7 @@ func (d *Daemon) projectEnvWorktrees(ctx context.Context, p registry.Project) ([
 	if err != nil {
 		return nil, err
 	}
-	changes := d.registry.PlanWorktrees(p.Path, found)
+	changes := d.registry.PlanWorktrees(p.Path, found, reservedLabels(p))
 	removed := map[string]bool{}
 	for _, w := range changes.Removed {
 		removed[w.Path] = true

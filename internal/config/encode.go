@@ -50,6 +50,9 @@ func Encode(w io.Writer, l Layer) error {
 		if p.Primary != nil {
 			fmt.Fprintf(&b, "primary = %t\n", *p.Primary)
 		}
+		if p.HTTP != nil {
+			fmt.Fprintf(&b, "http = %t\n", *p.HTTP)
+		}
 		if p.Disabled != nil {
 			fmt.Fprintf(&b, "disabled = %t\n", *p.Disabled)
 		}

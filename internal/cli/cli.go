@@ -62,7 +62,7 @@ var commands = map[string]command{
 	"logs":     {"Show (or follow with -f) Process output", runLogs},
 	"open":     {"Open the current Worktree's Domain in the browser", runOpen},
 	"status":   {"List Linked Projects and their Processes", runStatus},
-	"worktree": {"Manage Worktrees (add <name> [--branch], ready [--retry])", runWorktree},
+	"worktree": {"Manage Worktrees (add <name> [--branch], ready [--retry], alias <name> [--remove])", runWorktree},
 }
 
 // usageError makes Run print the error and exit with exitUsage.
