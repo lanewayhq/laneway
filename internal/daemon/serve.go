@@ -411,6 +411,9 @@ type router struct{ d *Daemon }
 // Begin reports a request for domain (a Domain, an Alias or
 // <process>.<domain>) to its Worktree's Activity Tracker.
 func (r router) Begin(domain string) func() {
+	if domain == r.d.mailDomain() {
+		return r.d.useMail()
+	}
 	s, _, ok := r.d.route(domain)
 	if !ok {
 		return func() {}
@@ -422,6 +425,9 @@ func (r router) Upstream(ctx context.Context, domain string, wait bool) (string,
 	d := r.d
 	if domain == d.cfg.DashboardDomain {
 		return d.dashboardUpstream(), nil
+	}
+	if domain == d.mailDomain() {
+		return d.mailUpstream(ctx)
 	}
 	s, process, ok := d.route(domain)
 	if !ok {

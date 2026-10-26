@@ -37,6 +37,10 @@ type Engine struct {
 	// Port is the engine's standard TCP port, which is also the port it
 	// listens on inside its container.
 	Port int
+	// WebPort is the container port of a web UI the engine serves besides
+	// Port, such as Mailpit's inbox; 0 if none. It is published too, and
+	// the Service is only ready once it answers HTTP there (Manager.Web).
+	WebPort int
 	// Image is the image repository, fully qualified; the version is its
 	// tag.
 	Image string
@@ -58,7 +62,7 @@ type Engine struct {
 }
 
 // Engines are the Service engines Portby can run.
-var Engines = []*Engine{Redis}
+var Engines = []*Engine{Redis, Mailpit}
 
 // Lookup returns the Engine called name.
 func Lookup(name string) (*Engine, bool) {
@@ -166,6 +170,39 @@ func probeRedis(ctx context.Context, conn net.Conn) error {
 	}
 	if strings.HasPrefix(line, "-LOADING") || !(strings.HasPrefix(line, "+") || strings.HasPrefix(line, "-")) {
 		return fmt.Errorf("redis: %s", strings.TrimSpace(line))
+	}
+	return nil
+}
+
+// Mailpit is the Mailpit engine: an SMTP server that catches all mail, and
+// an inbox to read it (WebPort, served at the mail Domain). It accepts any
+// login or none, so apps can use the shared credentials or no credentials.
+// Mail is kept in the volume, so it survives Idle.
+var Mailpit = &Engine{
+	Name:           "mailpit",
+	DefaultVersion: "v1",
+	Port:           1025,
+	WebPort:        8025,
+	Image:          "docker.io/axllent/mailpit",
+	DataDir:        "/data",
+	Env: func(string) []string {
+		return []string{
+			"MP_DATABASE=/data/mailpit.db",
+			"MP_SMTP_AUTH_ACCEPT_ANY=true",
+			"MP_SMTP_AUTH_ALLOW_INSECURE=true",
+		}
+	},
+	Probe: probeSMTP,
+}
+
+// probeSMTP reads the server's greeting: 220 once it is ready.
+func probeSMTP(ctx context.Context, conn net.Conn) error {
+	line, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("smtp: %w", err)
+	}
+	if !strings.HasPrefix(line, "220") {
+		return fmt.Errorf("smtp: %s", strings.TrimSpace(line))
 	}
 	return nil
 }

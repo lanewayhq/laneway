@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"math/rand/v2"
+	"net/smtp"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -34,8 +36,9 @@ func realEngines(t *testing.T) map[string]*container.Docker {
 }
 
 // realEngineDaemon starts a daemon whose Services run on engine, under a
-// container prefix of their own that is removed when the test ends.
-func realEngineDaemon(t *testing.T, engine *container.Docker) (*testkit.Daemon, string) {
+// container prefix of their own that is removed when the test ends, with
+// opts applied after.
+func realEngineDaemon(t *testing.T, engine *container.Docker, opts ...testkit.Option) (*testkit.Daemon, string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -43,8 +46,9 @@ func realEngineDaemon(t *testing.T, engine *container.Docker) (*testkit.Daemon, 
 		t.Skipf("no container engine at %s: %v", engine.Socket, err)
 	}
 	prefix := fmt.Sprintf("portby-test-%08x", rand.Uint32())
-	d := testkit.StartDaemon(t, testkit.WithContainerEngine(engine),
-		func(c *daemon.Config) { c.ContainerPrefix = prefix })
+	opts = append([]testkit.Option{testkit.WithContainerEngine(engine),
+		func(c *daemon.Config) { c.ContainerPrefix = prefix }}, opts...)
+	d := testkit.StartDaemon(t, opts...)
 	return d, prefix
 }
 
@@ -93,6 +97,36 @@ func TestRedisStartsLazilyAndStopsOnARealContainerEngine(t *testing.T) {
 			c.do("AUTH", "portby")
 			if got := c.do("GET", "greeting"); got != "hello" {
 				t.Fatalf("GET after a restart = %q, want hello", got)
+			}
+		})
+	}
+}
+
+func TestMailpitCatchesMailAndServesItsInboxOnARealContainerEngine(t *testing.T) {
+	for name, engine := range realEngines(t) {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			dash := "dash-mail-real-" + name + ".localhost"
+			d, prefix := realEngineDaemon(t, engine, func(c *daemon.Config) { c.DashboardDomain = dash })
+			containerName := prefix + "-mailpit-v1"
+			removeContainer(t, engine, containerName)
+			d.MustRunCLI(serviceProject(t, "mail-real-"+name, `mailpit = "v1"`, "").Dir, "link")
+			inbox := "https://mail." + dash
+
+			// Any login is accepted, so apps may use the shared credentials.
+			sendMailAs(t, dialMail(t, d, 1025), "Welcome", smtp.PlainAuth("", "portby", "portby", "localhost"))
+			if subjects := inboxSubjects(t, d, inbox); !slices.Equal(subjects, []string{"Welcome"}) {
+				t.Fatalf("the inbox lists %q, want the message just sent", subjects)
+			}
+
+			d.MustRunCLI(d.Home, "services", "down", "mailpit")
+			if _, running, err := engine.Running(context.Background(), containerName, 1025); err != nil || running {
+				t.Fatalf("after `services down`, container running = %t, %v", running, err)
+			}
+			// Visiting the inbox starts it again, with the mail kept (the
+			// volume).
+			if subjects := inboxSubjects(t, d, inbox); !slices.Equal(subjects, []string{"Welcome"}) {
+				t.Fatalf("after a restart the inbox lists %q, want the message sent before", subjects)
 			}
 		})
 	}
