@@ -55,6 +55,20 @@ func (c *Client) Link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 	return res, err
 }
 
+// Worktree returns the Worktree containing dir, which must be absolute.
+func (c *Client) Worktree(ctx context.Context, dir string) (api.WorktreeInfo, error) {
+	var info api.WorktreeInfo
+	err := c.do(ctx, http.MethodGet, "/v1/worktree?dir="+url.QueryEscape(dir), nil, &info)
+	return info, err
+}
+
+// Daemon describes the running daemon.
+func (c *Client) Daemon(ctx context.Context) (api.DaemonInfo, error) {
+	var info api.DaemonInfo
+	err := c.do(ctx, http.MethodGet, "/v1/daemon", nil, &info)
+	return info, err
+}
+
 // LogsRequest picks which Process output Logs returns.
 type LogsRequest struct {
 	// Dir is an absolute path inside the Worktree whose output is wanted.

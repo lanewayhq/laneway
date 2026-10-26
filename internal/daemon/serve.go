@@ -6,11 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/mrsafalpiya/portby.dev/internal/config"
+	"github.com/mrsafalpiya/portby.dev/internal/naming"
 	"github.com/mrsafalpiya/portby.dev/internal/proxy"
 	"github.com/mrsafalpiya/portby.dev/internal/recipe"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
@@ -28,6 +28,11 @@ type served struct {
 	domain  string
 	dir     string // the Worktree's directory
 	group   string // the Supervisor group running the Worktree's Processes
+
+	// ctx is cancelled when the Domain stops being served, which ends a
+	// start in progress.
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	mu    sync.Mutex
 	start *start // the running or last start; nil until the first request
@@ -47,15 +52,41 @@ type start struct {
 
 // domainOf is the main Worktree's Domain.
 func domainOf(p registry.Project) string {
-	return strings.ToLower(p.Name) + ".localhost"
+	return naming.DomainLabel(p.Name) + ".localhost"
 }
 
-// serveProject makes the main Worktree's Domain known to the proxy, without
-// starting anything.
+// serveProject serves the main Worktree at its Domain.
 func (d *Daemon) serveProject(p registry.Project) {
+	d.serveWorktree(p, domainOf(p), p.Path)
+}
+
+// serveWorktree makes the Worktree at dir known to the proxy at domain,
+// without starting anything: the first request for the Domain does that.
+func (d *Daemon) serveWorktree(p registry.Project, domain, dir string) {
+	s := &served{project: p.Name, domain: domain, dir: dir, group: dir}
+	s.ctx, s.cancel = context.WithCancel(d.stopping)
 	d.servedMu.Lock()
-	d.served[domainOf(p)] = &served{project: p.Name, domain: domainOf(p), dir: p.Path, group: p.Path}
+	d.served[domain] = s
 	d.servedMu.Unlock()
+}
+
+// stopWorktree stops serving domain and stops the Processes of the Worktree
+// at dir, including a start in progress.
+func (d *Daemon) stopWorktree(ctx context.Context, domain, dir string) {
+	d.servedMu.Lock()
+	s := d.served[domain]
+	delete(d.served, domain)
+	d.servedMu.Unlock()
+	if s != nil {
+		s.cancel()
+		s.mu.Lock()
+		st := s.start
+		s.mu.Unlock()
+		if st != nil {
+			<-st.done
+		}
+	}
+	d.supervisor.StopGroup(ctx, dir)
 }
 
 // starting returns the Worktree's current start, beginning one if there is
@@ -75,7 +106,7 @@ func (d *Daemon) starting(s *served) *start {
 		}
 		d.starts.Go(func() {
 			defer close(st.done)
-			st.primary, st.err = d.startWorktree(s)
+			st.primary, st.err = d.bootWorktree(s)
 			if st.err != nil {
 				d.log.Error("starting Worktree", "project", s.project, "dir", s.dir, "err", st.err)
 			}
@@ -84,10 +115,10 @@ func (d *Daemon) starting(s *served) *start {
 	return s.start
 }
 
-// startWorktree resolves the Project's config, starts the Worktree's Processes
+// bootWorktree resolves the Worktree's config, starts the Worktree's Processes
 // and waits for the Primary Process to accept connections. It returns the
 // Primary Process's name.
-func (d *Daemon) startWorktree(s *served) (string, error) {
+func (d *Daemon) bootWorktree(s *served) (string, error) {
 	cfg, err := recipe.ResolveDir(s.dir)
 	if err != nil {
 		return "", fmt.Errorf("Project %q could not be started: %w", s.project, err)
@@ -113,7 +144,7 @@ func (d *Daemon) startWorktree(s *served) (string, error) {
 			"for example [processes.web] with command = \"…\" and primary = true", s.project, config.FileName)
 	}
 	timeout := cmp.Or(cfg.StartTimeout, StartTimeout)
-	ctx, cancel := context.WithTimeout(d.stopping, timeout)
+	ctx, cancel := context.WithTimeout(s.ctx, timeout)
 	defer cancel()
 	if err := d.supervisor.StartGroup(ctx, s.group, specs); err != nil {
 		return "", fmt.Errorf("Project %q could not be started: %w", s.project, err)

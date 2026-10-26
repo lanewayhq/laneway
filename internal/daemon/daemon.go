@@ -22,6 +22,7 @@ import (
 	"github.com/mrsafalpiya/portby.dev/internal/proxy"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
 	"github.com/mrsafalpiya/portby.dev/internal/supervisor"
+	"github.com/mrsafalpiya/portby.dev/internal/watcher"
 )
 
 // Config is everything the daemon needs from the outside world. Tests build
@@ -43,6 +44,10 @@ type Config struct {
 	// ProxyAddr is the HTTPS proxy's listen address, DefaultProxyAddr if
 	// empty. It must be a loopback address; tests use port 0.
 	ProxyAddr string
+	// WorktreeRescanInterval is how often every Project's git worktree
+	// registry is rescanned even without file system events;
+	// watcher.DefaultRescanInterval if zero.
+	WorktreeRescanInterval time.Duration
 }
 
 // DefaultProxyAddr is where browsers expect HTTPS.
@@ -69,7 +74,13 @@ type Daemon struct {
 	starts       sync.WaitGroup
 	shuttingDown bool
 
-	closing  chan struct{} // closed when Shutdown begins, to end streaming responses
+	watcher *watcher.Watcher
+	syncMu  sync.Mutex // serialises Worktree syncs
+
+	// closing is closed (under syncMu) when Shutdown begins. It ends
+	// streaming responses, and Worktree syncs that start afterwards don't
+	// change anything.
+	closing  chan struct{}
 	done     chan struct{} // closed once the server stops
 	serveErr error         // why it stopped; read only after done is closed
 }
@@ -120,14 +131,26 @@ func Start(cfg Config) (*Daemon, error) {
 		ln.Close()
 		return nil, err
 	}
+	d.watcher, err = watcher.New(watcher.Config{
+		Log:            log,
+		Changed:        d.worktreesChanged,
+		RescanInterval: cfg.WorktreeRescanInterval,
+	})
+	if err != nil {
+		d.proxy.Stop()
+		ln.Close()
+		return nil, fmt.Errorf("watching Worktrees: %w", err)
+	}
 	for _, p := range reg.Projects() {
+		ctx := context.Background()
 		d.serveProject(p)
+		d.syncWorktrees(ctx, p)
+		d.serveKnownWorktrees(p)
 	}
 	d.server = &http.Server{
 		Handler:           d.routes(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	d.server.RegisterOnShutdown(func() { close(d.closing) })
 	go func() {
 		err := d.server.Serve(ln)
 		if !errors.Is(err, http.ErrServerClosed) {
@@ -150,13 +173,18 @@ func (d *Daemon) Wait() error {
 	return d.serveErr
 }
 
-// Shutdown stops accepting API requests, waits for in-flight ones to finish
-// and removes the socket, then stops the proxy and every Process.
+// Shutdown ends streaming responses and stops Worktrees from changing, stops
+// accepting API requests, waits for in-flight ones to finish and removes the
+// socket, then stops watching Worktrees, the proxy and every Process.
 func (d *Daemon) Shutdown(ctx context.Context) error {
+	d.syncMu.Lock()
+	close(d.closing)
+	d.syncMu.Unlock()
 	err := d.server.Shutdown(ctx)
 	if werr := d.Wait(); err == nil {
 		err = werr
 	}
+	d.watcher.Close()
 	if perr := d.proxy.Stop(); err == nil {
 		err = perr
 	}

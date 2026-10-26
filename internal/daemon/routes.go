@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 
 	"github.com/mrsafalpiya/portby.dev/internal/api"
 )
@@ -14,6 +15,8 @@ func (d *Daemon) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/projects", d.handleListProjects)
 	mux.HandleFunc("POST /v1/projects", d.handleLink)
+	mux.HandleFunc("GET /v1/worktree", d.handleWorktree)
+	mux.HandleFunc("GET /v1/daemon", d.handleDaemonInfo)
 	mux.HandleFunc("GET /v1/logs", d.handleLogs)
 	return mux
 }
@@ -21,9 +24,12 @@ func (d *Daemon) routes() http.Handler {
 func (d *Daemon) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	list := api.ProjectList{Projects: []api.Project{}}
 	for _, p := range d.registry.Projects() {
-		ap := apiProject(p.Name, p.Path)
-		for _, st := range d.supervisor.Processes(p.Path) {
-			ap.Processes = append(ap.Processes, api.Process{Name: st.Name, State: string(st.State)})
+		ap := d.apiProject(p)
+		for i, w := range ap.Worktrees {
+			for _, st := range d.supervisor.Processes(w.Path) {
+				w.Processes = append(w.Processes, api.Process{Name: st.Name, State: string(st.State)})
+			}
+			ap.Worktrees[i] = w
 		}
 		list.Projects = append(list.Projects, ap)
 	}
@@ -41,6 +47,19 @@ func (d *Daemon) handleLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+func (d *Daemon) handleWorktree(w http.ResponseWriter, r *http.Request) {
+	info, err := d.worktreeInfo(r.Context(), r.URL.Query().Get("dir"))
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
+func (d *Daemon) handleDaemonInfo(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, api.DaemonInfo{PID: os.Getpid(), ProxyAddr: d.proxy.Addr().String()})
 }
 
 func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {

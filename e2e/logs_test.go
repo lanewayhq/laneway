@@ -23,7 +23,7 @@ func TestLogsShowAProcessOutput(t *testing.T) {
 		Commit("declare web Process")
 
 	d.MustRunCLI(repo.Dir, "link")
-	startByBrowsing(t, d, "logs-show")
+	startByBrowsing(t, d, "logs-show.localhost")
 
 	out := waitForLogs(t, d, repo.Dir, []string{"logs", "web"}, "oops")
 	assertLines(t, out, "hello from web", "oops")
@@ -70,7 +70,7 @@ func TestLogsWithoutAProcessInterleaveAllOfThemWithNamePrefixes(t *testing.T) {
 		Commit("declare two Processes")
 
 	d.MustRunCLI(repo.Dir, "link")
-	startByBrowsing(t, d, "logs-interleave")
+	startByBrowsing(t, d, "logs-interleave.localhost")
 
 	out := waitForLogs(t, d, repo.Dir, []string{"logs"}, "fourth")
 	assertLines(t, out, "web | first", "worker | second", "web | third", "worker | fourth")
@@ -84,7 +84,7 @@ func TestLogsFollowPrintsNewOutputAsItIsWritten(t *testing.T) {
 			"echo before; while [ ! -e go ]; do sleep 0.01; done; echo after; exec sleep 600")).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
-	startByBrowsing(t, d, "logs-follow")
+	startByBrowsing(t, d, "logs-follow.localhost")
 	waitForLogs(t, d, repo.Dir, []string{"logs", "web"}, "before")
 
 	follow := d.StartCLI(repo.Dir, "logs", "web", "-f")
@@ -106,7 +106,7 @@ func TestLogsFollowEndsWhenTheDaemonStops(t *testing.T) {
 		WriteFile("portby.toml", processConfig("echo hello; exec sleep 600")).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
-	startByBrowsing(t, d, "logs-follow-stop")
+	startByBrowsing(t, d, "logs-follow-stop.localhost")
 	follow := d.StartCLI(repo.Dir, "logs", "-f")
 	follow.WaitForOutput("web | hello")
 
@@ -122,13 +122,13 @@ func TestFullOutputIsWrittenToALogFileInTheStateDirectory(t *testing.T) {
 		WriteFile("portby.toml", processConfig("echo run; echo err >&2; exec sleep 600")).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
-	startByBrowsing(t, d, "logs-file")
+	startByBrowsing(t, d, "logs-file.localhost")
 	logFile := filepath.Join(d.Paths.StateDir, "logs", "logs-file.localhost", "web.log")
 	waitForFile(t, logFile, "run\nerr\n")
 
 	// Output from the next start is added to the same file.
 	d.Restart()
-	startByBrowsing(t, d, "logs-file")
+	startByBrowsing(t, d, "logs-file.localhost")
 	waitForFile(t, logFile, "run\nerr\nrun\nerr\n")
 }
 
@@ -158,7 +158,7 @@ func TestLogFilesRotateAndKeepTheNewestOutput(t *testing.T) {
 			`for i in $(seq 100 199); do printf 'line %s ........................................\n' $i; done; echo done; exec sleep 600`)).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
-	startByBrowsing(t, d, "logs-rotate")
+	startByBrowsing(t, d, "logs-rotate.localhost")
 	dir := filepath.Join(d.Paths.StateDir, "logs", "logs-rotate.localhost")
 	waitForLogs(t, d, repo.Dir, []string{"logs", "web"}, "done")
 
@@ -202,7 +202,7 @@ func TestLogsForAnUnknownProcessListTheRealOnes(t *testing.T) {
 		WriteFile("portby.toml", processConfig("exec sleep 600")).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
-	startByBrowsing(t, d, "logs-unknown")
+	startByBrowsing(t, d, "logs-unknown.localhost")
 
 	res := d.RunCLI(repo.Dir, "logs", "wbe")
 

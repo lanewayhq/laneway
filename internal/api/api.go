@@ -6,6 +6,8 @@
 //
 //	GET  /v1/projects   -> ProjectList
 //	POST /v1/projects   LinkRequest -> LinkResponse   (Link a repository)
+//	GET  /v1/worktree?dir=<abs path> -> WorktreeInfo  (the Worktree containing dir)
+//	GET  /v1/daemon     -> DaemonInfo
 //	GET  /v1/logs?dir=&process=&follow=  -> stream of LogLine, one JSON object per line
 //
 // GET /v1/logs acts on the Worktree containing dir. Without process it
@@ -23,9 +25,8 @@ type Project struct {
 	Name string `json:"name"`
 	// Path is the main Worktree's directory.
 	Path string `json:"path"`
-	// Processes are the main Worktree's Processes, sorted by name. Only
-	// GET /v1/projects fills them in.
-	Processes []Process `json:"processes,omitempty"`
+	// Worktrees are the Project's Worktrees, the main one first.
+	Worktrees []Worktree `json:"worktrees"`
 }
 
 // Process is one of a Worktree's Processes and what it is doing.
@@ -43,6 +44,11 @@ type Worktree struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
 	Main bool   `json:"main"`
+	// Domain is the hostname the Worktree is served at.
+	Domain string `json:"domain,omitempty"`
+	// Processes are the Worktree's Processes, sorted by name. Only
+	// GET /v1/projects fills them in.
+	Processes []Process `json:"processes,omitempty"`
 }
 
 // ProjectList is the body of GET /v1/projects.
@@ -66,6 +72,25 @@ type LinkResponse struct {
 	Worktree Worktree `json:"worktree"`
 	// AlreadyLinked is true when the repository was already a Project.
 	AlreadyLinked bool `json:"alreadyLinked"`
+}
+
+// WorktreeInfo is the body of GET /v1/worktree: the Worktree containing a
+// directory, and where it is served.
+type WorktreeInfo struct {
+	Project  Project  `json:"project"`
+	Worktree Worktree `json:"worktree"`
+	// Domain is where the Worktree is served, such as "shop.localhost". It
+	// is empty if the Worktree has no Domain.
+	Domain string `json:"domain"`
+	// URL is the Domain's HTTPS URL, empty with Domain.
+	URL string `json:"url"`
+}
+
+// DaemonInfo is the body of GET /v1/daemon.
+type DaemonInfo struct {
+	PID int `json:"pid"`
+	// ProxyAddr is the address the HTTPS proxy is listening on.
+	ProxyAddr string `json:"proxyAddr"`
 }
 
 // LogLine is one line of a Process's output, from GET /v1/logs.

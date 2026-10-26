@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -268,12 +269,12 @@ func waitForPID(t *testing.T, file string) int {
 	return 0
 }
 
-// startByBrowsing starts the main Worktree of the Project the way a browser
-// visiting its Domain does, without waiting for its Primary Process to come
-// up, and waits until `portby status` shows its Processes running.
-func startByBrowsing(t *testing.T, d *testkit.Daemon, project string) {
+// startByBrowsing starts the Worktree served at domain the way a browser
+// visiting it does, without waiting for its Primary Process to come up, and
+// waits until `portby status` shows its Processes running.
+func startByBrowsing(t *testing.T, d *testkit.Daemon, domain string) {
 	t.Helper()
-	url := "https://" + project + ".localhost/"
+	url := "https://" + domain + "/"
 	if page := d.Navigate(url); page.StatusCode != http.StatusServiceUnavailable && page.StatusCode != http.StatusOK {
 		t.Fatalf("visiting %s: status %d:\n%s", url, page.StatusCode, page.Body)
 	}
@@ -281,13 +282,38 @@ func startByBrowsing(t *testing.T, d *testkit.Daemon, project string) {
 	for {
 		status := d.MustRunCLI(d.Home, "status").Stdout
 		for line := range strings.Lines(status) {
-			if fields := strings.Fields(line); len(fields) > 0 && fields[0] == project && strings.Contains(line, ":running") {
+			if slices.Contains(strings.Fields(line), domain) && strings.Contains(line, ":running") {
 				return
 			}
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("%s's Processes never showed as running:\n%s", project, status)
+			t.Fatalf("%s's Processes never showed as running:\n%s", domain, status)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestRemovingAWorktreeEndsAStartInProgress(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	pids := gitfixture.TempDir(t)
+	repo := gitfixture.New(t, "lazy-removed").
+		WriteFile("portby.toml", processConfig(
+			`echo $$ > `+pids+`/"$(basename "$(pwd)")"; exec `+testkit.TestServer(t)+" --bind-only")).
+		Commit("declare a web Process that never listens")
+	d.MustRunCLI(repo.Dir, "link")
+	wt := repo.AddWorktree("doomed")
+	waitForWorktree(t, d, "lazy-removed", "doomed")
+	startByBrowsing(t, d, "doomed.lazy-removed.localhost")
+	pid := waitForPID(t, filepath.Join(pids, "doomed"))
+
+	repo.Git("worktree", "remove", "--force", wt.Dir)
+	waitForNoWorktree(t, d, "lazy-removed", "doomed")
+
+	eventually(t, "the removed Worktree's Process to stop", func() bool {
+		return syscall.Kill(pid, 0) != nil
+	})
+	if res := d.Get("https://doomed.lazy-removed.localhost/"); res.StatusCode != http.StatusNotFound {
+		t.Fatalf("removed Worktree's Domain: status %d, want 404:\n%s", res.StatusCode, res.Body)
 	}
 }
