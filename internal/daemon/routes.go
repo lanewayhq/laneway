@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 
 	"github.com/mrsafalpiya/portby.dev/internal/api"
 )
@@ -14,6 +15,8 @@ func (d *Daemon) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/projects", d.handleListProjects)
 	mux.HandleFunc("POST /v1/projects", d.handleLink)
+	mux.HandleFunc("GET /v1/worktree", d.handleWorktree)
+	mux.HandleFunc("GET /v1/daemon", d.handleDaemonInfo)
 	return mux
 }
 
@@ -36,6 +39,19 @@ func (d *Daemon) handleLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+func (d *Daemon) handleWorktree(w http.ResponseWriter, r *http.Request) {
+	info, err := d.worktreeAt(r.Context(), r.URL.Query().Get("dir"))
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
+func (d *Daemon) handleDaemonInfo(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, api.DaemonInfo{PID: os.Getpid(), ProxyAddr: d.proxy.Addr().String()})
 }
 
 func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
@@ -61,6 +77,7 @@ var statusFor = map[string]int{
 	api.CodeBadRequest: http.StatusBadRequest,
 	api.CodeNameTaken:  http.StatusConflict,
 	api.CodeNotGitRepo: http.StatusUnprocessableEntity,
+	api.CodeNotLinked:  http.StatusNotFound,
 }
 
 // writeError sends err to the client. An *api.Error is passed through as is;

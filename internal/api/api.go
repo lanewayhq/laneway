@@ -6,6 +6,8 @@
 //
 //	GET  /v1/projects   -> ProjectList
 //	POST /v1/projects   LinkRequest -> LinkResponse   (Link a repository)
+//	GET  /v1/worktree?dir=<abs path> -> WorktreeInfo  (the Worktree containing dir)
+//	GET  /v1/daemon     -> DaemonInfo
 //
 // Errors are returned with a non-2xx status and an ErrorResponse body.
 package api
@@ -48,11 +50,31 @@ type LinkResponse struct {
 	AlreadyLinked bool `json:"alreadyLinked"`
 }
 
+// WorktreeInfo is the body of GET /v1/worktree: the Worktree containing a
+// directory, and where it is served.
+type WorktreeInfo struct {
+	Project  Project  `json:"project"`
+	Worktree Worktree `json:"worktree"`
+	// Domain is where the Worktree is served, such as "shop.localhost". It
+	// is empty if the Worktree has no Domain.
+	Domain string `json:"domain"`
+	// URL is the Domain's HTTPS URL, empty with Domain.
+	URL string `json:"url"`
+}
+
+// DaemonInfo is the body of GET /v1/daemon.
+type DaemonInfo struct {
+	PID int `json:"pid"`
+	// ProxyAddr is the address the HTTPS proxy is listening on.
+	ProxyAddr string `json:"proxyAddr"`
+}
+
 // Error codes returned in ErrorResponse.
 const (
 	CodeBadRequest = "bad_request"
 	CodeNameTaken  = "name_taken"
 	CodeNotGitRepo = "not_git_repo"
+	CodeNotLinked  = "not_linked"
 	CodeInternal   = "internal"
 )
 

@@ -14,6 +14,7 @@ import (
 
 	"github.com/mrsafalpiya/portby.dev/internal/client"
 	"github.com/mrsafalpiya/portby.dev/internal/paths"
+	"github.com/mrsafalpiya/portby.dev/internal/platform"
 )
 
 // Env is everything a CLI invocation reads from or writes to the outside
@@ -26,6 +27,9 @@ type Env struct {
 	Getenv func(string) string
 	Stdout io.Writer
 	Stderr io.Writer
+	// Platform does everything OS-specific (install, doctor, open). If nil,
+	// the real one for this machine is detected.
+	Platform platform.Platform
 }
 
 // Exit codes.
@@ -42,9 +46,12 @@ type command struct {
 }
 
 var commands = map[string]command{
-	"daemon": {"Run the Portby daemon in the foreground", runDaemon},
-	"link":   {"Link the current git repository as a Project", runLink},
-	"status": {"List Linked Projects", runStatus},
+	"daemon":  {"Run the Portby daemon in the foreground", runDaemon},
+	"doctor":  {"Check that Portby is set up and working", runDoctor},
+	"install": {"Set up Portby on this machine (service, ports 80/443, CA trust)", runInstall},
+	"link":    {"Link the current git repository as a Project", runLink},
+	"open":    {"Open the current Worktree's Domain in the browser", runOpen},
+	"status":  {"List Linked Projects", runStatus},
 }
 
 // usageError makes Run print the error and exit with exitUsage.
@@ -130,4 +137,12 @@ func apiClient(env Env) (*client.Client, error) {
 		return nil, err
 	}
 	return client.New(p.Socket), nil
+}
+
+// platformOf returns the Platform commands act on.
+func platformOf(env Env) platform.Platform {
+	if env.Platform != nil {
+		return env.Platform
+	}
+	return platform.Detect(env.Getenv)
 }

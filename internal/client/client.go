@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"syscall"
 
 	"github.com/mrsafalpiya/portby.dev/internal/api"
@@ -52,6 +53,20 @@ func (c *Client) Link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 	var res api.LinkResponse
 	err := c.do(ctx, http.MethodPost, "/v1/projects", req, &res)
 	return res, err
+}
+
+// Worktree returns the Worktree containing dir, which must be absolute.
+func (c *Client) Worktree(ctx context.Context, dir string) (api.WorktreeInfo, error) {
+	var info api.WorktreeInfo
+	err := c.do(ctx, http.MethodGet, "/v1/worktree?dir="+url.QueryEscape(dir), nil, &info)
+	return info, err
+}
+
+// Daemon describes the running daemon.
+func (c *Client) Daemon(ctx context.Context) (api.DaemonInfo, error) {
+	var info api.DaemonInfo
+	err := c.do(ctx, http.MethodGet, "/v1/daemon", nil, &info)
+	return info, err
 }
 
 // do sends one request. A non-2xx response is returned as an *api.Error.

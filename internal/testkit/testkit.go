@@ -19,6 +19,7 @@ import (
 	"github.com/mrsafalpiya/portby.dev/internal/client"
 	"github.com/mrsafalpiya/portby.dev/internal/daemon"
 	"github.com/mrsafalpiya/portby.dev/internal/paths"
+	"github.com/mrsafalpiya/portby.dev/internal/platform/platformtest"
 )
 
 // Option adjusts the daemon's Config before every start, including restarts.
@@ -35,6 +36,10 @@ type Daemon struct {
 	Home string
 	// Paths is where the daemon keeps its state and socket.
 	Paths paths.Paths
+	// Platform is what the CLI uses instead of the real machine, so `portby
+	// install`, `doctor` and `open` never run sudo, touch a trust store or
+	// systemd, or open a browser. Tests set it up and inspect it.
+	Platform *platformtest.Fake
 
 	running *daemon.Daemon
 }
@@ -63,7 +68,7 @@ func StartDaemon(t testing.TB, opts ...Option) *Daemon {
 	if err != nil {
 		t.Fatalf("testkit: %v", err)
 	}
-	d := &Daemon{t: t, env: env, opts: opts, Home: home, Paths: p}
+	d := &Daemon{t: t, env: env, opts: opts, Home: home, Paths: p, Platform: platformtest.New()}
 	d.Start()
 	t.Cleanup(d.Stop)
 	return d
@@ -143,11 +148,12 @@ func (d *Daemon) RunCLI(dir string, args ...string) CLIResult {
 	defer cancel()
 	var stdout, stderr bytes.Buffer
 	code := cli.Run(ctx, cli.Env{
-		Args:   args,
-		Dir:    dir,
-		Getenv: d.Getenv,
-		Stdout: &stdout,
-		Stderr: &stderr,
+		Args:     args,
+		Dir:      dir,
+		Getenv:   d.Getenv,
+		Stdout:   &stdout,
+		Stderr:   &stderr,
+		Platform: d.Platform,
 	})
 	return CLIResult{Stdout: stdout.String(), Stderr: stderr.String(), ExitCode: code}
 }
