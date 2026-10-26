@@ -33,6 +33,7 @@ func runWorktreeReady(ctx context.Context, env Env, args []string) error {
 	fs := newFlags(env, "worktree ready")
 	retry := fs.Bool("retry", false, "if setup failed, run it again (from the first step) and wait")
 	timeout := fs.Duration("timeout", defaultReadyTimeout, "give up after this long (exit 4); 0 waits for ever")
+	worktree := worktreeFlag(fs, env)
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -45,7 +46,7 @@ func runWorktreeReady(ctx context.Context, env Env, args []string) error {
 	if err != nil {
 		return exitCode{readyGaveUp, err.Error()}
 	}
-	req := api.ReadyRequest{Dir: env.Dir, Retry: *retry}
+	req := api.ReadyRequest{Dir: env.Dir, Worktree: worktree(), Retry: *retry}
 	info, err := c.WorktreeReady(ctx, req)
 	if err == nil && !setupDone(info) {
 		fmt.Fprintf(env.Stderr, "Waiting for %s of %q to be set up…\n", describeWorktree(info.Worktree), info.Project.Name)

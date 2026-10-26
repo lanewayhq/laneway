@@ -131,6 +131,8 @@ type ReadyRequest struct {
 	// Dir is an absolute path inside the Worktree. A Worktree git has but
 	// the Worktree Watcher hasn't reported yet is discovered at once.
 	Dir string `json:"dir"`
+	// Worktree names the Worktree instead of Dir, as in ControlRequest.
+	Worktree string `json:"worktree,omitempty"`
 	// Retry runs a failed setup again.
 	Retry bool `json:"retry,omitempty"`
 	// Wait holds the response until the Worktree is Ready or its setup has
@@ -142,8 +144,11 @@ type ReadyRequest struct {
 type ControlRequest struct {
 	// Dir is an absolute path inside the Linked Project to act on.
 	Dir string `json:"dir"`
-	// Worktree picks one of the Project's Worktrees by git's name, its
-	// Domain or its path; empty means the Worktree containing Dir.
+	// Worktree picks the Worktree to act on: git's name for one of the
+	// Project's Worktrees (the Project's name for its main Worktree), a
+	// Domain or Alias of any Project, or a path; empty means the Worktree
+	// containing Dir. GET and DELETE routes that act on a Worktree take the
+	// same as the worktree query parameter.
 	Worktree string `json:"worktree,omitempty"`
 	// Process names one Process; empty means the whole Worktree.
 	Process string `json:"process,omitempty"`
@@ -238,6 +243,8 @@ type Database struct {
 type AliasRequest struct {
 	// Dir is an absolute path inside the Worktree to add the Alias to.
 	Dir string `json:"dir"`
+	// Worktree names the Worktree instead of Dir, as in ControlRequest.
+	Worktree string `json:"worktree,omitempty"`
 	// Name is the Alias's part of the Domain: "api-v2" adds
 	// api-v2.<project>.localhost.
 	Name string `json:"name"`

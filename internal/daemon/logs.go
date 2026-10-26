@@ -42,11 +42,64 @@ func (d *Daemon) worktreeAt(ctx context.Context, dir string) (registry.Project, 
 	return p, checkout, nil
 }
 
+// worktreeDir is the directory of the Worktree a request acts on: the one
+// worktree names or, if it is empty, the one containing dir. worktree may be
+// a path (absolute; any directory inside the Worktree will do), a Domain or
+// Alias of any Project, or, within the Project containing dir, git's name for
+// one of its Worktrees or the Project's name for its main Worktree. Hand the
+// result to worktreeAt.
+func (d *Daemon) worktreeDir(ctx context.Context, dir, worktree string) (string, error) {
+	switch {
+	case worktree == "":
+		return dir, nil
+	case filepath.IsAbs(worktree):
+		return filepath.Clean(worktree), nil
+	}
+	if s, ok := d.servedAt(strings.ToLower(worktree)); ok {
+		return s.dir, nil
+	}
+	p, _, err := d.worktreeAt(ctx, dir)
+	if err != nil {
+		return "", err
+	}
+	if worktree == p.Name {
+		return p.Path, nil
+	}
+	find := func() (string, []string) {
+		names := []string{p.Name}
+		for _, w := range d.registry.Worktrees(p.Path) {
+			if w.Name == worktree {
+				return w.Path, nil
+			}
+			names = append(names, w.Name)
+		}
+		return "", names
+	}
+	path, names := find()
+	if path == "" {
+		// One git has but the Worktree Watcher hasn't reported yet.
+		d.syncWorktrees(ctx, p)
+		path, names = find()
+	}
+	if path != "" {
+		return path, nil
+	}
+	return "", &api.Error{
+		Code:    api.CodeUnknownWorktree,
+		Message: fmt.Sprintf("Project %q has no Worktree %q; its Worktrees are %s", p.Name, worktree, strings.Join(names, ", ")),
+	}
+}
+
 // handleLogs streams Process output as one JSON api.LogLine per line.
 func (d *Daemon) handleLogs(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	process, follow := q.Get("process"), q.Get("follow") == "true"
-	_, checkout, err := d.worktreeAt(r.Context(), q.Get("dir"))
+	dir, err := d.worktreeDir(r.Context(), q.Get("dir"), q.Get("worktree"))
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	_, checkout, err := d.worktreeAt(r.Context(), dir)
 	if err != nil {
 		d.writeError(w, err)
 		return

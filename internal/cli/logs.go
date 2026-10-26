@@ -11,6 +11,7 @@ import (
 func runLogs(ctx context.Context, env Env, args []string) error {
 	fs := newFlags(env, "logs [process]")
 	follow := fs.Bool("f", false, "keep printing new output as it is written")
+	worktree := worktreeFlag(fs, env)
 	// The Process name may come before or after the flags.
 	if err := fs.Parse(args); err != nil {
 		return parseFlags(fs, args)
@@ -26,7 +27,7 @@ func runLogs(ctx context.Context, env Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	req := client.LogsRequest{Dir: env.Dir, Process: process, Follow: *follow}
+	req := client.LogsRequest{Dir: env.Dir, Worktree: worktree(), Process: process, Follow: *follow}
 	return c.Logs(ctx, req, func(l api.LogLine) error {
 		if process != "" {
 			_, err := fmt.Fprintln(env.Stdout, l.Text)

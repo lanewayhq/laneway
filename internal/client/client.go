@@ -55,18 +55,29 @@ func (c *Client) Link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 	return res, err
 }
 
-// Worktree returns the Worktree containing dir, which must be absolute.
-func (c *Client) Worktree(ctx context.Context, dir string) (api.WorktreeInfo, error) {
+// worktreeQuery picks a Worktree for a GET or DELETE route: the one
+// worktree names (see api.ControlRequest.Worktree), else the one containing
+// dir, which must be absolute.
+func worktreeQuery(dir, worktree string) string {
+	q := url.Values{"dir": {dir}}
+	if worktree != "" {
+		q.Set("worktree", worktree)
+	}
+	return q.Encode()
+}
+
+// Worktree returns the Worktree worktree names, or the one containing dir.
+func (c *Client) Worktree(ctx context.Context, dir, worktree string) (api.WorktreeInfo, error) {
 	var info api.WorktreeInfo
-	err := c.do(ctx, http.MethodGet, "/v1/worktree?dir="+url.QueryEscape(dir), nil, &info)
+	err := c.do(ctx, http.MethodGet, "/v1/worktree?"+worktreeQuery(dir, worktree), nil, &info)
 	return info, err
 }
 
-// Info returns everything about the Worktree containing dir, which must be
-// absolute: what `portby info` prints.
-func (c *Client) Info(ctx context.Context, dir string) (api.Info, error) {
+// Info returns everything about the Worktree worktree names, or the one
+// containing dir: what `portby info` prints.
+func (c *Client) Info(ctx context.Context, dir, worktree string) (api.Info, error) {
 	var info api.Info
-	err := c.do(ctx, http.MethodGet, "/v1/info?dir="+url.QueryEscape(dir), nil, &info)
+	err := c.do(ctx, http.MethodGet, "/v1/info?"+worktreeQuery(dir, worktree), nil, &info)
 	return info, err
 }
 
@@ -87,10 +98,11 @@ func (c *Client) AddAlias(ctx context.Context, req api.AliasRequest) (api.AliasR
 	return res, err
 }
 
-// RemoveAlias removes the Alias name from the Worktree containing dir.
-func (c *Client) RemoveAlias(ctx context.Context, dir, name string) (api.AliasResponse, error) {
+// RemoveAlias removes the Alias name from the Worktree worktree names, or the
+// one containing dir.
+func (c *Client) RemoveAlias(ctx context.Context, dir, worktree, name string) (api.AliasResponse, error) {
 	var res api.AliasResponse
-	err := c.do(ctx, http.MethodDelete, "/v1/aliases/"+url.PathEscape(name)+"?dir="+url.QueryEscape(dir), nil, &res)
+	err := c.do(ctx, http.MethodDelete, "/v1/aliases/"+url.PathEscape(name)+"?"+worktreeQuery(dir, worktree), nil, &res)
 	return res, err
 }
 
@@ -113,6 +125,9 @@ func (c *Client) Control(ctx context.Context, action string, req api.ControlRequ
 type LogsRequest struct {
 	// Dir is an absolute path inside the Worktree whose output is wanted.
 	Dir string
+	// Worktree names the Worktree instead of Dir (see
+	// api.ControlRequest.Worktree).
+	Worktree string
 	// Process names one Process; empty means all of the Worktree's.
 	Process string
 	// Follow keeps reading new output until ctx is done or the daemon stops.
@@ -121,7 +136,7 @@ type LogsRequest struct {
 
 // Logs calls fn with each line of Process output, oldest first.
 func (c *Client) Logs(ctx context.Context, req LogsRequest, fn func(api.LogLine) error) error {
-	q := url.Values{"dir": {req.Dir}}
+	q, _ := url.ParseQuery(worktreeQuery(req.Dir, req.Worktree))
 	if req.Process != "" {
 		q.Set("process", req.Process)
 	}
@@ -176,10 +191,11 @@ func (c *Client) Orphans(ctx context.Context) ([]api.Orphan, error) {
 	return list.Orphans, nil
 }
 
-// Unlink Unlinks the Project containing dir, which must be absolute.
-func (c *Client) Unlink(ctx context.Context, dir string) (api.UnlinkResponse, error) {
+// Unlink Unlinks the Project of the Worktree worktree names, or of the one
+// containing dir.
+func (c *Client) Unlink(ctx context.Context, dir, worktree string) (api.UnlinkResponse, error) {
 	var res api.UnlinkResponse
-	err := c.do(ctx, http.MethodDelete, "/v1/projects?dir="+url.QueryEscape(dir), nil, &res)
+	err := c.do(ctx, http.MethodDelete, "/v1/projects?"+worktreeQuery(dir, worktree), nil, &res)
 	return res, err
 }
 

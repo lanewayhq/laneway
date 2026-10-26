@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strings"
 	"syscall"
 
 	"github.com/mrsafalpiya/portby.dev/internal/runtimes"
@@ -18,11 +19,25 @@ const exitNotFound = 127
 // else from PATH. Input and output are the CLI's own, and the exit code is
 // the command's.
 func runExec(ctx context.Context, env Env, args []string) error {
+	// Only --worktree may come before the command (or the -- before it):
+	// everything after belongs to the command.
+	fs := newFlags(env, "exec [--worktree <name>] [--] <command> [args...]")
+	worktree := worktreeFlag(fs, env)
+	if len(args) > 0 && (args[0] == "--worktree" || strings.HasPrefix(args[0], "--worktree=")) {
+		n := 2
+		if strings.Contains(args[0], "=") {
+			n = 1
+		}
+		if err := parseFlags(fs, args[:min(n, len(args))]); err != nil {
+			return err
+		}
+		args = args[min(n, len(args)):]
+	}
 	if len(args) > 0 && args[0] == "--" {
 		args = args[1:]
 	}
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
-		usage := "Usage: portby exec [--] <command> [args...]"
+		usage := "Usage: portby exec [--worktree <name>] [--] <command> [args...]"
 		if len(args) == 0 {
 			return usageError{"missing command; " + usage}
 		}
@@ -33,7 +48,7 @@ func runExec(ctx context.Context, env Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	info, err := c.Worktree(ctx, env.Dir)
+	info, err := c.Worktree(ctx, env.Dir, worktree())
 	if err != nil {
 		return err
 	}

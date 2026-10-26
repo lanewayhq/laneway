@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -13,7 +14,7 @@ import (
 func control(action string) func(ctx context.Context, env Env, args []string) error {
 	return func(ctx context.Context, env Env, args []string) error {
 		fs := newFlags(env, action+" [process]")
-		worktree := fs.String("worktree", "", "act on this Worktree of the Project (git's name, Domain or path) instead of the current one")
+		worktree := worktreeFlag(fs, env)
 		// The Process name may come before or after the flags.
 		if err := fs.Parse(args); err != nil {
 			return parseFlags(fs, args)
@@ -25,18 +26,11 @@ func control(action string) func(ctx context.Context, env Env, args []string) er
 				return err
 			}
 		}
-		// A relative path is relative to where the command runs.
-		if w := *worktree; strings.ContainsRune(w, filepath.Separator) || w == "." || w == ".." {
-			if !filepath.IsAbs(w) {
-				w = filepath.Join(env.Dir, w)
-			}
-			*worktree = filepath.Clean(w)
-		}
 		c, err := apiClient(env)
 		if err != nil {
 			return err
 		}
-		w, err := c.Control(ctx, action, api.ControlRequest{Dir: env.Dir, Worktree: *worktree, Process: process})
+		w, err := c.Control(ctx, action, api.ControlRequest{Dir: env.Dir, Worktree: worktree(), Process: process})
 		if err != nil {
 			return err
 		}
@@ -50,5 +44,23 @@ func control(action string) func(ctx context.Context, env Env, args []string) er
 		}
 		fmt.Fprintln(env.Stdout)
 		return nil
+	}
+}
+
+// worktreeFlag adds --worktree to fs, for a command that acts on the current
+// directory's Worktree unless it names another. The func returns its value
+// once fs is parsed, a relative path made absolute against env.Dir: git's
+// name for a Worktree of the current Project (or the Project's name for its
+// main Worktree), a Domain or Alias, or a path.
+func worktreeFlag(fs *flag.FlagSet, env Env) func() string {
+	w := fs.String("worktree", "", "act on this Worktree (git's name, Domain or path) instead of the current one")
+	return func() string {
+		if strings.ContainsRune(*w, filepath.Separator) || *w == "." || *w == ".." {
+			if !filepath.IsAbs(*w) {
+				return filepath.Join(env.Dir, *w)
+			}
+			return filepath.Clean(*w)
+		}
+		return *w
 	}
 }

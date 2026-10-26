@@ -1,18 +1,14 @@
 package daemon
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
-	"strings"
+	"slices"
 
 	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/gitrepo"
 	"github.com/mrsafalpiya/portby.dev/internal/proxy"
 	"github.com/mrsafalpiya/portby.dev/internal/recipe"
-	"github.com/mrsafalpiya/portby.dev/internal/registry"
 )
 
 // control carries out `portby up`, `down` or `restart` (action) on the
@@ -22,14 +18,19 @@ func (d *Daemon) control(ctx context.Context, action string, req api.ControlRequ
 	if action != "up" && action != "down" && action != "restart" {
 		return api.Worktree{}, &api.Error{Code: api.CodeBadRequest, Message: fmt.Sprintf("unknown action %q", action)}
 	}
-	p, checkout, err := d.worktreeAt(ctx, req.Dir)
+	dir, err := d.worktreeDir(ctx, req.Dir, req.Worktree)
 	if err != nil {
 		return api.Worktree{}, err
 	}
-	w, err := d.pickWorktree(p, checkout, req.Worktree)
+	p, checkout, err := d.worktreeAt(ctx, dir)
 	if err != nil {
 		return api.Worktree{}, err
 	}
+	i := slices.IndexFunc(d.apiProject(p).Worktrees, func(w api.Worktree) bool { return w.Path == checkout.Dir })
+	if i < 0 {
+		return api.Worktree{}, &api.Error{Code: api.CodeUnknownWorktree, Message: fmt.Sprintf("the Worktree at %s isn't served yet", checkout.Dir)}
+	}
+	w := d.apiProject(p).Worktrees[i]
 	d.servedMu.Lock()
 	s, ok := d.served[w.Domain]
 	d.servedMu.Unlock()
@@ -65,37 +66,6 @@ func (d *Daemon) control(ctx context.Context, action string, req api.ControlRequ
 		return api.Worktree{}, err
 	}
 	return d.withState(w), nil
-}
-
-// pickWorktree finds the Worktree of p that name refers to: git's name for
-// it, its Domain or its path, or the Project's name for the main Worktree.
-// An empty name is the checkout's own Worktree.
-func (d *Daemon) pickWorktree(p registry.Project, checkout gitrepo.Checkout, name string) (api.Worktree, error) {
-	worktrees := d.apiProject(p).Worktrees
-	// Paths are compared as the Registry keeps them: with symlinks resolved.
-	if filepath.IsAbs(name) {
-		if real, err := filepath.EvalSymlinks(name); err == nil {
-			name = real
-		}
-	}
-	var names []string
-	for _, w := range worktrees {
-		switch {
-		case name == "" && w.Path == checkout.Dir,
-			name != "" && (name == w.Domain || filepath.Clean(name) == w.Path),
-			name != "" && w.Main && name == p.Name,
-			name != "" && !w.Main && name == w.Name:
-			return w, nil
-		}
-		names = append(names, cmp.Or(w.Name, p.Name))
-	}
-	if name == "" {
-		return api.Worktree{}, &api.Error{Code: api.CodeUnknownWorktree, Message: fmt.Sprintf("the Worktree at %s isn't served yet", checkout.Dir)}
-	}
-	return api.Worktree{}, &api.Error{
-		Code:    api.CodeUnknownWorktree,
-		Message: fmt.Sprintf("Project %q has no Worktree %q; its Worktrees are %s", p.Name, name, strings.Join(names, ", ")),
-	}
 }
 
 // up starts proc, or the whole Worktree if proc is nil. A manual Process

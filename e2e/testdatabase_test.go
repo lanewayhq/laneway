@@ -196,7 +196,7 @@ func TestTheWorktreesDatabaseAndTestDatabaseAreInItsInfo(t *testing.T) {
 	wt := repo.AddWorktree("feature")
 	d.MustRunCLI(wt.Dir, "worktree", "ready")
 
-	info, err := d.Client().Worktree(context.Background(), wt.Dir)
+	info, err := d.Client().Worktree(context.Background(), wt.Dir, "")
 	if err != nil {
 		t.Fatal(err)
 	}

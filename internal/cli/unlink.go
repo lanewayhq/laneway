@@ -6,10 +6,11 @@ import (
 )
 
 // runUnlink is `portby unlink`: Unlink the Project the current directory is
-// in. Its databases become Orphans, so it can be undone by linking again
+// in (or whose Worktree --worktree names). Its databases become Orphans, so it can be undone by linking again
 // within the grace period.
 func runUnlink(ctx context.Context, env Env, args []string) error {
 	fs := newFlags(env, "unlink")
+	worktree := worktreeFlag(fs, env)
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -17,7 +18,7 @@ func runUnlink(ctx context.Context, env Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	res, err := c.Unlink(ctx, env.Dir)
+	res, err := c.Unlink(ctx, env.Dir, worktree())
 	if err != nil {
 		return err
 	}

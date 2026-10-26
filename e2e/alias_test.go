@@ -94,7 +94,7 @@ func TestAliasesSurviveADaemonRestart(t *testing.T) {
 	if got := d.GetServer("https://stable.alias-restart.localhost/"); got.Name != "web@alias-restart" {
 		t.Fatalf("stable.alias-restart.localhost reached %q after a restart, want the main Worktree", got.Name)
 	}
-	info, err := d.Client().Worktree(t.Context(), wt.Dir)
+	info, err := d.Client().Worktree(t.Context(), wt.Dir, "")
 	if err != nil {
 		t.Fatal(err)
 	}

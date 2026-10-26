@@ -28,6 +28,7 @@ const infoNotServed = 3
 func runInfo(ctx context.Context, env Env, args []string) error {
 	fs := newFlags(env, "info")
 	asJSON := fs.Bool("json", false, "print the details as JSON (a stable format for scripts and agents)")
+	worktree := worktreeFlag(fs, env)
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -35,7 +36,7 @@ func runInfo(ctx context.Context, env Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	info, err := c.Info(ctx, env.Dir)
+	info, err := c.Info(ctx, env.Dir, worktree())
 	var apiErr *api.Error
 	switch {
 	case errors.Is(err, client.ErrDaemonNotRunning),

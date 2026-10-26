@@ -7,6 +7,7 @@ import (
 
 func runOpen(ctx context.Context, env Env, args []string) error {
 	fs := newFlags(env, "open")
+	worktree := worktreeFlag(fs, env)
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -14,7 +15,7 @@ func runOpen(ctx context.Context, env Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	info, err := c.Worktree(ctx, env.Dir)
+	info, err := c.Worktree(ctx, env.Dir, worktree())
 	if err != nil {
 		return err
 	}

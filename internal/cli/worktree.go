@@ -28,6 +28,7 @@ func runWorktree(ctx context.Context, env Env, args []string) error {
 func runWorktreeAlias(ctx context.Context, env Env, args []string) error {
 	fs := newFlags(env, "worktree alias <name>")
 	remove := fs.Bool("remove", false, "take the Alias off instead of adding it")
+	worktree := worktreeFlag(fs, env)
 	// The name may come before or after the flags.
 	if err := fs.Parse(args); err != nil {
 		return parseFlags(fs, args)
@@ -44,14 +45,14 @@ func runWorktreeAlias(ctx context.Context, env Env, args []string) error {
 		return err
 	}
 	if *remove {
-		res, err := c.RemoveAlias(ctx, env.Dir, name)
+		res, err := c.RemoveAlias(ctx, env.Dir, worktree(), name)
 		if err != nil {
 			return err
 		}
 		fmt.Fprintf(env.Stdout, "Removed the Alias %s from %s\n", res.Domain, describeWorktree(res.Worktree.Worktree))
 		return nil
 	}
-	res, err := c.AddAlias(ctx, api.AliasRequest{Dir: env.Dir, Name: name})
+	res, err := c.AddAlias(ctx, api.AliasRequest{Dir: env.Dir, Worktree: worktree(), Name: name})
 	if err != nil {
 		return err
 	}

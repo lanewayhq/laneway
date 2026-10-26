@@ -50,7 +50,12 @@ func (d *Daemon) handleLink(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Daemon) handleUnlink(w http.ResponseWriter, r *http.Request) {
-	res, err := d.unlink(r.Context(), r.URL.Query().Get("dir"))
+	dir, err := d.queryDir(r)
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	res, err := d.unlink(r.Context(), dir)
 	if err != nil {
 		d.writeError(w, err)
 		return
@@ -59,7 +64,12 @@ func (d *Daemon) handleUnlink(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Daemon) handleWorktree(w http.ResponseWriter, r *http.Request) {
-	info, err := d.worktreeInfo(r.Context(), r.URL.Query().Get("dir"))
+	dir, err := d.queryDir(r)
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	info, err := d.worktreeInfo(r.Context(), dir)
 	if err != nil {
 		d.writeError(w, err)
 		return
@@ -68,7 +78,12 @@ func (d *Daemon) handleWorktree(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Daemon) handleInfo(w http.ResponseWriter, r *http.Request) {
-	info, err := d.info(r.Context(), r.URL.Query().Get("dir"))
+	dir, err := d.queryDir(r)
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	info, err := d.info(r.Context(), dir)
 	if err != nil {
 		d.writeError(w, err)
 		return
@@ -81,6 +96,12 @@ func (d *Daemon) handleWorktreeReady(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
+	dir, err := d.worktreeDir(r.Context(), req.Dir, req.Worktree)
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	req.Dir, req.Worktree = dir, ""
 	info, err := d.worktreeReady(r.Context(), req)
 	if err != nil {
 		d.writeError(w, err)
@@ -107,7 +128,12 @@ func (d *Daemon) handleAddAlias(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	res, err := d.addAlias(r.Context(), req.Dir, req.Name)
+	dir, err := d.worktreeDir(r.Context(), req.Dir, req.Worktree)
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	res, err := d.addAlias(r.Context(), dir, req.Name)
 	if err != nil {
 		d.writeError(w, err)
 		return
@@ -116,7 +142,12 @@ func (d *Daemon) handleAddAlias(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Daemon) handleRemoveAlias(w http.ResponseWriter, r *http.Request) {
-	res, err := d.removeAlias(r.Context(), r.URL.Query().Get("dir"), r.PathValue("name"))
+	dir, err := d.queryDir(r)
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	res, err := d.removeAlias(r.Context(), dir, r.PathValue("name"))
 	if err != nil {
 		d.writeError(w, err)
 		return
@@ -213,4 +244,11 @@ func (d *Daemon) writeError(w http.ResponseWriter, err error) {
 		status = http.StatusInternalServerError
 	}
 	writeJSON(w, status, api.ErrorResponse{Error: *apiErr})
+}
+
+// queryDir is the directory of the Worktree a GET or DELETE request acts on,
+// from its dir and worktree query parameters (see worktreeDir).
+func (d *Daemon) queryDir(r *http.Request) (string, error) {
+	q := r.URL.Query()
+	return d.worktreeDir(r.Context(), q.Get("dir"), q.Get("worktree"))
 }
