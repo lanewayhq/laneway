@@ -27,8 +27,9 @@ type Server func(ln net.Listener, spec container.Spec, data *Volume)
 
 // Volume is a fake container's data. It is safe for concurrent use.
 type Volume struct {
-	mu   sync.Mutex
-	data map[string]string
+	mu    sync.Mutex
+	data  map[string]string
+	lists map[string][]string
 }
 
 // Get returns the value stored under key.
@@ -46,11 +47,29 @@ func (v *Volume) Set(key, value string) {
 	v.data[key] = value
 }
 
+// Append adds value at the end of the list called key.
+func (v *Volume) Append(key, value string) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.lists == nil {
+		v.lists = map[string][]string{}
+	}
+	v.lists[key] = append(v.lists[key], value)
+}
+
+// List returns the list called key, oldest first.
+func (v *Volume) List(key string) []string {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return slices.Clone(v.lists[key])
+}
+
 // Fake is a container engine whose containers are in-process servers. It is
 // safe for concurrent use.
 type Fake struct {
 	mu          sync.Mutex
-	servers     map[string]Server // image repository (without tag) → Server
+	servers     map[string]Server         // image repository (without tag) → Server
+	extra       map[string]map[int]Server // image repository → extra port → Server
 	containers  map[string]*fakeContainer
 	calls       []string
 	hold        chan struct{} // while non-nil, Start waits for it to close
@@ -60,14 +79,17 @@ type Fake struct {
 type fakeContainer struct {
 	spec   container.Spec
 	volume *Volume
-	ln     net.Listener // nil when stopped
+	ln     net.Listener         // nil when stopped
+	extra  map[int]net.Listener // the ExtraPorts' listeners while running
 	conns  *connSet
 }
 
-// New returns a Fake that can run Redis and Postgres images.
+// New returns a Fake that can run Redis, Mailpit and Postgres images.
 func New() *Fake {
-	f := &Fake{servers: map[string]Server{}, containers: map[string]*fakeContainer{}}
+	f := &Fake{servers: map[string]Server{}, extra: map[string]map[int]Server{}, containers: map[string]*fakeContainer{}}
 	f.Serve("docker.io/library/redis", Redis)
+	f.Serve("docker.io/axllent/mailpit", MailpitSMTP)
+	f.ServePort("docker.io/axllent/mailpit", 8025, MailpitWeb)
 	f.Serve("docker.io/library/postgres", Postgres)
 	return f
 }
@@ -78,6 +100,18 @@ func (f *Fake) Serve(image string, server Server) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.servers[image] = server
+}
+
+// ServePort makes containers of image run server on port, one of their
+// Spec's ExtraPorts. It shares the container's Volume with the Server of its
+// main port.
+func (f *Fake) ServePort(image string, port int, server Server) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.extra[image] == nil {
+		f.extra[image] = map[int]Server{}
+	}
+	f.extra[image][port] = server
 }
 
 // Calls are the calls made so far, oldest first: "pull <image>",
@@ -190,12 +224,38 @@ func (f *Fake) Start(ctx context.Context, spec container.Spec) (string, error) {
 	if c.ln != nil {
 		return c.ln.Addr().String(), nil
 	}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	extra := map[int]Server{}
+	for _, port := range spec.ExtraPorts {
+		if extra[port] = f.extra[repo][port]; extra[port] == nil {
+			return "", fmt.Errorf("the fake container engine can't serve port %d of %s", port, spec.Image)
+		}
+	}
+	conns := &connSet{conns: map[net.Conn]bool{}}
+	listen := func() (net.Listener, error) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return nil, err
+		}
+		return &trackingListener{Listener: ln, conns: conns}, nil
+	}
+	ln, err := listen()
 	if err != nil {
 		return "", err
 	}
-	c.conns = &connSet{conns: map[net.Conn]bool{}}
-	c.ln = &trackingListener{Listener: ln, conns: c.conns}
+	c.extra = map[int]net.Listener{}
+	for port, server := range extra {
+		eln, err := listen()
+		if err != nil {
+			ln.Close()
+			for _, l := range c.extra {
+				l.Close()
+			}
+			return "", err
+		}
+		c.extra[port] = eln
+		go server(eln, c.spec, c.volume)
+	}
+	c.conns, c.ln = conns, ln
 	go server(c.ln, c.spec, c.volume)
 	return ln.Addr().String(), nil
 }
@@ -215,11 +275,14 @@ func (f *Fake) Stop(ctx context.Context, name string) error {
 
 func (f *Fake) stop(c *fakeContainer) {
 	f.mu.Lock()
-	ln, conns := c.ln, c.conns
-	c.ln = nil
+	ln, extra, conns := c.ln, c.extra, c.conns
+	c.ln, c.extra = nil, nil
 	f.mu.Unlock()
 	if ln != nil {
 		ln.Close()
+		for _, l := range extra {
+			l.Close()
+		}
 		conns.closeAll()
 	}
 }
@@ -233,6 +296,9 @@ func (f *Fake) Running(ctx context.Context, name string, port int) (string, bool
 	c := f.containers[name]
 	if c == nil || c.ln == nil {
 		return "", false, nil
+	}
+	if ln, ok := c.extra[port]; ok {
+		return ln.Addr().String(), true, nil
 	}
 	return c.ln.Addr().String(), true, nil
 }

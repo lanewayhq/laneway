@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bufio"
 	"cmp"
 	"context"
 	"errors"
@@ -181,6 +182,9 @@ func (m *Manager) spec(svc Service) container.Spec {
 	if e.Cmd != nil {
 		spec.Cmd = e.Cmd(svc.Version)
 	}
+	if e.WebPort != 0 {
+		spec.ExtraPorts = []int{e.WebPort}
+	}
 	return spec
 }
 
@@ -229,6 +233,36 @@ func (m *Manager) Pull(ctx context.Context, name string) error {
 		return fmt.Errorf("no Service %s", name)
 	}
 	return m.opts.Engine.Pull(ctx, s.spec.Image)
+}
+
+// Web starts the Service called name if needed, like Up, and returns the
+// host address its engine's web UI (Engine.WebPort) is published on, for
+// the proxy to forward to.
+func (m *Manager) Web(ctx context.Context, name string) (string, error) {
+	s, ok := m.lookup(name)
+	if !ok {
+		return "", fmt.Errorf("no Service %s", name)
+	}
+	if s.Engine.WebPort == 0 {
+		return "", fmt.Errorf("Service %s has no web UI", name)
+	}
+	for attempt := 0; ; attempt++ {
+		addr, err := s.ensure(ctx)
+		if err != nil {
+			return "", err
+		}
+		web, running, err := m.opts.Engine.Running(ctx, s.spec.Name, s.Engine.WebPort)
+		switch {
+		case err != nil:
+			return "", fmt.Errorf("finding Service %s's web UI: %w", name, err)
+		case running && web != "":
+			return web, nil
+		case attempt > 0:
+			return "", fmt.Errorf("Service %s isn't running", name)
+		}
+		// Stopped between ensure and now: start it again.
+		s.forget(addr)
+	}
 }
 
 // Down stops the Service called name and closes its connections. The next
@@ -425,7 +459,10 @@ func (s *managed) ensure(ctx context.Context) (string, error) {
 	defer cancel()
 	addr, err := s.m.opts.Engine.Start(ctx, s.spec)
 	if err == nil {
-		err = s.waitReady(ctx, addr)
+		err = s.waitReady(ctx, addr, s.Engine.Probe)
+	}
+	if err == nil && s.Engine.WebPort != 0 {
+		err = s.waitWebReady(ctx)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -443,10 +480,39 @@ func (s *managed) ensure(ctx context.Context) (string, error) {
 // probeInterval is how often a starting Service is probed.
 const probeInterval = 50 * time.Millisecond
 
-// waitReady probes addr until the engine answers.
-func (s *managed) waitReady(ctx context.Context, addr string) error {
+// waitWebReady waits until the engine's web UI answers HTTP, so the first
+// page of it doesn't fail while the engine is starting.
+func (s *managed) waitWebReady(ctx context.Context) error {
+	addr, running, err := s.m.opts.Engine.Running(ctx, s.spec.Name, s.Engine.WebPort)
+	if err != nil {
+		return err
+	}
+	if !running || addr == "" {
+		return fmt.Errorf("its web UI (port %d) isn't published", s.Engine.WebPort)
+	}
+	return s.waitReady(ctx, addr, probeHTTP)
+}
+
+// probeHTTP sends a request for /: any HTTP response means the server is
+// up.
+func probeHTTP(ctx context.Context, conn net.Conn) error {
+	if _, err := io.WriteString(conn, "GET / HTTP/1.0\r\nHost: localhost\r\n\r\n"); err != nil {
+		return err
+	}
+	line, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("http: %w", err)
+	}
+	if !strings.HasPrefix(line, "HTTP/") {
+		return fmt.Errorf("http: %s", strings.TrimSpace(line))
+	}
+	return nil
+}
+
+// waitReady probes addr with probe until the engine answers.
+func (s *managed) waitReady(ctx context.Context, addr string, probe func(context.Context, net.Conn) error) error {
 	for {
-		err := s.probe(ctx, addr)
+		err := s.probe(ctx, addr, probe)
 		if err == nil {
 			return nil
 		}
@@ -458,7 +524,7 @@ func (s *managed) waitReady(ctx context.Context, addr string) error {
 	}
 }
 
-func (s *managed) probe(ctx context.Context, addr string) error {
+func (s *managed) probe(ctx context.Context, addr string, probe func(context.Context, net.Conn) error) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	var d net.Dialer
@@ -469,7 +535,7 @@ func (s *managed) probe(ctx context.Context, addr string) error {
 	defer conn.Close()
 	deadline, _ := ctx.Deadline()
 	conn.SetDeadline(deadline)
-	return s.Engine.Probe(ctx, conn)
+	return probe(ctx, conn)
 }
 
 // goIdle is called by the Activity Tracker once the Service has had no

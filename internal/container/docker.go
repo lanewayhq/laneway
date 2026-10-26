@@ -230,12 +230,15 @@ func (e *Docker) Start(ctx context.Context, spec Spec) (string, error) {
 }
 
 func (e *Docker) create(ctx context.Context, spec Spec) error {
-	port := strconv.Itoa(spec.Port) + "/tcp"
-	host := map[string]any{
-		// Loopback only, on a port the engine picks: Portby owns the
-		// Service's real port and forwards to this one.
-		"PortBindings": map[string]any{port: []map[string]string{{"HostIp": "127.0.0.1", "HostPort": ""}}},
+	// Loopback only, on ports the engine picks: Portby owns the Service's
+	// real port and forwards to this one.
+	bindings, exposed := map[string]any{}, map[string]any{}
+	for _, p := range append([]int{spec.Port}, spec.ExtraPorts...) {
+		port := strconv.Itoa(p) + "/tcp"
+		bindings[port] = []map[string]string{{"HostIp": "127.0.0.1", "HostPort": ""}}
+		exposed[port] = map[string]any{}
 	}
+	host := map[string]any{"PortBindings": bindings}
 	if spec.Volume != "" {
 		host["Mounts"] = []map[string]string{{"Type": "volume", "Source": spec.Volume, "Target": spec.VolumeTarget}}
 	}
@@ -243,7 +246,7 @@ func (e *Docker) create(ctx context.Context, spec Spec) error {
 		"Image":        spec.Image,
 		"Env":          spec.Env,
 		"Labels":       spec.Labels,
-		"ExposedPorts": map[string]any{port: map[string]any{}},
+		"ExposedPorts": exposed,
 		"HostConfig":   host,
 	}
 	if len(spec.Cmd) > 0 {

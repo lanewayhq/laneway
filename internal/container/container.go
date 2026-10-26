@@ -47,6 +47,9 @@ type Spec struct {
 	// Port is the container's TCP port. It is published on the host's
 	// loopback only, on a port the engine picks.
 	Port int
+	// ExtraPorts are more container ports, published like Port; Running
+	// gives their host addresses.
+	ExtraPorts []int
 	// Volume is a named volume mounted at VolumeTarget, so data survives
 	// the container being stopped (or re-created).
 	Volume       string
