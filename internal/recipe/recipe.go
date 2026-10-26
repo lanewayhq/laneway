@@ -56,6 +56,9 @@ type Resolved struct {
 	// StartTimeout is how long the Primary Process gets to accept
 	// connections when its Worktree starts; 0 means the daemon's default.
 	StartTimeout time.Duration
+	// IdleTimeout is how long a Worktree may go without traffic before it
+	// is Idle; 0 means the global default.
+	IdleTimeout time.Duration
 	// Env is the Env Patch: env key → template, merged by key. nil if no
 	// layer declares any.
 	Env map[string]string
@@ -70,6 +73,9 @@ type Resolved struct {
 	// configured (maybe relative to the main Worktree); "" means the
 	// default, see DefaultWorktreeRoot.
 	WorktreeRoot string
+	// Database is the database each Worktree gets; its Engine is "" if
+	// the Project has none.
+	Database Database
 	// Warnings are problems that didn't stop resolution, such as unknown
 	// keys. Each names the file it comes from.
 	Warnings []string
@@ -90,7 +96,46 @@ type Process struct {
 	// a port, and those other than the Primary Process are served at
 	// <process>.<domain>.
 	HTTP bool
+	// StartMode says when the Process runs.
+	StartMode StartMode
 }
+
+// StartMode is when a Process runs. The zero value is Lazy.
+type StartMode string
+
+const (
+	// Lazy Processes start with their Worktree on its first request and
+	// stop when it is Idle. It is the default.
+	Lazy StartMode = ""
+	// Always Processes start with the daemon and are never stopped by
+	// Idle.
+	Always StartMode = "always"
+	// Manual Processes only start through `portby up <process>`.
+	Manual StartMode = "manual"
+)
+
+// String is the Start Mode as written in config: lazy, always or manual.
+func (m StartMode) String() string {
+	if m == Lazy {
+		return "lazy"
+	}
+	return string(m)
+}
+
+// Database is the resolved [database] table, merged key by key.
+type Database struct {
+	// Engine is one of config.DatabaseEngines, or "" for no database.
+	Engine string
+	// Path is the SQLite file, relative to the Worktree.
+	Path string
+	// Mode is how a Worktree other than the main one gets its database,
+	// one of config.DatabaseModes; DefaultDatabaseMode unless configured.
+	Mode string
+}
+
+// DefaultDatabaseMode is how a Worktree gets its database unless
+// database.worktree says otherwise: as a copy of the main Worktree's.
+const DefaultDatabaseMode = "clone"
 
 // Layer is r as a config layer: what `portby init` writes to portby.toml.
 // Every enabled Process is written with its command, the Primary Process is
@@ -103,6 +148,9 @@ func (r Resolved) Layer() config.Layer {
 	if r.StartTimeout != 0 {
 		l.StartTimeout = &r.StartTimeout
 	}
+	if r.IdleTimeout != 0 {
+		l.IdleTimeout = &r.IdleTimeout
+	}
 	if len(r.Processes)+len(r.Disabled) > 0 {
 		l.Processes = map[string]config.ProcessLayer{}
 	}
@@ -114,6 +162,10 @@ func (r Resolved) Layer() config.Layer {
 		case p.HTTP, len(r.Processes) == 1:
 			// A lone Process would otherwise become the Primary Process.
 			pl.HTTP = &p.HTTP
+		}
+		if p.StartMode != Lazy {
+			mode := p.StartMode.String()
+			pl.StartMode = &mode
 		}
 		l.Processes[p.Name] = pl
 	}
@@ -132,6 +184,17 @@ func (r Resolved) Layer() config.Layer {
 	}
 	if r.WorktreeRoot != "" {
 		l.WorktreeRoot = &r.WorktreeRoot
+	}
+	if db := r.Database; db != (Database{}) {
+		l.Database = &config.DatabaseLayer{}
+		for _, kv := range []struct {
+			from string
+			to   **string
+		}{{db.Engine, &l.Database.Engine}, {db.Path, &l.Database.Path}, {db.Mode, &l.Database.Worktree}} {
+			if kv.from != "" {
+				*kv.to = &kv.from
+			}
+		}
 	}
 	return l
 }
@@ -200,10 +263,12 @@ func Resolve(in Input) (Resolved, error) {
 		disabled bool
 		http     *bool
 		source   string // the layer that declared the Process
-		// The layers that last set the command and http, for errors.
-		commandSource, httpSource string
+		// The layers that last set the command, http and start_mode, for
+		// errors.
+		commandSource, httpSource, startModeSource string
 	}
 	procs := map[string]*merged{}
+	var engineSource string // the layer that last set database.engine
 	for i, l := range layers {
 		res.Warnings = append(res.Warnings, l.Warnings...)
 		if l.Name != nil {
@@ -211,6 +276,9 @@ func Resolve(in Input) (Resolved, error) {
 		}
 		if l.StartTimeout != nil {
 			res.StartTimeout = *l.StartTimeout
+		}
+		if l.IdleTimeout != nil {
+			res.IdleTimeout = *l.IdleTimeout
 		}
 		if l.WorktreeRoot != nil {
 			res.WorktreeRoot = *l.WorktreeRoot
@@ -222,6 +290,17 @@ func Resolve(in Input) (Resolved, error) {
 			res.OnRemove = append(res.OnRemove, l.OnRemove...)
 			if l.InheritSetup != nil {
 				inherit = *l.InheritSetup
+			}
+		}
+		if db := l.Database; db != nil {
+			if db.Engine != nil {
+				res.Database.Engine, engineSource = *db.Engine, l.Source
+			}
+			if db.Path != nil {
+				res.Database.Path = *db.Path
+			}
+			if db.Worktree != nil {
+				res.Database.Mode = *db.Worktree
 			}
 		}
 		for key, template := range l.Env {
@@ -255,7 +334,20 @@ func Resolve(in Input) (Resolved, error) {
 			if pl.Disabled != nil {
 				p.disabled = *pl.Disabled
 			}
+			if pl.StartMode != nil {
+				p.StartMode, p.startModeSource = StartMode(*pl.StartMode), l.Source
+				if p.StartMode == "lazy" {
+					p.StartMode = Lazy
+				}
+			}
 		}
+	}
+	if res.Database.Engine != "" && res.Database.Mode == "" {
+		res.Database.Mode = DefaultDatabaseMode
+	}
+	if res.Database.Engine == "sqlite" && res.Database.Path == "" {
+		return Resolved{}, fmt.Errorf("%s: database.engine is sqlite, but database.path isn't set; "+
+			"set it to the SQLite file, relative to the Worktree, such as \"database/database.sqlite\"", engineSource)
 	}
 	if inherit {
 		res.OnCreate = append(slices.Clone(recipeCreate), res.OnCreate...)
@@ -291,6 +383,10 @@ func Resolve(in Input) (Resolved, error) {
 			return Resolved{}, fmt.Errorf("%s: processes.%s.http is true, but no Process is the Primary Process; "+
 				"a Worktree with HTTP Processes needs exactly one: set primary = true on the Process that serves the Domain",
 				p.httpSource, p.Name)
+		}
+		if p.Primary && p.StartMode == Manual {
+			return Resolved{}, fmt.Errorf("%s: processes.%s.start_mode: the Primary Process can't be manual, "+
+				"because requests to the Worktree need it; make it lazy or always", p.startModeSource, p.Name)
 		}
 		p.HTTP = p.Primary || (p.http != nil && *p.http)
 		if !p.HTTP && strings.Contains(p.Command, "{port}") {

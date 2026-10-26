@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -65,6 +66,9 @@ type Status struct {
 	Error string `json:"error,omitempty"`
 	// Output is the last OutputLines lines the failed step printed.
 	Output []string `json:"output,omitempty"`
+	// Warnings are what steps reported with Warn, such as a database that
+	// couldn't be cloned, in order.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // Done reports whether setup has finished, one way or the other.
@@ -191,14 +195,16 @@ func (p *Provisioner) Begin(dir string, plan Plan, retry bool) {
 
 // run runs the plan's steps in order and returns the outcome.
 func (p *Provisioner) run(ctx context.Context, dir string, j *job, plan Plan) Status {
+	warned := &warnings{}
+	ctx = context.WithValue(ctx, warningsKey{}, warned)
 	steps, err := plan(ctx)
 	if err != nil {
-		return Status{State: Failed, Step: "config", Error: err.Error()}
+		return Status{State: Failed, Step: "config", Error: err.Error(), Warnings: warned.list()}
 	}
 	for _, step := range steps {
 		p.mu.Lock()
 		if p.running[dir] == j {
-			p.setLocked(dir, Status{State: Provisioning, Step: step.Name})
+			p.setLocked(dir, Status{State: Provisioning, Step: step.Name, Warnings: warned.list()})
 		}
 		p.mu.Unlock()
 		out := &tail{}
@@ -206,11 +212,41 @@ func (p *Provisioner) run(ctx context.Context, dir string, j *job, plan Plan) St
 			if ctx.Err() == nil {
 				p.log.Error("Worktree setup failed", "dir", dir, "step", step.Name, "err", err)
 			}
-			return Status{State: Failed, Step: step.Name, Error: err.Error(), Output: out.Lines()}
+			return Status{State: Failed, Step: step.Name, Error: err.Error(), Output: out.Lines(), Warnings: warned.list()}
 		}
 	}
+	for _, w := range warned.list() {
+		p.log.Warn("Worktree setup", "dir", dir, "warning", w)
+	}
 	p.log.Info("Worktree is Ready", "dir", dir)
-	return Status{State: Ready}
+	return Status{State: Ready, Warnings: warned.list()}
+}
+
+// Warn records a warning for the developer from a running setup step (ctx is
+// the one the step was given): something worked, but not as configured, such
+// as a database created empty because there was none to clone. Warnings are
+// kept in the Worktree's Status, whether setup ends Ready or Failed.
+// Outside a setup step it does nothing.
+func Warn(ctx context.Context, warning string) {
+	if w, ok := ctx.Value(warningsKey{}).(*warnings); ok {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		w.warnings = append(w.warnings, warning)
+	}
+}
+
+type warningsKey struct{}
+
+// warnings are the ones a setup's steps reported.
+type warnings struct {
+	mu       sync.Mutex
+	warnings []string
+}
+
+func (w *warnings) list() []string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return slices.Clone(w.warnings)
 }
 
 // Wait blocks until the Worktree at dir is Ready or Failed and returns its

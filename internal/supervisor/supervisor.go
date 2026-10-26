@@ -10,7 +10,9 @@
 // Each Process's output (stdout and stderr together) is kept: the most recent
 // lines in memory (see Output), and all of it in a rotating log file.
 //
-// Start Modes come in a later ticket.
+// Processes are started one at a time (Start) and stopped one at a time
+// (Stop) or together (StopGroup, StopAll); Start Modes are the daemon's
+// business.
 package supervisor
 
 import (
@@ -65,8 +67,11 @@ type Supervisor struct {
 	clock clock.Clock
 	opts  Options
 
-	mu     sync.Mutex
-	groups map[string]map[string]*Process // group → Process name → Process
+	mu sync.Mutex
+	// groups is group → Process name → Process. A group's map is never
+	// changed once it is in groups (Start and Stop replace it), so readers
+	// may use it after unlocking mu.
+	groups map[string]map[string]*Process
 
 	outMu      sync.Mutex
 	seq        uint64                        // number of the last line written
@@ -107,31 +112,50 @@ func New(log *slog.Logger, opts Options) *Supervisor {
 	}
 }
 
-// StartGroup starts every Process in specs as group, first stopping whatever
-// group was already running under that name. If one fails to start, the
-// ones already started are stopped again.
-func (s *Supervisor) StartGroup(ctx context.Context, group string, specs []Spec) error {
-	s.StopGroup(ctx, group)
-	procs := map[string]*Process{}
-	for _, spec := range specs {
-		p, err := s.start(group, spec)
-		if err != nil {
-			for _, started := range procs {
-				started.stop(ctx)
-			}
-			return err
-		}
-		procs[spec.Name] = p
+// Start starts one Process in group, first stopping a Process of the same
+// name if the group has one. The rest of the group is left alone.
+func (s *Supervisor) Start(ctx context.Context, group string, spec Spec) error {
+	s.Stop(ctx, group, spec.Name)
+	p, err := s.start(group, spec)
+	if err != nil {
+		return err
 	}
-	// A StartGroup for the same group that ran at the same time may have
-	// stored its Processes meanwhile. Stop them rather than lose track of
-	// them: nothing else would ever stop them.
 	s.mu.Lock()
-	replaced := s.groups[group]
+	procs := maps.Clone(s.groups[group])
+	if procs == nil {
+		procs = map[string]*Process{}
+	}
+	// A Start of the same Process that ran at the same time may have stored
+	// its Process meanwhile. Stop it rather than lose track of it: nothing
+	// else would ever stop it.
+	replaced := procs[spec.Name]
+	procs[spec.Name] = p
 	s.groups[group] = procs
 	s.mu.Unlock()
-	stopAll(ctx, replaced)
+	if replaced != nil {
+		replaced.stop(ctx)
+	}
 	return nil
+}
+
+// Stop stops Process name of group, if it has one, and waits for it to
+// exit. Its output is kept.
+func (s *Supervisor) Stop(ctx context.Context, group, name string) {
+	s.mu.Lock()
+	p := s.groups[group][name]
+	if p != nil {
+		procs := maps.Clone(s.groups[group])
+		delete(procs, name)
+		if len(procs) == 0 {
+			delete(s.groups, group)
+		} else {
+			s.groups[group] = procs
+		}
+	}
+	s.mu.Unlock()
+	if p != nil {
+		p.stop(ctx)
+	}
 }
 
 // Process returns Process name in group, if the group is running.
@@ -392,6 +416,11 @@ func (p *Process) restart() {
 // note adds a line from Portby itself to the Process's output.
 func (p *Process) note(format string, args ...any) {
 	p.s.writeLine(p.group, p.spec.Name, fmt.Sprintf("portby: Process %q ", p.spec.Name)+fmt.Sprintf(format, args...))
+}
+
+// State is what the Process is doing.
+func (p *Process) State() State {
+	return p.status().State
 }
 
 func (p *Process) status() Status {

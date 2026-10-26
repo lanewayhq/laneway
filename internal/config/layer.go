@@ -40,6 +40,10 @@ type Layer struct {
 	// StartTimeout is how long the Primary Process gets to accept
 	// connections when its Worktree starts, such as "90s".
 	StartTimeout *time.Duration `toml:"start_timeout"`
+	// IdleTimeout is how long a Worktree may go without requests or open
+	// connections before it is Idle and its lazy Processes stop, such as
+	// "30m". It overrides the global idle_timeout.
+	IdleTimeout *time.Duration `toml:"idle_timeout"`
 	// Env is the Env Patch: the keys Portby owns in each Worktree's .env,
 	// keyed by env key ([env] table). Values are templates such as
 	// "{url}"; see envpatch.Variables.
@@ -57,7 +61,30 @@ type Layer struct {
 	// WorktreeRoot is the directory `portby worktree add` creates worktrees
 	// in. A relative path is relative to the main Worktree's directory.
 	WorktreeRoot *string `toml:"worktree_root"`
+	// Database is the Project's database ([database] table).
+	Database *DatabaseLayer `toml:"database"`
 }
+
+// DatabaseLayer is the [database] table: the database each Worktree gets.
+type DatabaseLayer struct {
+	// Engine is the database engine, one of DatabaseEngines, such as
+	// "sqlite". A Project with no engine has no database.
+	Engine *string `toml:"engine"`
+	// Path is the SQLite database file, relative to the Worktree, such as
+	// "database/database.sqlite".
+	Path *string `toml:"path"`
+	// Worktree is how a Worktree other than the main one gets its
+	// database, one of DatabaseModes: a copy of the main Worktree's
+	// (clone, the default), an empty one (fresh), or the main Worktree's
+	// own (shared).
+	Worktree *string `toml:"worktree"`
+}
+
+// DatabaseEngines are the values database.engine accepts.
+var DatabaseEngines = []string{"sqlite"}
+
+// DatabaseModes are the values database.worktree accepts.
+var DatabaseModes = []string{"clone", "fresh", "shared"}
 
 // ProcessLayer is one [processes.<name>] table.
 type ProcessLayer struct {
@@ -71,11 +98,19 @@ type ProcessLayer struct {
 	// Disabled turns off a Process an earlier layer declared, such as one
 	// from the Recipe. A later layer can set it back to false.
 	Disabled *bool `toml:"disabled"`
+	// StartMode is when the Process runs: "lazy" (the default) starts it
+	// with its Worktree on the first request and stops it when the
+	// Worktree is Idle, "always" keeps it running from when the daemon
+	// starts, and "manual" only runs it through `portby up <process>`.
+	StartMode *string `toml:"start_mode"`
 	// HTTP marks a Process that serves HTTP on its {port}. Other than the
 	// Primary Process, which always does, it is served at
 	// <process>.<domain>. Processes that aren't HTTP get no port.
 	HTTP *bool `toml:"http"`
 }
+
+// StartModes are the valid values of processes.<name>.start_mode.
+var StartModes = []string{"lazy", "always", "manual"}
 
 // LoadLayers reads dir's portby.toml and then portby.local.toml, in the
 // order they apply. Missing files are skipped.
@@ -114,7 +149,7 @@ func ParseLayer(source string, data []byte) (Layer, error) {
 		return Layer{}, decodeError(source, err)
 	}
 	// The decoder silently skips a non-table value for a map field.
-	for _, key := range append([]toml.Key{{"processes"}, {"env"}}, processKeys(l)...) {
+	for _, key := range append([]toml.Key{{"processes"}, {"env"}, {"database"}}, processKeys(l)...) {
 		if t := md.Type(key...); t != "" && t != "Hash" {
 			return Layer{}, fmt.Errorf("%s: %s must be a table, not a %s", source, key, strings.ToLower(t))
 		}
@@ -153,8 +188,14 @@ func (l Layer) validate() error {
 	if l.StartTimeout != nil && *l.StartTimeout <= 0 {
 		return fmt.Errorf("start_timeout must be positive, such as \"90s\", not %s", *l.StartTimeout)
 	}
+	if l.IdleTimeout != nil && *l.IdleTimeout <= 0 {
+		return fmt.Errorf("idle_timeout must be positive, such as \"30m\", not %s", *l.IdleTimeout)
+	}
 	if l.WorktreeRoot != nil && strings.TrimSpace(*l.WorktreeRoot) == "" {
 		return errors.New("worktree_root is empty")
+	}
+	if err := l.Database.validate(); err != nil {
+		return err
 	}
 	for i, step := range l.OnCreate {
 		if strings.TrimSpace(step) == "" {
@@ -180,6 +221,9 @@ func (l Layer) validate() error {
 		if p.Command != nil && strings.TrimSpace(*p.Command) == "" {
 			return fmt.Errorf("processes.%s.command is empty", name)
 		}
+		if p.StartMode != nil && !slices.Contains(StartModes, *p.StartMode) {
+			return fmt.Errorf("processes.%s.start_mode must be lazy, always or manual, not %q", name, *p.StartMode)
+		}
 		if p.Primary != nil && *p.Primary {
 			primaries = append(primaries, "processes."+name+".primary")
 		}
@@ -189,6 +233,35 @@ func (l Layer) validate() error {
 			strings.Join(primaries, " and "))
 	}
 	return nil
+}
+
+func (db *DatabaseLayer) validate() error {
+	if db == nil {
+		return nil
+	}
+	if db.Engine != nil && !slices.Contains(DatabaseEngines, *db.Engine) {
+		return fmt.Errorf("database.engine must be %s, not %q", oneOf(DatabaseEngines), *db.Engine)
+	}
+	if db.Worktree != nil && !slices.Contains(DatabaseModes, *db.Worktree) {
+		return fmt.Errorf("database.worktree must be %s, not %q", oneOf(DatabaseModes), *db.Worktree)
+	}
+	if db.Path != nil {
+		switch path := filepath.Clean(*db.Path); {
+		case strings.TrimSpace(*db.Path) == "":
+			return errors.New("database.path is empty")
+		case filepath.IsAbs(path) || path == ".." || strings.HasPrefix(path, "../"):
+			return fmt.Errorf("database.path must be inside the Worktree, relative to it, such as \"database/database.sqlite\", not %q", *db.Path)
+		}
+	}
+	return nil
+}
+
+// oneOf lists values as "a, b or c".
+func oneOf(values []string) string {
+	if len(values) == 1 {
+		return values[0]
+	}
+	return strings.Join(values[:len(values)-1], ", ") + " or " + values[len(values)-1]
 }
 
 // envKey is what phpdotenv accepts as a key.

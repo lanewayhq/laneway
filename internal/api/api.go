@@ -10,7 +10,10 @@
 //	GET  /v1/worktree?dir=<abs path> -> WorktreeInfo  (the Worktree containing dir)
 //	GET  /v1/daemon     -> DaemonInfo
 //	GET  /v1/logs?dir=&process=&follow=  -> stream of LogLine, one JSON object per line
-//	POST /v1/worktree/ready  ReadyRequest -> WorktreeInfo  (find the Worktree containing
+//	POST /v1/worktree/up       ControlRequest -> Worktree  (start it, or one Process)
+//	POST /v1/worktree/down     ControlRequest -> Worktree  (stop it, or one Process)
+//	POST /v1/worktree/restart  ControlRequest -> Worktree
+//	POST /v1/worktree/ready    ReadyRequest -> WorktreeInfo  (find the Worktree containing
 //	                    dir now, begin or retry its setup and, with wait, wait for it)
 //	POST   /v1/aliases  AliasRequest -> AliasResponse  (add an Alias to the Worktree containing dir)
 //	DELETE /v1/aliases/{name}?dir=<abs path> -> AliasResponse  (remove one)
@@ -51,13 +54,19 @@ type Worktree struct {
 	Main bool   `json:"main"`
 	// Domain is the hostname the Worktree is served at.
 	Domain string `json:"domain,omitempty"`
+	// State is "stopped" (nothing has started it, or `portby down`
+	// stopped it), "starting", "running" or "idle" (it had no traffic
+	// for its idle timeout, so its lazy Processes were stopped). Only
+	// GET /v1/projects and the up/down/restart routes fill it in.
+	State string `json:"state,omitempty"`
 	// Aliases are the Worktree's extra Domains, sorted.
 	Aliases []string `json:"aliases,omitempty"`
-	// Processes are the Worktree's Processes, sorted by name. Only
-	// GET /v1/projects fills them in.
+	// Processes are the Worktree's running Processes, sorted by name.
+	// Only GET /v1/projects and the up/down/restart routes fill them in.
 	Processes []Process `json:"processes,omitempty"`
 	// Setup is where the Worktree is in setup. GET /v1/projects,
-	// GET /v1/worktree and POST /v1/worktree/ready fill it in.
+	// GET /v1/worktree, POST /v1/worktree/ready and the up/down/restart
+	// routes fill it in.
 	Setup *Setup `json:"setup,omitempty"`
 }
 
@@ -81,6 +90,9 @@ type Setup struct {
 	Error string `json:"error,omitempty"`
 	// Output is the last lines the failed step printed.
 	Output []string `json:"output,omitempty"`
+	// Warnings are problems setup worked around, such as a database
+	// created empty because the main Worktree had none to clone.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // ReadyRequest is the body of POST /v1/worktree/ready.
@@ -93,6 +105,17 @@ type ReadyRequest struct {
 	// Wait holds the response until the Worktree is Ready or its setup has
 	// failed. Without it, the current state is returned at once.
 	Wait bool `json:"wait,omitempty"`
+}
+
+// ControlRequest is the body of POST /v1/worktree/up, /down and /restart.
+type ControlRequest struct {
+	// Dir is an absolute path inside the Linked Project to act on.
+	Dir string `json:"dir"`
+	// Worktree picks one of the Project's Worktrees by git's name, its
+	// Domain or its path; empty means the Worktree containing Dir.
+	Worktree string `json:"worktree,omitempty"`
+	// Process names one Process; empty means the whole Worktree.
+	Process string `json:"process,omitempty"`
 }
 
 // ProjectList is the body of GET /v1/projects.
@@ -205,12 +228,16 @@ const (
 	CodeAliasTaken     = "alias_taken"
 	CodeUnknownAlias   = "unknown_alias"
 	CodeInternal       = "internal"
+	// CodeStartFailed: `portby up` or `restart` started the Worktree, but its
+	// Primary Process exited or never accepted connections.
+	CodeStartFailed = "start_failed"
 
 	// CodeInvalidConfig: portby.toml or portby.local.toml can't be used.
 	// The message names the file and the key.
 	CodeInvalidConfig = "invalid_config"
 
-	// CodeUnknownWorktree: git doesn't list the directory's worktree (yet).
+	// CodeUnknownWorktree: git doesn't list the directory's worktree (yet),
+	// or --worktree names none of the Project's Worktrees.
 	CodeUnknownWorktree = "unknown_worktree"
 	// CodeShuttingDown: the daemon stopped while the request was waiting.
 	CodeShuttingDown = "shutting_down"

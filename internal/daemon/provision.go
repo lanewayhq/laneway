@@ -23,10 +23,12 @@ import (
 //
 // It runs when the Worktree's setup starts, so config is read then.
 //
-// To add a step (the database, #19/#20; the Test Database, #22), append a
-// provision.Step where that order puts it. A step's Name is what `portby
-// worktree ready`, `portby status` and the setup error page show when it
-// fails; anything it writes to its output is shown with it. It must stop
+// The database step (database.go) gives a Project with a database engine
+// its database; other engines extend it there, not here. To add a step (the
+// Test Database, #22), append a provision.Step where that order puts it. A
+// step's Name is what `portby worktree ready`, `portby status` and the setup
+// error page show when it fails; anything it writes to its output is shown
+// with it, and provision.Warn reports a problem it worked around. It must stop
 // when its ctx is cancelled (the Worktree was removed or the daemon is
 // stopping) and should be safe to run again: a Failed setup is retried from
 // the first step, and so is one the daemon stopped in the middle of.
@@ -36,16 +38,18 @@ func (d *Daemon) setupPlan(p registry.Project, w envWorktree) provision.Plan {
 		if err != nil {
 			return nil, err
 		}
-		steps := []provision.Step{
-			{Name: "env", Run: func(context.Context, io.Writer) error {
-				plan, err := d.planEnvPatch(p, w)
-				if err != nil {
-					return fmt.Errorf("the Env Patch for %s: %w", w.dir, err)
-				}
-				return plan.Apply()
-			}},
+		var steps []provision.Step
+		if step, ok := databaseStep(p, w, cfg.Database); ok {
+			steps = append(steps, step)
 		}
-		env := d.setupEnv(ctx, p, w, w.dir)
+		steps = append(steps, provision.Step{Name: "env", Run: func(context.Context, io.Writer) error {
+			plan, err := d.planEnvPatch(p, w)
+			if err != nil {
+				return fmt.Errorf("the Env Patch for %s: %w", w.dir, err)
+			}
+			return plan.Apply()
+		}})
+		env := d.setupEnv(ctx, p, w, w.dir, cfg.Database)
 		for _, command := range cfg.OnCreate {
 			steps = append(steps, provision.Shell("on_create: "+command, command, w.dir, env))
 		}
@@ -70,7 +74,7 @@ func (d *Daemon) teardown(p registry.Project, w envWorktree) {
 			if err != nil || len(cfg.OnRemove) == 0 {
 				return nil, err
 			}
-			env := d.setupEnv(ctx, p, w, p.Path)
+			env := d.setupEnv(ctx, p, w, p.Path, cfg.Database)
 			var steps []provision.Step
 			for _, command := range cfg.OnRemove {
 				steps = append(steps, provision.Shell("on_remove: "+command, command, p.Path, env))
@@ -85,9 +89,9 @@ func (d *Daemon) teardown(p registry.Project, w envWorktree) {
 // Project's PHP; plus PORTBY_<VARIABLE> for every Env Patch template
 // variable (PORTBY_PROJECT, PORTBY_WORKTREE, PORTBY_DOMAIN, PORTBY_URL, …)
 // and PORTBY_WORKTREE_PATH, so on_remove steps know which Worktree went.
-func (d *Daemon) setupEnv(ctx context.Context, p registry.Project, w envWorktree, dir string) []string {
+func (d *Daemon) setupEnv(ctx context.Context, p registry.Project, w envWorktree, dir string, db recipe.Database) []string {
 	env := runtimes.Environ(ctx, dir, d.cfg.Env).Vars
-	vars := envVars(p, w)
+	vars := envVars(p, w, db)
 	for _, k := range slices.Sorted(maps.Keys(vars)) {
 		env = append(env, "PORTBY_"+strings.ToUpper(k)+"="+vars[k])
 	}
@@ -97,7 +101,7 @@ func (d *Daemon) setupEnv(ctx context.Context, p registry.Project, w envWorktree
 // setupOf is the API view of the setup state of the Worktree at dir.
 func (d *Daemon) setupOf(dir string) *api.Setup {
 	st := d.provisioner.Status(dir)
-	return &api.Setup{State: string(st.State), Step: st.Step, Error: st.Error, Output: st.Output}
+	return &api.Setup{State: string(st.State), Step: st.Step, Error: st.Error, Output: st.Output, Warnings: st.Warnings}
 }
 
 // worktreeReady finds the Worktree containing req.Dir (discovering it at once
@@ -118,7 +122,17 @@ func (d *Daemon) worktreeReady(ctx context.Context, req api.ReadyRequest) (api.W
 			}
 		}
 	}
+	retried := req.Retry && d.provisioner.Status(w.dir).State == provision.Failed
 	d.provision(p, w, req.Retry)
+	if retried {
+		// The always Processes didn't start while setup was Failed.
+		d.servedMu.Lock()
+		s := d.served[w.domain]
+		d.servedMu.Unlock()
+		if s != nil {
+			d.startAlways(s)
+		}
+	}
 	if req.Wait {
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()

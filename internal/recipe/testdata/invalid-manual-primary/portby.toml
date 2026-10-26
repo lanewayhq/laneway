@@ -1,0 +1,3 @@
+[processes.web]
+command = "serve"
+start_mode = "manual"

@@ -32,7 +32,7 @@ func TestCrashedProcessRestartsAfterBackoff(t *testing.T) {
 	crashNow(t, crash)
 
 	waitForLogs(t, d, repo.Dir, []string{"logs", "web"}, "restarting in 1s")
-	if delay := waitForTimer(t, clk); delay != time.Second {
+	if delay := waitForRestart(t, clk); delay != time.Second {
 		t.Fatalf("first restart scheduled after %s, want 1s", delay)
 	}
 	if boots := countBoots(d, repo.Dir); boots != 1 {
@@ -73,6 +73,20 @@ func waitForTimer(t *testing.T, clk *clock.Fake) time.Duration {
 	return d
 }
 
+// waitForRestart waits until the daemon schedules a crash restart on clk and
+// returns how far away it is. Restart backoffs are at most 30s, so the
+// Worktree's idle timeout (minutes away) is ignored.
+func waitForRestart(t *testing.T, clk *clock.Fake) time.Duration {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	d, err := clk.WaitForTimerWithin(ctx, time.Minute)
+	if err != nil {
+		t.Fatalf("the daemon never scheduled a restart: %v", err)
+	}
+	return d
+}
+
 // waitForBoots waits until the web Process has printed "boot" n times.
 func waitForBoots(t *testing.T, d *testkit.Daemon, dir string, n int) {
 	t.Helper()
@@ -97,7 +111,7 @@ func TestProcessThatKeepsCrashingIsMarkedFailed(t *testing.T) {
 	d := testkit.StartDaemon(t, testkit.WithClock(clk))
 	crash := crashFile(t)
 	repo := gitfixture.New(t, "crash-loop").
-		WriteFile("portby.toml", processConfig("echo boot; exec "+testkit.TestServer(t)+" --exit-when "+crash)).
+		WriteFile("portby.toml", "idle_timeout = \"24h\"\n"+processConfig("echo boot; exec "+testkit.TestServer(t)+" --exit-when "+crash)).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
 	d.GetServer("https://crash-loop.localhost/")
@@ -105,7 +119,7 @@ func TestProcessThatKeepsCrashingIsMarkedFailed(t *testing.T) {
 
 	// Each restart waits twice as long as the one before.
 	for i, want := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second} {
-		delay := waitForTimer(t, clk)
+		delay := waitForRestart(t, clk)
 		if delay != want {
 			t.Fatalf("restart %d scheduled after %s, want %s", i+1, delay, want)
 		}
@@ -118,9 +132,10 @@ func TestProcessThatKeepsCrashingIsMarkedFailed(t *testing.T) {
 	res := d.MustRunCLI(d.Home, "status")
 	assertContains(t, res.Stdout, "web:failed")
 
-	// It is not restarted, however long we wait.
-	if n := clk.Pending(); n != 0 {
-		t.Fatalf("%d calls still scheduled after the Process failed, want none", n)
+	// It is not restarted, however long we wait: the only thing still
+	// scheduled is its Worktree going Idle, a day away.
+	if delay := waitForTimer(t, clk); delay < time.Hour {
+		t.Fatalf("something is scheduled %s after the Process failed, want only Idle, a day away", delay)
 	}
 	clk.Advance(time.Hour)
 	time.Sleep(100 * time.Millisecond)
@@ -135,6 +150,10 @@ func TestProcessThatKeepsCrashingIsMarkedFailed(t *testing.T) {
 	}
 	assertContains(t, page.Body, "failed")
 	assertContains(t, page.Body, "portby logs web")
+
+	// `portby up` starts it again.
+	d.MustRunCLI(repo.Dir, "up")
+	waitForBoots(t, d, repo.Dir, 6)
 }
 
 func TestCrashesSpreadOverMoreThanTwoMinutesDoNotFailAProcess(t *testing.T) {
@@ -152,11 +171,11 @@ func TestCrashesSpreadOverMoreThanTwoMinutesDoNotFailAProcess(t *testing.T) {
 	// Each restart happens a minute after it's due, so no 2 minutes ever
 	// hold more than 3 crashes.
 	for boots := 2; boots <= 8; boots++ {
-		clk.Advance(waitForTimer(t, clk) + time.Minute)
+		clk.Advance(waitForRestart(t, clk) + time.Minute)
 		waitForBoots(t, d, repo.Dir, boots)
 	}
 
-	waitForTimer(t, clk)
+	waitForRestart(t, clk)
 	res := d.MustRunCLI(d.Home, "status")
 	assertContains(t, res.Stdout, "web:restarting")
 }

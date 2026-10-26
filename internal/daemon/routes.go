@@ -19,6 +19,7 @@ func (d *Daemon) routes() http.Handler {
 	mux.HandleFunc("GET /v1/daemon", d.handleDaemonInfo)
 	mux.HandleFunc("GET /v1/logs", d.handleLogs)
 	mux.HandleFunc("POST /v1/worktree/ready", d.handleWorktreeReady)
+	mux.HandleFunc("POST /v1/worktree/{action}", d.handleControl)
 	mux.HandleFunc("POST /v1/aliases", d.handleAddAlias)
 	mux.HandleFunc("DELETE /v1/aliases/{name}", d.handleRemoveAlias)
 	return mux
@@ -29,11 +30,7 @@ func (d *Daemon) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	for _, p := range d.registry.Projects() {
 		ap := d.apiProject(p)
 		for i, w := range ap.Worktrees {
-			for _, st := range d.supervisor.Processes(w.Path) {
-				w.Processes = append(w.Processes, api.Process{Name: st.Name, State: string(st.State)})
-			}
-			w.Setup = d.setupOf(w.Path)
-			ap.Worktrees[i] = w
+			ap.Worktrees[i] = d.withState(w)
 		}
 		list.Projects = append(list.Projects, ap)
 	}
@@ -73,6 +70,19 @@ func (d *Daemon) handleWorktreeReady(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, info)
+}
+
+func (d *Daemon) handleControl(w http.ResponseWriter, r *http.Request) {
+	var req api.ControlRequest
+	if !readJSON(w, r, &req) {
+		return
+	}
+	res, err := d.control(r.Context(), r.PathValue("action"), req)
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 func (d *Daemon) handleAddAlias(w http.ResponseWriter, r *http.Request) {
@@ -121,19 +131,20 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 // statusFor maps API error codes to HTTP statuses.
 var statusFor = map[string]int{
-	api.CodeBadRequest:     http.StatusBadRequest,
-	api.CodeNameTaken:      http.StatusConflict,
-	api.CodeNotGitRepo:     http.StatusUnprocessableEntity,
-	api.CodeNotLinked:      http.StatusNotFound,
-	api.CodeUnknownProcess: http.StatusNotFound,
-	api.CodeInvalidAlias:   http.StatusUnprocessableEntity,
-	api.CodeAliasTaken:     http.StatusConflict,
-	api.CodeUnknownAlias:   http.StatusNotFound,
+	api.CodeBadRequest:      http.StatusBadRequest,
+	api.CodeNameTaken:       http.StatusConflict,
+	api.CodeNotGitRepo:      http.StatusUnprocessableEntity,
+	api.CodeNotLinked:       http.StatusNotFound,
+	api.CodeUnknownProcess:  http.StatusNotFound,
+	api.CodeUnknownWorktree: http.StatusNotFound,
+	api.CodeStartFailed:     http.StatusBadGateway,
+	api.CodeInvalidAlias:    http.StatusUnprocessableEntity,
+	api.CodeAliasTaken:      http.StatusConflict,
+	api.CodeUnknownAlias:    http.StatusNotFound,
 
 	api.CodeInvalidConfig: http.StatusUnprocessableEntity,
 
-	api.CodeUnknownWorktree: http.StatusNotFound,
-	api.CodeShuttingDown:    http.StatusServiceUnavailable,
+	api.CodeShuttingDown: http.StatusServiceUnavailable,
 }
 
 // writeError sends err to the client. An *api.Error is passed through as is;

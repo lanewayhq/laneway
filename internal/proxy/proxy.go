@@ -49,6 +49,10 @@ type Router interface {
 	// ErrUnknownDomain if domain is not one of Portby's Domains; any other
 	// error is shown to the user.
 	Upstream(ctx context.Context, domain string, wait bool) (string, error)
+	// Begin is called when a request for domain arrives, and the func it
+	// returns once the request is over. For a WebSocket that is when the
+	// connection closes, so an open connection keeps its Domain active.
+	Begin(domain string) (end func())
 }
 
 var (
