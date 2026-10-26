@@ -19,6 +19,25 @@ func Encode(w io.Writer, l Layer) error {
 	if l.StartTimeout != nil {
 		fmt.Fprintf(&b, "start_timeout = %s\n", quote(l.StartTimeout.String()))
 	}
+	if l.WorktreeRoot != nil {
+		fmt.Fprintf(&b, "worktree_root = %s\n", quote(*l.WorktreeRoot))
+	}
+	if l.InheritSetup != nil {
+		fmt.Fprintf(&b, "inherit_setup = %t\n", *l.InheritSetup)
+	}
+	for _, steps := range []struct {
+		key   string
+		steps []string
+	}{{"on_create", l.OnCreate}, {"on_remove", l.OnRemove}} {
+		if steps.steps == nil {
+			continue
+		}
+		quoted := make([]string, len(steps.steps))
+		for i, s := range steps.steps {
+			quoted[i] = quote(s)
+		}
+		fmt.Fprintf(&b, "%s = [%s]\n", steps.key, strings.Join(quoted, ", "))
+	}
 	for _, name := range slices.Sorted(maps.Keys(l.Processes)) {
 		p := l.Processes[name]
 		if b.Len() > 0 {
@@ -31,8 +50,20 @@ func Encode(w io.Writer, l Layer) error {
 		if p.Primary != nil {
 			fmt.Fprintf(&b, "primary = %t\n", *p.Primary)
 		}
+		if p.HTTP != nil {
+			fmt.Fprintf(&b, "http = %t\n", *p.HTTP)
+		}
 		if p.Disabled != nil {
 			fmt.Fprintf(&b, "disabled = %t\n", *p.Disabled)
+		}
+	}
+	if len(l.Env) > 0 {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString("[env]\n")
+		for _, k := range slices.Sorted(maps.Keys(l.Env)) {
+			fmt.Fprintf(&b, "%s = %s\n", key(k), quote(l.Env[k]))
 		}
 	}
 	_, err := io.WriteString(w, b.String())

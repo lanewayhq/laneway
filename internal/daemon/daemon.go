@@ -19,6 +19,7 @@ import (
 
 	"github.com/mrsafalpiya/portby.dev/internal/clock"
 	"github.com/mrsafalpiya/portby.dev/internal/paths"
+	"github.com/mrsafalpiya/portby.dev/internal/provision"
 	"github.com/mrsafalpiya/portby.dev/internal/proxy"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
 	"github.com/mrsafalpiya/portby.dev/internal/supervisor"
@@ -44,6 +45,11 @@ type Config struct {
 	// ProxyAddr is the HTTPS proxy's listen address, DefaultProxyAddr if
 	// empty. It must be a loopback address; tests use port 0.
 	ProxyAddr string
+	// Env is the environment Processes start from, before their Worktree's
+	// Runtimes are resolved into it (package runtimes): its PATH is where
+	// mise, or without mise the Runtimes themselves, are looked up. Nil
+	// means the daemon's own environment.
+	Env []string
 	// WorktreeRescanInterval is how often every Project's git worktree
 	// registry is rescanned even without file system events;
 	// watcher.DefaultRescanInterval if zero.
@@ -77,6 +83,8 @@ type Daemon struct {
 	watcher *watcher.Watcher
 	syncMu  sync.Mutex // serialises Worktree syncs
 
+	provisioner *provision.Provisioner // Worktree setup, see provision.go
+
 	// closing is closed (under syncMu) when Shutdown begins. It ends
 	// streaming responses, and Worktree syncs that start afterwards don't
 	// change anything.
@@ -99,6 +107,9 @@ func Start(cfg Config) (*Daemon, error) {
 	if cfg.Clock == nil {
 		cfg.Clock = clock.Real()
 	}
+	if cfg.Env == nil {
+		cfg.Env = os.Environ()
+	}
 	reg, err := registry.Open(cfg.Paths.Registry())
 	if err != nil {
 		return nil, err
@@ -107,6 +118,11 @@ func Start(cfg Config) (*Daemon, error) {
 	// running, before anything else is bound or started.
 	ln, err := listen(cfg.Paths.Socket)
 	if err != nil {
+		return nil, err
+	}
+	prov, err := provision.Open(cfg.Paths.Setup(), log)
+	if err != nil {
+		ln.Close()
 		return nil, err
 	}
 	sup := supervisor.New(log, supervisor.Options{Clock: cfg.Clock, LogMaxBytes: cfg.LogFileMaxBytes})
@@ -120,6 +136,7 @@ func Start(cfg Config) (*Daemon, error) {
 		closing:    make(chan struct{}),
 		done:       make(chan struct{}),
 	}
+	d.provisioner = prov
 	d.stopping, d.stop = context.WithCancel(context.Background())
 	d.proxy, err = proxy.Start(proxy.Config{
 		Addr:       cfg.ProxyAddr,
@@ -193,6 +210,7 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 	d.startsMu.Unlock()
 	d.stop()
 	d.starts.Wait()
+	d.provisioner.Close()
 	d.supervisor.StopAll(ctx)
 	return err
 }

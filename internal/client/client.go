@@ -62,6 +62,30 @@ func (c *Client) Worktree(ctx context.Context, dir string) (api.WorktreeInfo, er
 	return info, err
 }
 
+// WorktreeReady finds the Worktree containing req.Dir, begins (or with
+// req.Retry, retries) its setup and returns its state. With req.Wait it
+// returns once the Worktree is Ready or its setup failed: check
+// Worktree.Setup.State.
+func (c *Client) WorktreeReady(ctx context.Context, req api.ReadyRequest) (api.WorktreeInfo, error) {
+	var info api.WorktreeInfo
+	err := c.do(ctx, http.MethodPost, "/v1/worktree/ready", req, &info)
+	return info, err
+}
+
+// AddAlias adds the Alias req.Name to the Worktree containing req.Dir.
+func (c *Client) AddAlias(ctx context.Context, req api.AliasRequest) (api.AliasResponse, error) {
+	var res api.AliasResponse
+	err := c.do(ctx, http.MethodPost, "/v1/aliases", req, &res)
+	return res, err
+}
+
+// RemoveAlias removes the Alias name from the Worktree containing dir.
+func (c *Client) RemoveAlias(ctx context.Context, dir, name string) (api.AliasResponse, error) {
+	var res api.AliasResponse
+	err := c.do(ctx, http.MethodDelete, "/v1/aliases/"+url.PathEscape(name)+"?dir="+url.QueryEscape(dir), nil, &res)
+	return res, err
+}
+
 // Daemon describes the running daemon.
 func (c *Client) Daemon(ctx context.Context) (api.DaemonInfo, error) {
 	var info api.DaemonInfo

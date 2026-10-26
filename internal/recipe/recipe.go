@@ -6,10 +6,13 @@ package recipe
 import (
 	"fmt"
 	"maps"
+	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/mrsafalpiya/portby.dev/internal/config"
+	"github.com/mrsafalpiya/portby.dev/internal/runtimes"
 )
 
 // Input is what Resolve works from.
@@ -22,6 +25,10 @@ type Input struct {
 	// Recipes are the candidates; the first one to detect the Project
 	// supplies the defaults.
 	Recipes []Recipe
+	// Runtimes are the Runtimes resolved for Dir (see package runtimes).
+	// If set, they are checked against the Project's declared constraints
+	// into Resolved.RuntimeWarnings; nil skips the check.
+	Runtimes []runtimes.Runtime
 }
 
 // Recipe is a stack definition: how to recognise a kind of Project and what
@@ -49,9 +56,27 @@ type Resolved struct {
 	// StartTimeout is how long the Primary Process gets to accept
 	// connections when its Worktree starts; 0 means the daemon's default.
 	StartTimeout time.Duration
+	// Env is the Env Patch: env key → template, merged by key. nil if no
+	// layer declares any.
+	Env map[string]string
+	// OnCreate are the setup steps (shell commands) run in a new Worktree:
+	// the Recipe's first, then the Project's layers' in order, unless a
+	// Project layer sets inherit_setup = false.
+	OnCreate []string
+	// OnRemove are the shell commands run in the main Worktree when a
+	// Worktree is removed, merged like OnCreate.
+	OnRemove []string
+	// WorktreeRoot is where `portby worktree add` creates worktrees, as
+	// configured (maybe relative to the main Worktree); "" means the
+	// default, see DefaultWorktreeRoot.
+	WorktreeRoot string
 	// Warnings are problems that didn't stop resolution, such as unknown
 	// keys. Each names the file it comes from.
 	Warnings []string
+	// RuntimeWarnings are mismatches between Input.Runtimes and the
+	// Runtime constraints the Project declares, and needed Runtimes that
+	// are missing.
+	RuntimeWarnings []runtimes.Warning
 }
 
 // Process is one resolved Process.
@@ -60,6 +85,11 @@ type Process struct {
 	Command string
 	// Primary marks the Primary Process. At most one Process has it.
 	Primary bool
+	// HTTP marks a Process that serves HTTP: the Primary Process, and any
+	// other Process config marks with http = true. Only HTTP Processes get
+	// a port, and those other than the Primary Process are served at
+	// <process>.<domain>.
+	HTTP bool
 }
 
 // Layer is r as a config layer: what `portby init` writes to portby.toml.
@@ -78,8 +108,12 @@ func (r Resolved) Layer() config.Layer {
 	}
 	for _, p := range r.Processes {
 		pl := config.ProcessLayer{Command: &p.Command}
-		if p.Primary {
+		switch {
+		case p.Primary:
 			pl.Primary = &p.Primary
+		case p.HTTP, len(r.Processes) == 1:
+			// A lone Process would otherwise become the Primary Process.
+			pl.HTTP = &p.HTTP
 		}
 		l.Processes[p.Name] = pl
 	}
@@ -87,7 +121,41 @@ func (r Resolved) Layer() config.Layer {
 	for _, name := range r.Disabled {
 		l.Processes[name] = config.ProcessLayer{Disabled: &disabled}
 	}
+	l.Env = maps.Clone(r.Env)
+	l.OnCreate = slices.Clone(r.OnCreate)
+	l.OnRemove = slices.Clone(r.OnRemove)
+	if r.Recipe != "" && len(r.OnCreate)+len(r.OnRemove) > 0 {
+		// The Recipe's steps are written out, so they mustn't be
+		// inherited again.
+		inherit := false
+		l.InheritSetup = &inherit
+	}
+	if r.WorktreeRoot != "" {
+		l.WorktreeRoot = &r.WorktreeRoot
+	}
 	return l
+}
+
+// DefaultWorktreeRoot is where `portby worktree add` creates worktrees unless
+// worktree_root says otherwise: a directory next to the main Worktree named
+// after it, such as ../shop.worktrees for a main Worktree at shop. Worktrees
+// stay out of the repository, so nothing needs ignoring and tools scanning the
+// repository don't see them, but they stay next to it.
+func DefaultWorktreeRoot(mainDir string) string {
+	return filepath.Join(filepath.Dir(mainDir), filepath.Base(mainDir)+".worktrees")
+}
+
+// WorktreeRootOf is the absolute directory `portby worktree add` creates the
+// worktrees of the Project whose main Worktree is mainDir in.
+func (r Resolved) WorktreeRootOf(mainDir string) string {
+	switch {
+	case r.WorktreeRoot == "":
+		return DefaultWorktreeRoot(mainDir)
+	case filepath.IsAbs(r.WorktreeRoot):
+		return filepath.Clean(r.WorktreeRoot)
+	default:
+		return filepath.Join(mainDir, r.WorktreeRoot)
+	}
 }
 
 // Builtin are the Recipes Portby ships, in detection order. There are none
@@ -95,14 +163,15 @@ func (r Resolved) Layer() config.Layer {
 var Builtin []Recipe
 
 // ResolveDir resolves the Project in dir from its portby.toml and
-// portby.local.toml with the Builtin Recipes. It is how the daemon reads
-// config, every time it is about to start a Worktree's Processes.
-func ResolveDir(dir string) (Resolved, error) {
+// portby.local.toml with the Builtin Recipes, checking the Runtimes found
+// for dir if any are given. It is how the daemon reads config, every time it
+// is about to start a Worktree's Processes.
+func ResolveDir(dir string, found ...runtimes.Runtime) (Resolved, error) {
 	layers, err := config.LoadLayers(dir)
 	if err != nil {
 		return Resolved{}, err
 	}
-	return Resolve(Input{Dir: dir, Layers: layers, Recipes: Builtin})
+	return Resolve(Input{Dir: dir, Layers: layers, Recipes: Builtin, Runtimes: found})
 }
 
 // Resolve merges the detected Recipe's defaults with in.Layers.
@@ -121,20 +190,45 @@ func Resolve(in Input) (Resolved, error) {
 		layers = append([]config.Layer{defaults}, layers...)
 		break
 	}
+	// Setup steps append, the Recipe's first, unless a Project layer turns
+	// inheriting them off.
+	inherit := true
+	var recipeCreate, recipeRemove []string
 
 	type merged struct {
 		Process
 		disabled bool
+		http     *bool
 		source   string // the layer that declared the Process
+		// The layers that last set the command and http, for errors.
+		commandSource, httpSource string
 	}
 	procs := map[string]*merged{}
-	for _, l := range layers {
+	for i, l := range layers {
 		res.Warnings = append(res.Warnings, l.Warnings...)
 		if l.Name != nil {
 			res.Name = *l.Name
 		}
 		if l.StartTimeout != nil {
 			res.StartTimeout = *l.StartTimeout
+		}
+		if l.WorktreeRoot != nil {
+			res.WorktreeRoot = *l.WorktreeRoot
+		}
+		if res.Recipe != "" && i == 0 {
+			recipeCreate, recipeRemove = l.OnCreate, l.OnRemove
+		} else {
+			res.OnCreate = append(res.OnCreate, l.OnCreate...)
+			res.OnRemove = append(res.OnRemove, l.OnRemove...)
+			if l.InheritSetup != nil {
+				inherit = *l.InheritSetup
+			}
+		}
+		for key, template := range l.Env {
+			if res.Env == nil {
+				res.Env = map[string]string{}
+			}
+			res.Env[key] = template
 		}
 		for name, pl := range l.Processes {
 			p := procs[name]
@@ -143,7 +237,7 @@ func Resolve(in Input) (Resolved, error) {
 				procs[name] = p
 			}
 			if pl.Command != nil {
-				p.Command = *pl.Command
+				p.Command, p.commandSource = *pl.Command, l.Source
 			}
 			if pl.Primary != nil {
 				if *pl.Primary {
@@ -155,11 +249,19 @@ func Resolve(in Input) (Resolved, error) {
 				}
 				p.Primary = *pl.Primary
 			}
+			if pl.HTTP != nil {
+				p.http, p.httpSource = pl.HTTP, l.Source
+			}
 			if pl.Disabled != nil {
 				p.disabled = *pl.Disabled
 			}
 		}
 	}
+	if inherit {
+		res.OnCreate = append(slices.Clone(recipeCreate), res.OnCreate...)
+		res.OnRemove = append(slices.Clone(recipeRemove), res.OnRemove...)
+	}
+	var enabled []*merged
 	for _, name := range slices.Sorted(maps.Keys(procs)) {
 		p := procs[name]
 		if p.disabled {
@@ -170,10 +272,35 @@ func Resolve(in Input) (Resolved, error) {
 			return Resolved{}, fmt.Errorf("%s: processes.%s: Process %q has no command; "+
 				"set processes.%s.command, or check the Process name for a typo", p.source, name, name, name)
 		}
+		enabled = append(enabled, p)
+	}
+	// A lone Process is the Primary Process unless it says it isn't HTTP.
+	if len(enabled) == 1 && (enabled[0].http == nil || *enabled[0].http) {
+		enabled[0].Primary = true
+	}
+	var primary bool
+	for _, p := range enabled {
+		primary = primary || p.Primary
+	}
+	for _, p := range enabled {
+		switch {
+		case p.Primary && p.http != nil && !*p.http:
+			return Resolved{}, fmt.Errorf("%s: processes.%s.http is false, but %q is the Primary Process, "+
+				"which serves the Domain over HTTP", p.httpSource, p.Name, p.Name)
+		case !p.Primary && p.http != nil && *p.http && !primary:
+			return Resolved{}, fmt.Errorf("%s: processes.%s.http is true, but no Process is the Primary Process; "+
+				"a Worktree with HTTP Processes needs exactly one: set primary = true on the Process that serves the Domain",
+				p.httpSource, p.Name)
+		}
+		p.HTTP = p.Primary || (p.http != nil && *p.http)
+		if !p.HTTP && strings.Contains(p.Command, "{port}") {
+			return Resolved{}, fmt.Errorf("%s: processes.%s.command uses {port}, but %q isn't an HTTP Process, "+
+				"so it gets no port; set processes.%s.http = true if it serves HTTP", p.commandSource, p.Name, p.Name, p.Name)
+		}
 		res.Processes = append(res.Processes, p.Process)
 	}
-	if len(res.Processes) == 1 {
-		res.Processes[0].Primary = true
+	if in.Runtimes != nil {
+		res.RuntimeWarnings = runtimes.Check(in.Dir, in.Runtimes)
 	}
 	return res, nil
 }

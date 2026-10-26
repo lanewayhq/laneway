@@ -58,13 +58,16 @@ func TestStatusListsWorktreesUnderTheirProjects(t *testing.T) {
 	d.MustRunCLI(blog.Dir, "link")
 	wt := shop.AddWorktree("checkout-v2")
 	d.MustRunCLI(wt.Dir, "link") // finds the new Worktree straight away
+	for _, dir := range []string{blog.Dir, shop.Dir, wt.Dir} {
+		d.MustRunCLI(dir, "worktree", "ready")
+	}
 
 	res := d.MustRunCLI(d.Home, "status")
 	want := [][]string{
-		{"PROJECT", "DOMAIN", "PATH", "PROCESSES"},
-		{"blog", "blog.localhost", blog.Dir},
-		{"shop", "shop.localhost", shop.Dir},
-		{"checkout-v2", "checkout-v2.shop.localhost", wt.Dir},
+		{"PROJECT", "DOMAIN", "PATH", "SETUP", "PROCESSES"},
+		{"blog", "blog.localhost", blog.Dir, "ready"},
+		{"shop", "shop.localhost", shop.Dir, "ready"},
+		{"checkout-v2", "checkout-v2.shop.localhost", wt.Dir, "ready"},
 	}
 	lines := strings.Split(strings.TrimRight(res.Stdout, "\n"), "\n")
 	if len(lines) != len(want) {
@@ -81,7 +84,8 @@ func TestStatusListsWorktreesUnderTheirProjects(t *testing.T) {
 }
 
 // assertStatusRows checks `portby status` lists exactly rows of (Project, path)
-// in order, after its header line. Each row's Domain sits between the two.
+// in order, after its header line. Each row's Domain sits between the two,
+// and its setup state follows.
 func assertStatusRows(t *testing.T, out string, rows [][2]string) {
 	t.Helper()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -90,7 +94,7 @@ func assertStatusRows(t *testing.T, out string, rows [][2]string) {
 	}
 	for i, row := range rows {
 		fields := strings.Fields(lines[i+1])
-		if len(fields) != 3 || fields[0] != row[0] || fields[2] != row[1] {
+		if len(fields) != 4 || fields[0] != row[0] || fields[2] != row[1] {
 			t.Fatalf("status row %d = %q, want %s %s\n%s", i, lines[i+1], row[0], row[1], out)
 		}
 	}

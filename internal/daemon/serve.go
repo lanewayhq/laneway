@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/mrsafalpiya/portby.dev/internal/config"
 	"github.com/mrsafalpiya/portby.dev/internal/naming"
+	"github.com/mrsafalpiya/portby.dev/internal/provision"
 	"github.com/mrsafalpiya/portby.dev/internal/proxy"
 	"github.com/mrsafalpiya/portby.dev/internal/recipe"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
@@ -42,7 +44,10 @@ type served struct {
 type start struct {
 	done    chan struct{} // closed once the Primary Process is up or has failed
 	primary string        // the Primary Process's name, once up
-	err     error         // why it failed
+	// routed are the other HTTP Processes, served at <process>.<domain>,
+	// once up.
+	routed map[string]bool
+	err    error // why it failed
 	// retry is set (under served.mu) once a browser has been shown the
 	// failure. Until then every request gets the failure, so the starting
 	// page's refreshes end on the error page instead of starting again; the
@@ -55,9 +60,12 @@ func domainOf(p registry.Project) string {
 	return naming.DomainLabel(p.Name) + ".localhost"
 }
 
-// serveProject serves the main Worktree at its Domain.
+// serveProject applies the main Worktree's Env Patch, serves it at its
+// Domain and begins its setup if it hasn't been set up.
 func (d *Daemon) serveProject(p registry.Project) {
+	d.applyEnvPatch(p, mainEnvWorktree(p))
 	d.serveWorktree(p, domainOf(p), p.Path)
+	d.provision(p, mainEnvWorktree(p), false)
 }
 
 // serveWorktree makes the Worktree at dir known to the proxy at domain,
@@ -94,7 +102,7 @@ func (d *Daemon) stopWorktree(ctx context.Context, domain, dir string) {
 func (d *Daemon) starting(s *served) *start {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.start == nil || s.start.retry {
+	if s.start == nil || s.start.retry || d.setupRetried(s) {
 		st := &start{done: make(chan struct{})}
 		s.start = st
 		d.startsMu.Lock()
@@ -106,7 +114,7 @@ func (d *Daemon) starting(s *served) *start {
 		}
 		d.starts.Go(func() {
 			defer close(st.done)
-			st.primary, st.err = d.bootWorktree(s)
+			st.primary, st.routed, st.err = d.bootWorktree(s)
 			if st.err != nil {
 				d.log.Error("starting Worktree", "project", s.project, "dir", s.dir, "err", st.err)
 			}
@@ -117,42 +125,51 @@ func (d *Daemon) starting(s *served) *start {
 
 // bootWorktree resolves the Worktree's config, starts the Worktree's Processes
 // and waits for the Primary Process to accept connections. It returns the
-// Primary Process's name.
-func (d *Daemon) bootWorktree(s *served) (string, error) {
-	cfg, err := recipe.ResolveDir(s.dir)
+// Primary Process's name and the other HTTP Processes.
+func (d *Daemon) bootWorktree(s *served) (string, map[string]bool, error) {
+	if err := d.waitForSetup(s); err != nil {
+		return "", nil, err
+	}
+	d.applyServedEnvPatch(s)
+	cfg, err := d.resolveWorktree(s.ctx, s.dir)
 	if err != nil {
-		return "", fmt.Errorf("Project %q could not be started: %w", s.project, err)
+		return "", nil, fmt.Errorf("Project %q could not be started: %w", s.project, err)
 	}
 	for _, w := range cfg.Warnings {
 		d.log.Warn("config", "project", s.project, "warning", w)
 	}
 	var primary string
+	routed := map[string]bool{}
 	var specs []supervisor.Spec
 	for _, proc := range cfg.Processes {
 		if proc.Primary {
 			primary = proc.Name
+		} else if proc.HTTP {
+			routed[proc.Name] = true
 		}
 		specs = append(specs, supervisor.Spec{
 			Name:    proc.Name,
 			Command: proc.Command,
+			HTTP:    proc.HTTP,
 			Dir:     s.dir,
 			LogFile: filepath.Join(d.cfg.Paths.Logs(), s.domain, proc.Name+".log"),
 		})
 	}
 	if primary == "" {
-		return "", fmt.Errorf("Project %q has no Primary Process: declare one in %s, "+
+		return "", nil, fmt.Errorf("Project %q has no Primary Process: declare one in %s, "+
 			"for example [processes.web] with command = \"…\" and primary = true", s.project, config.FileName)
 	}
 	timeout := cmp.Or(cfg.StartTimeout, StartTimeout)
 	ctx, cancel := context.WithTimeout(s.ctx, timeout)
 	defer cancel()
+	cfg.apply(specs, primary)
 	if err := d.supervisor.StartGroup(ctx, s.group, specs); err != nil {
-		return "", fmt.Errorf("Project %q could not be started: %w", s.project, err)
+		return "", nil, fmt.Errorf("Project %q could not be started: %w", s.project, err)
 	}
 	proc, _ := d.supervisor.Process(s.group, primary)
 	err = proc.WaitUp(ctx)
 	if err == nil {
-		return primary, nil
+		return primary, routed, nil
 	}
 	// The start failed: stop what did start, so a later start begins afresh.
 	d.supervisor.StopGroup(context.Background(), s.group)
@@ -162,7 +179,7 @@ func (d *Daemon) bootWorktree(s *served) (string, error) {
 		se.Err = fmt.Errorf("Process %q did not accept connections within %s; "+
 			"if it needs longer, raise start_timeout in %s", primary, timeout, config.FileName)
 	}
-	return "", se
+	return "", nil, se
 }
 
 // errorPageLines is how much of a Process's output the error page shows.
@@ -184,9 +201,7 @@ type router struct{ d *Daemon }
 
 func (r router) Upstream(ctx context.Context, domain string, wait bool) (string, error) {
 	d := r.d
-	d.servedMu.Lock()
-	s, ok := d.served[domain]
-	d.servedMu.Unlock()
+	s, process, ok := d.route(domain)
 	if !ok {
 		return "", fmt.Errorf("%s: %w", domain, proxy.ErrUnknownDomain)
 	}
@@ -195,6 +210,9 @@ func (r router) Upstream(ctx context.Context, domain string, wait bool) (string,
 	case <-st.done:
 	default:
 		if !wait {
+			if d.provisioner.Status(s.dir).State != provision.Ready {
+				return "", proxy.ErrSettingUp
+			}
 			return "", proxy.ErrStarting
 		}
 		select {
@@ -211,11 +229,18 @@ func (r router) Upstream(ctx context.Context, domain string, wait bool) (string,
 		}
 		return "", st.err
 	}
-	// Once started, the Supervisor keeps the Primary Process going: a crash
+	switch {
+	case process == "":
+		process = st.primary
+	case !st.routed[process]:
+		// The config the Worktree started with has no such HTTP Process.
+		return "", fmt.Errorf("%s: %w", domain, proxy.ErrUnknownDomain)
+	}
+	// Once started, the Supervisor keeps the Process going: a crash
 	// restarts it on a new port, or marks it failed.
-	proc, ok := d.supervisor.Process(s.group, st.primary)
+	proc, ok := d.supervisor.Process(s.group, process)
 	if !ok {
-		return "", fmt.Errorf("Process %q of Project %q is not running", st.primary, s.project)
+		return "", fmt.Errorf("Process %q of Project %q is not running", process, s.project)
 	}
 	ctx, cancel := context.WithTimeout(ctx, StartTimeout)
 	defer cancel()
@@ -223,4 +248,63 @@ func (r router) Upstream(ctx context.Context, domain string, wait bool) (string,
 		return "", err
 	}
 	return proc.Addr(), nil
+}
+
+// route finds the Worktree serving host. At a Worktree's Domain or one of its
+// Aliases that is the Primary Process (process is ""); at <process>.<domain>
+// it is one of the Worktree's other HTTP Processes. Either way, a request
+// there starts the Worktree.
+//
+// A Domain or Alias wins over <process>.<domain>: Worktree labels and
+// Aliases are kept clear of the main Worktree's HTTP Process names when they
+// are given out, but config can add a Process later.
+func (d *Daemon) route(host string) (s *served, process string, ok bool) {
+	if s, ok := d.servedAt(host); ok {
+		return s, "", true
+	}
+	process, domain, found := strings.Cut(host, ".")
+	if s, ok := d.servedAt(domain); found && ok && d.routesProcess(s, process) {
+		return s, process, true
+	}
+	return nil, "", false
+}
+
+// servedAt finds the Worktree whose Domain, or one of whose Aliases, is
+// domain.
+func (d *Daemon) servedAt(domain string) (*served, bool) {
+	if target, ok := d.aliasTarget(domain); ok {
+		domain = target
+	}
+	d.servedMu.Lock()
+	defer d.servedMu.Unlock()
+	s, ok := d.served[domain]
+	return s, ok
+}
+
+// routesProcess reports whether process is one of the Worktree's HTTP Processes
+// other than the Primary Process: as started, once the Worktree is up, and
+// otherwise from its config, so a mistyped host doesn't start a Worktree.
+func (d *Daemon) routesProcess(s *served, process string) bool {
+	s.mu.Lock()
+	st := s.start
+	s.mu.Unlock()
+	if st != nil {
+		select {
+		case <-st.done:
+			if st.err == nil {
+				return st.routed[process]
+			}
+		default:
+		}
+	}
+	cfg, err := recipe.ResolveDir(s.dir)
+	if err != nil {
+		return false
+	}
+	for _, proc := range cfg.Processes {
+		if proc.Name == process {
+			return proc.HTTP && !proc.Primary
+		}
+	}
+	return false
 }

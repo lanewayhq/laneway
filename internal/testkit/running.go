@@ -30,7 +30,7 @@ func (d *Daemon) StartCLI(dir string, args ...string) *RunningCLI {
 	r := &RunningCLI{d: d, args: args, cancel: cancel, done: make(chan struct{})}
 	go func() {
 		defer close(r.done)
-		r.code = cli.Run(ctx, cli.Env{Args: args, Dir: dir, Getenv: d.Getenv, Stdout: &r.stdout, Stderr: &r.stderr})
+		r.code = cli.Run(ctx, cli.Env{Args: args, Dir: dir, Getenv: d.Getenv, Environ: d.Environ, Stdout: &r.stdout, Stderr: &r.stderr})
 	}()
 	d.t.Cleanup(func() { cancel(); <-r.done })
 	return r

@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/mrsafalpiya/portby.dev/internal/api"
+	"github.com/mrsafalpiya/portby.dev/internal/gitrepo"
 	"github.com/mrsafalpiya/portby.dev/internal/paths"
 	"github.com/mrsafalpiya/portby.dev/internal/platform"
+	"github.com/mrsafalpiya/portby.dev/internal/runtimes"
 )
 
 // The ports Portby serves Domains on.
@@ -94,12 +96,44 @@ func runDoctor(ctx context.Context, env Env, args []string) error {
 	} else {
 		r.check(statusOK, "mise", v, "")
 	}
+	checkRuntimes(ctx, r, env)
 
 	if r.failures > 0 {
 		fmt.Fprintln(env.Stdout)
 		return fmt.Errorf("%d problem(s) found", r.failures)
 	}
 	return nil
+}
+
+// checkRuntimes reports the Runtimes resolved for the current Worktree (or
+// directory, outside a git repository), and how they fit what the Project
+// declares. A Runtime that is neither found nor needed isn't mentioned.
+func checkRuntimes(ctx context.Context, r *report, env Env) {
+	dir := env.Dir
+	if c, err := gitrepo.Resolve(ctx, env.Dir); err == nil {
+		dir = c.Dir
+	}
+	rt := runtimes.Environ(ctx, dir, environOf(env))
+	found := rt.Find(ctx)
+	warned := map[string]bool{}
+	for _, w := range append(rt.Warnings, runtimes.Check(dir, found)...) {
+		warned[w.Runtime] = true
+		name := w.Runtime
+		if name == "mise" {
+			name = "mise env"
+		}
+		r.check(statusWarn, name, w.Message, w.Fix)
+	}
+	for _, f := range found {
+		if warned[f.Name] || f.Version == "" {
+			continue
+		}
+		from := "from PATH"
+		if f.Source == "mise" {
+			from = "through mise"
+		}
+		r.check(statusOK, f.Name, fmt.Sprintf("%s at %s (%s)", f.Version, f.Path, from), "")
+	}
 }
 
 func checkService(ctx context.Context, r *report, plat platform.Platform) {

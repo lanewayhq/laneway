@@ -1,0 +1,6 @@
+[processes.web]
+command = "serve"
+
+[processes.vite]
+command = "vite"
+http = true

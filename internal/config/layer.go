@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/mrsafalpiya/portby.dev/internal/envpatch"
 )
 
 // LocalFileName is the gitignored per-developer config file. It overrides
@@ -38,6 +40,23 @@ type Layer struct {
 	// StartTimeout is how long the Primary Process gets to accept
 	// connections when its Worktree starts, such as "90s".
 	StartTimeout *time.Duration `toml:"start_timeout"`
+	// Env is the Env Patch: the keys Portby owns in each Worktree's .env,
+	// keyed by env key ([env] table). Values are templates such as
+	// "{url}"; see envpatch.Variables.
+	Env map[string]string `toml:"env"`
+	// OnCreate are setup steps: shell commands run in a Worktree's
+	// directory, in order, once its Env Patch is applied. The Worktree is
+	// Ready when they have all succeeded. They run after the Recipe's.
+	OnCreate []string `toml:"on_create"`
+	// OnRemove are shell commands run in the main Worktree's directory, in
+	// order, when a Worktree is removed. They run after the Recipe's.
+	OnRemove []string `toml:"on_remove"`
+	// InheritSetup set to false drops the Recipe's on_create and on_remove
+	// steps, leaving only the Project's.
+	InheritSetup *bool `toml:"inherit_setup"`
+	// WorktreeRoot is the directory `portby worktree add` creates worktrees
+	// in. A relative path is relative to the main Worktree's directory.
+	WorktreeRoot *string `toml:"worktree_root"`
 }
 
 // ProcessLayer is one [processes.<name>] table.
@@ -52,6 +71,10 @@ type ProcessLayer struct {
 	// Disabled turns off a Process an earlier layer declared, such as one
 	// from the Recipe. A later layer can set it back to false.
 	Disabled *bool `toml:"disabled"`
+	// HTTP marks a Process that serves HTTP on its {port}. Other than the
+	// Primary Process, which always does, it is served at
+	// <process>.<domain>. Processes that aren't HTTP get no port.
+	HTTP *bool `toml:"http"`
 }
 
 // LoadLayers reads dir's portby.toml and then portby.local.toml, in the
@@ -91,7 +114,7 @@ func ParseLayer(source string, data []byte) (Layer, error) {
 		return Layer{}, decodeError(source, err)
 	}
 	// The decoder silently skips a non-table value for a map field.
-	for _, key := range append([]toml.Key{{"processes"}}, processKeys(l)...) {
+	for _, key := range append([]toml.Key{{"processes"}, {"env"}}, processKeys(l)...) {
 		if t := md.Type(key...); t != "" && t != "Hash" {
 			return Layer{}, fmt.Errorf("%s: %s must be a table, not a %s", source, key, strings.ToLower(t))
 		}
@@ -130,6 +153,27 @@ func (l Layer) validate() error {
 	if l.StartTimeout != nil && *l.StartTimeout <= 0 {
 		return fmt.Errorf("start_timeout must be positive, such as \"90s\", not %s", *l.StartTimeout)
 	}
+	if l.WorktreeRoot != nil && strings.TrimSpace(*l.WorktreeRoot) == "" {
+		return errors.New("worktree_root is empty")
+	}
+	for i, step := range l.OnCreate {
+		if strings.TrimSpace(step) == "" {
+			return fmt.Errorf("on_create[%d] is empty", i)
+		}
+	}
+	for i, step := range l.OnRemove {
+		if strings.TrimSpace(step) == "" {
+			return fmt.Errorf("on_remove[%d] is empty", i)
+		}
+	}
+	for _, k := range slices.Sorted(maps.Keys(l.Env)) {
+		if !envKey.MatchString(k) {
+			return fmt.Errorf("env.%s: an env key must be letters, digits and _ and not start with a digit", key(k))
+		}
+		if err := envpatch.CheckTemplate(l.Env[k]); err != nil {
+			return fmt.Errorf("env.%s: %w", key(k), err)
+		}
+	}
 	var primaries []string
 	for _, name := range slices.Sorted(maps.Keys(l.Processes)) {
 		p := l.Processes[name]
@@ -146,6 +190,9 @@ func (l Layer) validate() error {
 	}
 	return nil
 }
+
+// envKey is what phpdotenv accepts as a key.
+var envKey = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.]*$`)
 
 // typeError matches the decoder's errors for a value of the wrong type.
 var typeError = regexp.MustCompile(`^toml: line (\d+) \(last key "([^"]+)"\): (.*)$`)
