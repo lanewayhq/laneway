@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"math/rand/v2"
 	"net"
 	"os"
 	"os/exec"
@@ -126,9 +125,16 @@ func (s *Supervisor) Start(ctx context.Context, group string, spec Spec) error {
 	if procs == nil {
 		procs = map[string]*Process{}
 	}
+	// A Start of the same Process that ran at the same time may have stored
+	// its Process meanwhile. Stop it rather than lose track of it: nothing
+	// else would ever stop it.
+	replaced := procs[spec.Name]
 	procs[spec.Name] = p
 	s.groups[group] = procs
 	s.mu.Unlock()
+	if replaced != nil {
+		replaced.stop(ctx)
+	}
 	return nil
 }
 
@@ -423,45 +429,6 @@ func (p *Process) status() Status {
 	return Status{Name: p.spec.Name, State: p.state}
 }
 
-// Process ports come from this range rather than from the kernel (port 0):
-// the kernel soon hands a freed ephemeral port to the next program asking
-// for one, often before a slow-booting Process has bound it.
-const minPort, maxPort = 20000, 29999
-
-// ports are the ports given to runs that haven't exited yet.
-var ports = struct {
-	sync.Mutex
-	inUse map[int]bool
-}{inUse: map[int]bool{}}
-
-// freePort picks a random loopback port in the range that is free now and
-// not given to another run. Something else could still take it before the
-// Process binds it, but a fresh one is picked on every start.
-func freePort() (int, error) {
-	ports.Lock()
-	defer ports.Unlock()
-	for range 100 {
-		port := minPort + rand.IntN(maxPort-minPort+1)
-		if ports.inUse[port] {
-			continue
-		}
-		ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
-		if err != nil {
-			continue
-		}
-		ln.Close()
-		ports.inUse[port] = true
-		return port, nil
-	}
-	return 0, fmt.Errorf("no free port between %d and %d", minPort, maxPort)
-}
-
-func releasePort(port int) {
-	ports.Lock()
-	delete(ports.inUse, port)
-	ports.Unlock()
-}
-
 // Addr is the loopback address the Process was last told to listen on.
 func (p *Process) Addr() string {
 	p.mu.Lock()
@@ -476,8 +443,10 @@ func (p *Process) Command() string {
 	return p.command
 }
 
-// WaitUp waits until the Process accepts TCP connections on its port. It
-// fails if the Process exits first, isn't running, or ctx is done.
+// WaitUp waits until the Process accepts TCP connections on its port: it
+// (or something it started) listens on the port and a connection to it
+// succeeds (see listening for why both). It fails if the Process exits
+// first, isn't running, or ctx is done.
 func (p *Process) WaitUp(ctx context.Context) error {
 	var dialer net.Dialer
 	for {
@@ -491,11 +460,19 @@ func (p *Process) WaitUp(ctx context.Context) error {
 		case r == nil:
 			return fmt.Errorf("Process %q is %s", p.spec.Name, state)
 		}
-		addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(r.port))
-		conn, err := dialer.DialContext(ctx, "tcp", addr)
-		if err == nil {
-			conn.Close()
-			return nil
+		// The command leads its own process group (Setpgid).
+		ok, err := listening(r.port, r.cmd.Process.Pid)
+		if err != nil {
+			// Without the socket table, the connection alone decides.
+			p.log.Warn("reading listening sockets", "err", err)
+			ok = true
+		}
+		if ok {
+			addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(r.port))
+			if conn, err := dialer.DialContext(ctx, "tcp", addr); err == nil {
+				conn.Close()
+				return nil
+			}
 		}
 		select {
 		case <-r.exited:

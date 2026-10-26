@@ -101,6 +101,12 @@ func Git(t testing.TB, dir string, args ...string) string {
 		"GIT_AUTHOR_EMAIL=test@portby.invalid",
 		"GIT_COMMITTER_NAME=Portby Test",
 		"GIT_COMMITTER_EMAIL=test@portby.invalid",
+		// Commits otherwise start a detached `git maintenance run --auto`
+		// in the repo, which can outlive the test (testkit fails a test
+		// that leaves processes behind).
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=maintenance.auto",
+		"GIT_CONFIG_VALUE_0=false",
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

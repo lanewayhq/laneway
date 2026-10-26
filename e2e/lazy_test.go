@@ -100,6 +100,8 @@ func TestBrowserGetsAnAutoRefreshingStartingPageUntilTheAppIsUp(t *testing.T) {
 		WriteFile("portby.toml", processConfig(testkit.TestServer(t)+" --name web --delay 2s")).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
+	// Until then a navigation gets the setup page (#15), not this one.
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
 
 	page := d.Navigate("https://lazy-page.localhost/dashboard")
 
@@ -144,6 +146,28 @@ func TestHeldRequestFailsWithGatewayTimeoutAfterTheStartTimeout(t *testing.T) {
 		t.Fatalf("request was held for %v, want about the 1s start timeout", took)
 	}
 	assertContains(t, res.Body, "1s")
+}
+
+func TestAnotherProgramOnThePrimaryProcessPortIsNotMistakenForIt(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	pidFile := filepath.Join(gitfixture.TempDir(t), "pid")
+	// The Process never listens, but starts a program in a session of its
+	// own that listens on the Process's port, as another program that took
+	// the port would.
+	command := "setsid " + testkit.TestServer(t) + " --name intruder & echo $! > " + pidFile + "; exec sleep 600"
+	repo := gitfixture.New(t, "lazy-intruder").
+		WriteFile("portby.toml", "start_timeout = \"1s\"\n"+processConfig(command)).
+		Commit("declare a web Process whose port another program takes")
+	d.MustRunCLI(repo.Dir, "link")
+
+	res := d.Get("https://lazy-intruder.localhost/")
+	pid := waitForPID(t, pidFile)
+	t.Cleanup(func() { syscall.Kill(pid, syscall.SIGKILL) })
+
+	if res.StatusCode != http.StatusGatewayTimeout {
+		t.Fatalf("status %d, want 504 (the Process never listened):\n%s", res.StatusCode, res.Body)
+	}
 }
 
 // navigateUntilStarted navigates to url, as the starting page's refreshes do,

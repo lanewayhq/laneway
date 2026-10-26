@@ -12,7 +12,9 @@ import (
 // Line is one line of a Process's output (stdout and stderr together).
 type Line struct {
 	// Seq orders lines across every Process of the Supervisor, so output of
-	// several Processes can be interleaved in the order it was written.
+	// several Processes can be interleaved. It is the order lines were read
+	// from the Processes' pipes: lines two Processes write within moments of
+	// each other may come out in either order.
 	Seq     uint64
 	Time    time.Time
 	Process string

@@ -90,6 +90,9 @@ func StartDaemon(t testing.TB, opts ...Option) *Daemon {
 		t.Fatalf("testkit: %v", err)
 	}
 	d := &Daemon{t: t, env: env, opts: opts, Home: home, Paths: p, Platform: platformtest.New(), Bin: bin, Path: path}
+	// Registered before d.Stop, so it runs after it (cleanups run in
+	// reverse). Every t.TempDir of the test, home included, is in one dir.
+	t.Cleanup(func() { killLeftovers(t, filepath.Dir(home)) })
 	d.Start()
 	t.Cleanup(d.Stop)
 	return d
