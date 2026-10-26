@@ -8,14 +8,16 @@ import (
 )
 
 // Variables are the names a template can use as {name}. Every Worktree has a
-// value for each. Later tickets add the database and Service variables
-// (db, test_db, and each Service's host and port) here and in the daemon's
+// value for each, except {db}, which only Worktrees of a Project with a
+// database have. Later tickets add the other database and Service variables
+// (test_db, and each Service's host and port) here and in the daemon's
 // envVars.
 var Variables = []string{
 	"project",  // the Project name
 	"worktree", // git's name for the Worktree; empty for the main Worktree
 	"domain",   // the Worktree's Domain, such as feat-x.shop.localhost
 	"url",      // the Worktree's URL, such as https://feat-x.shop.localhost
+	"db",       // the Worktree's database: for SQLite, the file's absolute path
 }
 
 // placeholder matches what a template treats specially: an escaped brace,

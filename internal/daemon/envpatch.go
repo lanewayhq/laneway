@@ -31,14 +31,19 @@ func linkedEnvWorktree(p registry.Project, w registry.Worktree) envWorktree {
 
 // envVars are the template variables' values for the Worktree w. They are
 // the Env Patch's inputs besides the templates: when one changes (an Alias
-// changing the URL, #13), call applyEnvPatch for the Worktree again.
-func envVars(p registry.Project, w envWorktree) map[string]string {
-	return map[string]string{
+// changing the URL, #13), call applyEnvPatch for the Worktree again. db is
+// the Project's database config; {db} is only set if it has one.
+func envVars(p registry.Project, w envWorktree, db recipe.Database) map[string]string {
+	vars := map[string]string{
 		"project":  p.Name,
 		"worktree": w.name,
 		"domain":   w.domain,
 		"url":      "https://" + w.domain,
 	}
+	if name, ok := worktreeDatabase(p, w, db); ok {
+		vars["db"] = name
+	}
+	return vars
 }
 
 // planEnvPatch works out how the Worktree's .env changes to carry its Env
@@ -49,7 +54,7 @@ func (d *Daemon) planEnvPatch(p registry.Project, w envWorktree) (envpatch.Plan,
 	if err != nil || len(cfg.Env) == 0 {
 		return envpatch.Plan{}, err
 	}
-	values, err := envpatch.RenderAll(cfg.Env, envVars(p, w))
+	values, err := envpatch.RenderAll(cfg.Env, envVars(p, w, cfg.Database))
 	if err != nil {
 		return envpatch.Plan{}, err
 	}
