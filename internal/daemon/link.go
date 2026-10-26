@@ -9,6 +9,7 @@ import (
 	"github.com/mrsafalpiya/portby.dev/internal/api"
 	"github.com/mrsafalpiya/portby.dev/internal/envpatch"
 	"github.com/mrsafalpiya/portby.dev/internal/gitrepo"
+	"github.com/mrsafalpiya/portby.dev/internal/naming"
 	"github.com/mrsafalpiya/portby.dev/internal/recipe"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
 )
@@ -44,8 +45,8 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 	project := registry.Project{Name: name, Path: checkout.MainDir}
 	if existing, ok := d.registry.ProjectAt(checkout.MainDir); ok {
 		project = existing
-	} else if d.nameTaken(name) {
-		return api.LinkResponse{}, nameTakenError(name)
+	} else if taken, ok := d.nameTaken(name); ok {
+		return api.LinkResponse{}, nameTakenError(name, taken)
 	} else if domainOf(project) == d.cfg.DashboardDomain {
 		return api.LinkResponse{}, &api.Error{
 			Code: api.CodeNameTaken,
@@ -74,7 +75,8 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 		// Linking from a Worktree the Watcher hasn't reported yet finds it.
 		d.syncWorktrees(ctx, project)
 	case errors.Is(err, registry.ErrNameTaken):
-		return api.LinkResponse{}, nameTakenError(name)
+		taken, _ := d.nameTaken(name)
+		return api.LinkResponse{}, nameTakenError(name, taken)
 	case err != nil:
 		return api.LinkResponse{}, err
 	default:
@@ -91,22 +93,32 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 	return res, nil
 }
 
-func nameTakenError(name string) error {
+// nameTakenError refuses the Project name name, which clashes with the
+// Linked Project taken.
+func nameTakenError(name, taken string) error {
+	if taken == "" || taken == name {
+		return &api.Error{
+			Code: api.CodeNameTaken,
+			Message: fmt.Sprintf("the Project name %q is already taken by another repository; "+
+				"choose a different one with --name <name>", name),
+		}
+	}
 	return &api.Error{
 		Code: api.CodeNameTaken,
-		Message: fmt.Sprintf("the Project name %q is already taken by another repository; "+
-			"choose a different one with --name <name>", name),
+		Message: fmt.Sprintf("the Project name %q would share its Domain and database with the Project %q; "+
+			"choose a different one with --name <name>", name, taken),
 	}
 }
 
-// nameTaken reports whether a Project is Linked as name.
-func (d *Daemon) nameTaken(name string) bool {
+// nameTaken returns the name of the Linked Project whose Domain or database
+// name would be name's (naming.Clash), if there is one.
+func (d *Daemon) nameTaken(name string) (string, bool) {
 	for _, p := range d.registry.Projects() {
-		if p.Name == name {
-			return true
+		if naming.Clash(p.Name, name) {
+			return p.Name, true
 		}
 	}
-	return false
+	return "", false
 }
 
 // linkEnvPatch works out the Env Patch of every Worktree of p and, with

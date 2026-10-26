@@ -47,7 +47,7 @@ func worktreeOrphans(p registry.Project, w envWorktree, cfg recipe.Resolved, sin
 	}
 	o := registry.Orphan{Engine: svc.Engine, Version: svc.Version, ProjectName: p.Name, Worktree: w.name, Since: since}
 	var out []registry.Orphan
-	main, own := e.Database(p.Name, "", p.Path), e.Database(p.Name, w.name, w.dir)
+	main, own := e.Database(p.Name, "", p.Path), e.Database(p.Name, w.label, w.dir)
 	if database.Mode(cfg.Database.Mode).Use(main, own) == own {
 		o.Database, o.Kind = own, orphanDatabase
 		out = append(out, o)
@@ -397,7 +397,7 @@ func (d *Daemon) leftoverCopies(ctx context.Context) ([]registry.Orphan, []error
 		s.owners = append(s.owners, owner{p.Name, e.Database(p.Name, "", p.Path)})
 		s.tests[e.TestDatabase(p.Name, "", p.Path)] = true
 		for _, w := range d.registry.Worktrees(p.Path) {
-			s.tests[e.TestDatabase(p.Name, w.Name, w.Path)] = true
+			s.tests[e.TestDatabase(p.Name, w.Label, w.Path)] = true
 		}
 	}
 	d.orphanMu.Lock()

@@ -49,6 +49,21 @@ func DatabaseName(project, worktree string, max int) string {
 	return name
 }
 
+// Clash reports whether the Project names a and b would share a Domain or a
+// database: their Domain labels or their database names (at the limits of
+// every database Service) are the same, as for "my-app" and "my_app".
+func Clash(a, b string) bool {
+	if DomainLabel(a) == DomainLabel(b) {
+		return true
+	}
+	for _, max := range []int{63, 64} { // Postgres, MySQL
+		if DatabaseName(a, "", max) == DatabaseName(b, "", max) {
+			return true
+		}
+	}
+	return false
+}
+
 // TestSuffix ends the name of a Worktree's Test Database.
 const TestSuffix = "_test"
 

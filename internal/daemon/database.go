@@ -38,7 +38,7 @@ func worktreeDatabase(p registry.Project, w envWorktree, db recipe.Database) (st
 	if e == nil {
 		return "", false
 	}
-	return database.Mode(db.Mode).Use(e.Database(p.Name, "", p.Path), e.Database(p.Name, w.name, w.dir)), true
+	return database.Mode(db.Mode).Use(e.Database(p.Name, "", p.Path), e.Database(p.Name, w.label, w.dir)), true
 }
 
 // databaseVars are the Env Patch variables saying where the database is,
@@ -69,7 +69,7 @@ func (d *Daemon) databaseStep(p registry.Project, w envWorktree, cfg recipe.Reso
 	if names == nil {
 		return provision.Step{}, false
 	}
-	main, own := names.Database(p.Name, "", p.Path), names.Database(p.Name, w.name, w.dir)
+	main, own := names.Database(p.Name, "", p.Path), names.Database(p.Name, w.label, w.dir)
 	return provision.Step{Name: "database", Run: func(ctx context.Context, out io.Writer) error {
 		var server database.Server
 		if svc, ok := cfg.DatabaseService(); ok && database.Mode(db.Mode).Use(main, own) == own {

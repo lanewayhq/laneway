@@ -207,6 +207,27 @@ func TestALongWorktreeNameGivesADatabaseNameCutToPostgresLimitWithAHash(t *testi
 	}
 }
 
+func TestWorktreesWhoseNamesNormaliseAlikeGetDatabasesOfTheirOwn(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	repo := postgresProject(t, "pg-alike", `worktree = "fresh"`)
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+
+	first := repo.AddWorktree("feature-x")
+	d.MustRunCLI(first.Dir, "worktree", "ready")
+	second := repo.AddWorktree("feature_x")
+	d.MustRunCLI(second.Dir, "worktree", "ready")
+
+	if got := envValue(t, filepath.Join(first.Dir, ".env"), "DB_DATABASE"); got != "pg_alike__feature_x" {
+		t.Fatalf("the first Worktree's DB_DATABASE = %q, want pg_alike__feature_x", got)
+	}
+	got := envValue(t, filepath.Join(second.Dir, ".env"), "DB_DATABASE")
+	if !regexp.MustCompile(`^pg_alike__feature_x_[0-9a-f]{8}$`).MatchString(got) {
+		t.Fatalf("the second Worktree's DB_DATABASE = %q, want pg_alike__feature_x with a hash", got)
+	}
+	dialPostgres(t, d, 5432, got)
+}
+
 func TestAPinnedPostgresVersionGetsItsOwnPortAndGoesIdleOnceSetupIsDone(t *testing.T) {
 	t.Parallel()
 	d, clk := idleDaemon(t)

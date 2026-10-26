@@ -37,8 +37,9 @@ const (
 // creates it again from the start.
 type Engine interface {
 	// Database is the name of the database of the Worktree checked out at
-	// dir, for the Project called project; worktree is git's name for the
-	// Worktree, "" for the main Worktree.
+	// dir, for the Project called project; worktree is the Worktree's label
+	// (its part of its Domain, unique within the Project), "" for the main
+	// Worktree.
 	Database(project, worktree, dir string) string
 	// Exists reports whether db exists.
 	Exists(ctx context.Context, db string) (bool, error)
@@ -105,7 +106,7 @@ type TestEngine interface {
 	Engine
 	// TestDatabase is the name of the Test Database of the Worktree
 	// checked out at dir, for the Project called project; worktree is
-	// git's name for it, "" for the main Worktree. It is the Worktree's
+	// its label, as for Database, "" for the main Worktree. It is the Worktree's
 	// own database name (Database) with "_test", cut short to fit the
 	// engine's limit.
 	TestDatabase(project, worktree, dir string) string

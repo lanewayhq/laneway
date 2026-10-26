@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -67,6 +68,35 @@ func TestLinkRefusesTakenNameAndSuggestsNameFlag(t *testing.T) {
 	}
 	if len(projects) != 1 || projects[0].Path != first.Dir {
 		t.Fatalf("projects = %+v, want only the first shop", projects)
+	}
+}
+
+func TestLinkRefusesANameThatWouldShareADomainOrDatabaseWithATakenOne(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	for _, c := range []struct{ taken, clash string }{
+		{"link-alike", "link_alike"},
+		{"Link-Case", "link-case"},
+	} {
+		first := gitfixture.New(t, "first")
+		second := gitfixture.New(t, "second")
+		d.MustRunCLI(first.Dir, "link", "--name", c.taken)
+
+		res := d.RunCLI(second.Dir, "link", "--name", c.clash)
+		if res.ExitCode == 0 {
+			t.Fatalf("linking %q while %q is Linked succeeded:\n%s", c.clash, c.taken, res.Output())
+		}
+		assertContains(t, res.Stderr, fmt.Sprintf("%q", c.taken))
+		assertContains(t, res.Stderr, "--name")
+		projects, err := d.Client().Projects(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range projects {
+			if p.Path == second.Dir {
+				t.Fatalf("%q was Linked although it shares %q's Domain and database", c.clash, c.taken)
+			}
+		}
 	}
 }
 

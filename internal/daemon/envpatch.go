@@ -23,7 +23,11 @@ const testEnvFileName = ".env.testing"
 
 // envWorktree is a Worktree as the Env Patch sees it.
 type envWorktree struct {
-	name   string // git's name; "" for the main Worktree
+	name string // git's name; "" for the main Worktree
+	// label is the Worktree's part of its Domain, unique within the Project
+	// ("" for the main Worktree). Its database names come from it, so two
+	// Worktrees whose names normalise alike get databases of their own.
+	label  string
 	dir    string
 	domain string
 	main   bool
@@ -34,7 +38,7 @@ func mainEnvWorktree(p registry.Project) envWorktree {
 }
 
 func linkedEnvWorktree(p registry.Project, w registry.Worktree) envWorktree {
-	return envWorktree{name: w.Name, dir: w.Path, domain: worktreeDomain(p, w)}
+	return envWorktree{name: w.Name, label: w.Label, dir: w.Path, domain: worktreeDomain(p, w)}
 }
 
 // envVars are the template variables' values for the Worktree w. They are

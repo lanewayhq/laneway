@@ -25,7 +25,7 @@ func worktreeTestDatabase(p registry.Project, w envWorktree, cfg recipe.Resolved
 	if !ok {
 		return "", false
 	}
-	return e.TestDatabase(p.Name, w.name, w.dir), true
+	return e.TestDatabase(p.Name, w.label, w.dir), true
 }
 
 // testDatabaseStep is the setup step that gives the Worktree w its Test

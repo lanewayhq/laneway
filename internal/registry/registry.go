@@ -92,7 +92,7 @@ func (r *Registry) ProjectAt(path string) (Project, bool) {
 
 // AddProject records a newly Linked Project and persists the change. It
 // returns ErrAlreadyLinked if a Project already has p's path, and ErrNameTaken
-// if one already has p's name.
+// if one already has p's name or a name that clashes with it (naming.Clash).
 func (r *Registry) AddProject(p Project) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -100,7 +100,7 @@ func (r *Registry) AddProject(p Project) error {
 		if existing.Path == p.Path {
 			return ErrAlreadyLinked
 		}
-		if existing.Name == p.Name {
+		if naming.Clash(existing.Name, p.Name) {
 			return ErrNameTaken
 		}
 	}
