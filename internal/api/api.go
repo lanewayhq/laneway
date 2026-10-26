@@ -6,8 +6,9 @@
 // Routes (all JSON, served over the daemon's Unix socket):
 //
 //	GET  /v1/projects   -> ProjectList
-//	GET  /v1/events     -> server-sent events: "projects" (data = ProjectList) at
-//	                    once and whenever it changes (the Dashboard's live view)
+//	GET  /v1/events     -> server-sent events: "projects" (data = ProjectList),
+//	                    "services" (ServiceList) and "orphans" (OrphanList) at
+//	                    once and whenever one changes (the Dashboard's live view)
 //	POST /v1/projects   LinkRequest -> LinkResponse   (Link a repository and apply
 //	                    its Env Patch; with preview, only report the Env Patch)
 //	GET  /v1/worktree?dir=<abs path> -> WorktreeInfo  (the Worktree containing dir)
