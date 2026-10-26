@@ -64,8 +64,9 @@ func (d *Daemon) planEnvPatch(p registry.Project, w envWorktree) (envpatch.Plan,
 
 // applyEnvPatch brings the Worktree's .env up to date with its Env Patch,
 // logging failures. It runs whenever the daemon starts serving a Worktree
-// (at daemon start, on Link and on discovery), so template changes apply
-// then. Re-applying a patch that is in place changes nothing.
+// (at daemon start, on Link and on discovery) and whenever a Worktree's
+// Processes start, so template changes apply then. Re-applying a patch that
+// is in place changes nothing.
 func (d *Daemon) applyEnvPatch(p registry.Project, w envWorktree) {
 	plan, err := d.planEnvPatch(p, w)
 	if err == nil {
@@ -75,6 +76,26 @@ func (d *Daemon) applyEnvPatch(p registry.Project, w envWorktree) {
 		d.log.Error("applying the Env Patch", "project", p.Name, "worktree", w.dir, "err", err)
 	} else if !plan.Empty() {
 		d.log.Info("applied the Env Patch", "project", p.Name, "path", plan.Path)
+	}
+}
+
+// applyServedEnvPatch re-applies the Env Patch of the Worktree served as s,
+// before its Processes start, so template changes apply at every start.
+func (d *Daemon) applyServedEnvPatch(s *served) {
+	for _, p := range d.registry.Projects() {
+		if p.Name != s.project {
+			continue
+		}
+		if s.dir == p.Path {
+			d.applyEnvPatch(p, mainEnvWorktree(p))
+			return
+		}
+		for _, w := range d.registry.Worktrees(p.Path) {
+			if w.Path == s.dir {
+				d.applyEnvPatch(p, linkedEnvWorktree(p, w))
+				return
+			}
+		}
 	}
 }
 

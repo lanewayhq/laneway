@@ -240,3 +240,17 @@ func TestTheEnvPatchWritesThroughASymlinkedEnvAndKeepsItsPermissions(t *testing.
 	}
 	assertFile(t, filepath.Join(repo.Dir, ".env.portby.bak"), "APP_URL=http://localhost\n")
 }
+
+func TestTheEnvPatchIsReappliedWhenTheWorktreeStarts(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	server := testkit.TestServer(t)
+	repo := envProject(t, "env-boot", `APP_URL = "{url}"`+"\n"+processConfig(server)).
+		WriteFile(".env", "APP_URL=http://localhost\n")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+
+	repo.WriteFile("portby.local.toml", "[env]\nAPP_URL = \"{url}/after\"\n")
+	d.GetServer("https://env-boot.localhost/")
+
+	assertFile(t, filepath.Join(repo.Dir, ".env"), "APP_URL=https://env-boot.localhost/after\n")
+}

@@ -121,6 +121,7 @@ func (d *Daemon) starting(s *served) *start {
 // and waits for the Primary Process to accept connections. It returns the
 // Primary Process's name.
 func (d *Daemon) bootWorktree(s *served) (string, error) {
+	d.applyServedEnvPatch(s)
 	cfg, err := recipe.ResolveDir(s.dir)
 	if err != nil {
 		return "", fmt.Errorf("Project %q could not be started: %w", s.project, err)
