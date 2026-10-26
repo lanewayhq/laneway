@@ -20,7 +20,7 @@ func (d *Daemon) routes() http.Handler {
 func (d *Daemon) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	list := api.ProjectList{Projects: []api.Project{}}
 	for _, p := range d.registry.Projects() {
-		list.Projects = append(list.Projects, apiProject(p.Name, p.Path))
+		list.Projects = append(list.Projects, d.apiProject(p))
 	}
 	writeJSON(w, http.StatusOK, list)
 }

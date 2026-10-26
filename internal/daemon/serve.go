@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/mrsafalpiya/portby.dev/internal/config"
+	"github.com/mrsafalpiya/portby.dev/internal/naming"
 	"github.com/mrsafalpiya/portby.dev/internal/proxy"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
 	"github.com/mrsafalpiya/portby.dev/internal/supervisor"
@@ -28,30 +28,44 @@ type served struct {
 
 // domainOf is the main Worktree's Domain.
 func domainOf(p registry.Project) string {
-	return strings.ToLower(p.Name) + ".localhost"
+	return naming.DomainLabel(p.Name) + ".localhost"
 }
 
-// startProject reads the Project's config and starts the main Worktree's
-// Processes. Failures are kept so requests to the Domain can report them,
-// rather than failing the caller.
+// startProject starts the main Worktree's Processes.
 func (d *Daemon) startProject(ctx context.Context, p registry.Project) {
-	s := served{project: p.Name, group: p.Path}
-	cfg, err := config.Load(p.Path)
+	d.startWorktree(ctx, p, domainOf(p), p.Path)
+}
+
+// startWorktree reads the config in the Worktree at dir and starts its
+// Processes, serving them at domain. Failures are kept so requests to the
+// Domain can report them, rather than failing the caller.
+func (d *Daemon) startWorktree(ctx context.Context, p registry.Project, domain, dir string) {
+	s := served{project: p.Name, group: dir}
+	cfg, err := config.Load(dir)
 	if err == nil {
 		s.primary, _ = cfg.PrimaryProcess()
 		var specs []supervisor.Spec
 		for _, name := range slices.Sorted(maps.Keys(cfg.Processes)) {
-			specs = append(specs, supervisor.Spec{Name: name, Command: cfg.Processes[name].Command, Dir: p.Path})
+			specs = append(specs, supervisor.Spec{Name: name, Command: cfg.Processes[name].Command, Dir: dir})
 		}
 		err = d.supervisor.StartGroup(ctx, s.group, specs)
 	}
 	if err != nil {
-		d.log.Error("starting Project", "project", p.Name, "err", err)
+		d.log.Error("starting Worktree", "project", p.Name, "worktree", dir, "err", err)
 		s.err = err
 	}
 	d.servedMu.Lock()
-	d.served[domainOf(p)] = s
+	d.served[domain] = s
 	d.servedMu.Unlock()
+}
+
+// stopWorktree stops serving domain and stops the Processes of the Worktree
+// at dir.
+func (d *Daemon) stopWorktree(ctx context.Context, domain, dir string) {
+	d.servedMu.Lock()
+	delete(d.served, domain)
+	d.servedMu.Unlock()
+	d.supervisor.StopGroup(ctx, dir)
 }
 
 // router is the daemon's proxy.Router.

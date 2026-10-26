@@ -15,6 +15,8 @@ type Project struct {
 	Name string `json:"name"`
 	// Path is the main Worktree's directory.
 	Path string `json:"path"`
+	// Worktrees are the Project's Worktrees, the main one first.
+	Worktrees []Worktree `json:"worktrees"`
 }
 
 // Worktree is one checkout of a Project.
@@ -23,6 +25,8 @@ type Worktree struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
 	Main bool   `json:"main"`
+	// Domain is the hostname the Worktree is served at.
+	Domain string `json:"domain,omitempty"`
 }
 
 // ProjectList is the body of GET /v1/projects.
