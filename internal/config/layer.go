@@ -85,6 +85,11 @@ type DatabaseLayer struct {
 	// (clone, the default), an empty one (fresh), or the main Worktree's
 	// own (shared).
 	Worktree *string `toml:"worktree"`
+	// Test is whether each Worktree also gets an empty Test Database,
+	// <database>_test in the same Service, one of DatabaseTests: on, off,
+	// or auto (the default; a Recipe decides, off without one). Only for
+	// databases in a Service, not SQLite.
+	Test *string `toml:"test"`
 }
 
 // DatabaseEngines are the values database.engine accepts.
@@ -92,6 +97,9 @@ var DatabaseEngines = []string{"sqlite", "postgres", "mysql"}
 
 // DatabaseModes are the values database.worktree accepts.
 var DatabaseModes = []string{"clone", "fresh", "shared"}
+
+// DatabaseTests are the values database.test accepts.
+var DatabaseTests = []string{"on", "off", "auto"}
 
 // ProcessLayer is one [processes.<name>] table.
 type ProcessLayer struct {
@@ -263,6 +271,9 @@ func (db *DatabaseLayer) validate() error {
 	}
 	if db.Worktree != nil && !slices.Contains(DatabaseModes, *db.Worktree) {
 		return fmt.Errorf("database.worktree must be %s, not %q", oneOf(DatabaseModes), *db.Worktree)
+	}
+	if db.Test != nil && !slices.Contains(DatabaseTests, *db.Test) {
+		return fmt.Errorf("database.test must be %s, not %q", oneOf(DatabaseTests), *db.Test)
 	}
 	if db.Path != nil {
 		switch path := filepath.Clean(*db.Path); {

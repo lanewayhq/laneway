@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -62,5 +63,43 @@ func TestPostgresDatabasesOnARealContainerEngine(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestTestDatabasesOnARealContainerEngine is the slow tier for Test
+// Databases: on a real Postgres server, each Worktree's Test Database is
+// created empty (never cloned, even with the main Worktree's Test Database
+// in use) and .env.testing points at it.
+func TestTestDatabasesOnARealContainerEngine(t *testing.T) {
+	for name, engine := range realEngines(t) {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			d, prefix := realEngineDaemon(t, engine)
+			removeContainer(t, engine, prefix+"-postgres-18")
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			if err := engine.Pull(ctx, "docker.io/library/postgres:18"); err != nil {
+				t.Fatalf("pulling postgres:18: %v", err)
+			}
+			db := "tdb_real_" + name
+			repo := postgresProject(t, "tdb-real-"+name, `test = "on"`).
+				WriteFile(".env.testing", "APP_ENV=testing\n")
+
+			d.MustRunCLI(repo.Dir, "link", "--yes")
+			d.MustRunCLI(repo.Dir, "worktree", "ready")
+			assertEmptyPostgresDatabase(t, d, 5432, db+"_test")
+			// A test run in the main Worktree, still connected.
+			tests := dialPostgres(t, d, 5432, db+"_test")
+			pgExec(t, tests, "CREATE TABLE notes (body text)")
+
+			wt := repo.AddWorktree("feature")
+			d.MustRunCLI(wt.Dir, "worktree", "ready")
+
+			assertEmptyPostgresDatabase(t, d, 5432, db+"__feature_test")
+			assertContains(t, readFile(t, filepath.Join(wt.Dir, ".env.testing")), "DB_DATABASE="+db+"__feature_test\n")
+			if got := pgColumn(t, tests, "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"); !slices.Equal(got, []string{"notes"}) {
+				t.Fatalf("the main Worktree's Test Database has tables %v after a Worktree was added, want notes", got)
+			}
+		})
 	}
 }

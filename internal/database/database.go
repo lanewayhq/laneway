@@ -96,3 +96,35 @@ func Ensure(ctx context.Context, e Engine, mode Mode, main, db string, out io.Wr
 	fmt.Fprintf(out, "created the empty database %s\n", db)
 	return warnings, nil
 }
+
+// TestEngine is an Engine whose Worktrees can also have a Test Database: an
+// empty database of their own for their test suite. Engines of databases in
+// a Service (Postgres, MySQL) are TestEngines; SQLite isn't.
+type TestEngine interface {
+	Engine
+	// TestDatabase is the name of the Test Database of the Worktree
+	// checked out at dir, for the Project called project; worktree is
+	// git's name for it, "" for the main Worktree. It is the Worktree's
+	// own database name (Database) with "_test", cut short to fit the
+	// engine's limit.
+	TestDatabase(project, worktree, dir string) string
+}
+
+// EnsureTest makes sure the Test Database db exists. It is always created
+// empty, never copied from another database, and one that exists is never
+// touched, so running EnsureTest again is safe. It says what it did on out.
+func EnsureTest(ctx context.Context, e Engine, db string, out io.Writer) error {
+	exists, err := e.Exists(ctx, db)
+	if err != nil {
+		return err
+	}
+	if exists {
+		fmt.Fprintf(out, "%s exists; leaving it as it is\n", db)
+		return nil
+	}
+	if err := e.Create(ctx, db); err != nil {
+		return fmt.Errorf("creating the Test Database %s: %w", db, err)
+	}
+	fmt.Fprintf(out, "created the empty Test Database %s\n", db)
+	return nil
+}

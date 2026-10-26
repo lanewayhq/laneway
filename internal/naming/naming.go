@@ -49,6 +49,17 @@ func DatabaseName(project, worktree string, max int) string {
 	return name
 }
 
+// TestSuffix ends the name of a Worktree's Test Database.
+const TestSuffix = "_test"
+
+// TestDatabaseName is the name of a Worktree's Test Database in a database
+// Service whose identifiers may be max characters long: its database's name
+// (DatabaseName) with TestSuffix, the database's name being cut short first
+// if the two together would be too long.
+func TestDatabaseName(project, worktree string, max int) string {
+	return DatabaseName(project, worktree, max-len(TestSuffix)) + TestSuffix
+}
+
 // normalize lowercases name, replaces every character other than an ASCII
 // letter or digit with sep, trims sep from both ends and caps the result at
 // max characters. A name that had to be cut, or that has nothing usable left

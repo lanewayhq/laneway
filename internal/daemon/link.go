@@ -116,25 +116,34 @@ func (d *Daemon) linkEnvPatch(ctx context.Context, p registry.Project, apply boo
 	if err != nil {
 		return nil, err
 	}
-	var plans []envpatch.Plan
+	type filePlan struct {
+		w    envWorktree
+		plan envpatch.Plan
+	}
+	var plans []filePlan
 	for _, w := range worktrees {
 		plan, err := d.planEnvPatch(p, w)
 		if err != nil {
 			return nil, &api.Error{Code: api.CodeInvalidConfig, Message: fmt.Sprintf("the Env Patch for %s: %v", w.dir, err)}
 		}
-		plans = append(plans, plan)
+		// With Test Databases on, .env.testing too.
+		testPlan, _, err := d.planTestEnvPatch(p, w)
+		if err != nil {
+			return nil, &api.Error{Code: api.CodeInvalidConfig, Message: fmt.Sprintf("the Env Patch for %s: %v", w.dir, err)}
+		}
+		plans = append(plans, filePlan{w, plan}, filePlan{w, testPlan})
 	}
 	var res []api.EnvFilePatch
-	for i, plan := range plans {
-		if plan.Empty() {
+	for _, fp := range plans {
+		if fp.plan.Empty() {
 			continue
 		}
 		if apply {
-			if err := plan.Apply(); err != nil {
-				return nil, fmt.Errorf("applying the Env Patch to %s: %w", plan.Path, err)
+			if err := fp.plan.Apply(); err != nil {
+				return nil, fmt.Errorf("applying the Env Patch to %s: %w", fp.plan.Path, err)
 			}
 		}
-		res = append(res, envPatchFor(worktrees[i], plan))
+		res = append(res, envPatchFor(fp.w, fp.plan))
 	}
 	return res, nil
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -24,8 +25,9 @@ import (
 // It runs when the Worktree's setup starts, so config is read then.
 //
 // The database step (database.go) gives a Project with a database engine
-// its database; other engines extend it there, not here. To add a step (the
-// Test Database, #22), append a provision.Step where that order puts it. A
+// its database; other engines extend it there, not here. The Test Database
+// step (testdatabase.go) gives each Worktree an empty Test Database when
+// config's Test Database decision is on. To add a step, append a provision.Step where that order puts it. A
 // step's Name is what `portby worktree ready`, `portby status` and the setup
 // error page show when it fails; anything it writes to its output is shown
 // with it, and provision.Warn reports a problem it worked around. It must stop
@@ -42,14 +44,27 @@ func (d *Daemon) setupPlan(p registry.Project, w envWorktree) provision.Plan {
 		if step, ok := d.databaseStep(p, w, cfg); ok {
 			steps = append(steps, step)
 		}
-		steps = append(steps, provision.Step{Name: "env", Run: func(context.Context, io.Writer) error {
+		if step, ok := d.testDatabaseStep(p, w, cfg); ok {
+			steps = append(steps, step)
+		}
+		steps = append(steps, provision.Step{Name: "env", Run: func(ctx context.Context, _ io.Writer) error {
 			plan, err := d.planEnvPatch(p, w)
 			if err != nil {
 				return fmt.Errorf("the Env Patch for %s: %w", w.dir, err)
 			}
-			return plan.Apply()
+			if err := plan.Apply(); err != nil {
+				return err
+			}
+			testPlan, missing, err := d.planTestEnvPatch(p, w)
+			if err != nil {
+				return fmt.Errorf("the Env Patch for %s: %w", filepath.Join(w.dir, testEnvFileName), err)
+			}
+			if missing != "" {
+				provision.Warn(ctx, testEnvWarning(p, missing))
+			}
+			return testPlan.Apply()
 		}})
-		env := d.setupEnv(ctx, p, w, w.dir, cfg.Database)
+		env := d.setupEnv(ctx, p, w, w.dir, cfg)
 		for _, command := range cfg.OnCreate {
 			steps = append(steps, provision.Shell("on_create: "+command, command, w.dir, env))
 		}
@@ -74,7 +89,7 @@ func (d *Daemon) teardown(p registry.Project, w envWorktree) {
 			if err != nil || len(cfg.OnRemove) == 0 {
 				return nil, err
 			}
-			env := d.setupEnv(ctx, p, w, p.Path, cfg.Database)
+			env := d.setupEnv(ctx, p, w, p.Path, cfg)
 			var steps []provision.Step
 			for _, command := range cfg.OnRemove {
 				steps = append(steps, provision.Shell("on_remove: "+command, command, p.Path, env))
@@ -87,11 +102,15 @@ func (d *Daemon) teardown(p registry.Project, w envWorktree) {
 // dir: the one Processes start from (daemon.Config.Env) with dir's Runtimes
 // resolved into it, as for Processes, so `composer install` finds the
 // Project's PHP; plus PORTBY_<VARIABLE> for every Env Patch template
-// variable (PORTBY_PROJECT, PORTBY_WORKTREE, PORTBY_DOMAIN, PORTBY_URL, …)
-// and PORTBY_WORKTREE_PATH, so on_remove steps know which Worktree went.
-func (d *Daemon) setupEnv(ctx context.Context, p registry.Project, w envWorktree, dir string, db recipe.Database) []string {
+// variable (PORTBY_PROJECT, PORTBY_WORKTREE, PORTBY_DOMAIN, PORTBY_URL,
+// PORTBY_DB, PORTBY_TEST_DB, …) and PORTBY_WORKTREE_PATH, so on_remove
+// steps know which Worktree went. cfg is the config the steps come from.
+func (d *Daemon) setupEnv(ctx context.Context, p registry.Project, w envWorktree, dir string, cfg recipe.Resolved) []string {
 	env := runtimes.Environ(ctx, dir, d.cfg.Env).Vars
-	vars := envVars(p, w, db)
+	vars := envVars(p, w, cfg.Database)
+	if name, ok := worktreeTestDatabase(p, w, cfg); ok {
+		vars["test_db"] = name
+	}
 	for _, k := range slices.Sorted(maps.Keys(vars)) {
 		env = append(env, "PORTBY_"+strings.ToUpper(k)+"="+vars[k])
 	}

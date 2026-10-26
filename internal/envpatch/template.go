@@ -12,9 +12,8 @@ import (
 // Variables are the names a template can use as {name}. Every Worktree has a
 // value for each, except {db}, which only Worktrees of a Project with a
 // database have, {db_host} and the other database connection variables,
-// which only a database in a Service (Postgres) has, and the Service
-// variables. Later tickets add the other variables (test_db) here and in the
-// daemon's envVars.
+// which only a database in a Service (Postgres) has, {test_db}, which only
+// Worktrees with a Test Database have, and the Service variables.
 var Variables = append([]string{
 	"project",  // the Project name
 	"worktree", // git's name for the Worktree; empty for the main Worktree
@@ -24,6 +23,7 @@ var Variables = append([]string{
 	// Where the database is, for a database in a Service: its Service's
 	// host, port and credentials.
 	"db_host", "db_port", "db_username", "db_password",
+	"test_db", // the Worktree's Test Database's name, when Test Databases are on
 },
 	// Each Service's host, port and credentials, such as {redis_port},
 	// which only have values in Worktrees whose config uses the Service.

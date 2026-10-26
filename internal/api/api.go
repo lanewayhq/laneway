@@ -206,6 +206,23 @@ type WorktreeInfo struct {
 	Domain string `json:"domain"`
 	// URL is the Domain's HTTPS URL, empty with Domain.
 	URL string `json:"url"`
+	// Database is the Worktree's database and Test Database; nil if the
+	// Project has no database, the Worktree has no Domain yet or its config
+	// can't be read.
+	Database *Database `json:"database,omitempty"`
+}
+
+// Database names the databases a Worktree uses.
+type Database struct {
+	// Engine is the database engine, such as "sqlite" or "postgres".
+	Engine string `json:"engine"`
+	// Name is the database the Worktree uses (the Env Patch's {db}): for
+	// SQLite the file's absolute path, else the database's name in its
+	// Service. In shared mode it is the main Worktree's.
+	Name string `json:"name"`
+	// Test is the Worktree's own Test Database (the Env Patch's
+	// {test_db}), in the same Service; empty when Test Databases are off.
+	Test string `json:"test,omitempty"`
 }
 
 // AliasRequest is the body of POST /v1/aliases.
