@@ -73,6 +73,10 @@ type Options struct {
 	IdleTimeout func() time.Duration
 	// StartTimeout is DefaultStartTimeout if 0.
 	StartTimeout time.Duration
+	// PortHolders describes who holds a port Portby can't listen on, for
+	// the Service's error, such as "nginx (pid 4242)"; "" (or nil) if it
+	// can't tell.
+	PortHolders func(port int) string
 }
 
 // Status is what a Service is doing.
@@ -152,6 +156,11 @@ func (m *Manager) Serve(svc Service) {
 		if err != nil {
 			if i == 0 {
 				s.err = fmt.Sprintf("Portby can't listen on port %d: %v", svc.Port, err)
+				if m.opts.PortHolders != nil {
+					if holders := m.opts.PortHolders(svc.Port); holders != "" {
+						s.err += "; it is in use by " + holders
+					}
+				}
 				m.log.Error("serving Service", "service", svc.Name(), "err", err)
 				break
 			}

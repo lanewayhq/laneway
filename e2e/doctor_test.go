@@ -175,3 +175,17 @@ func TestDoctorFallsBackToPathWhenMiseFails(t *testing.T) {
 	assertCheck(t, res.Stdout, "warn", "mise env", "Runtimes come from PATH: mise ERROR Config files in /work/shop/mise.toml are not trusted.")
 	assertCheck(t, res.Stdout, "ok", "php", "8.4.0 at "+filepath.Join(d.Bin, "php")+" (from PATH)")
 }
+
+func TestDoctorChecksEveryServicePortIsPortbys(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	d.MustRunCLI(serviceProject(t, "doctor-svc", "redis = \"7\"\nmailpit = \"v1\"", "").Dir, "link")
+	d.Platform.SetPortHolders(6379, platform.Holder{Program: "redis-server", PID: 4545})
+	// The in-process daemon is this test process.
+	d.Platform.SetPortHolders(1025, platform.Holder{Program: "portby", PID: os.Getpid()})
+
+	res := d.RunCLI(d.Home, "doctor")
+
+	assertCheck(t, res.Stdout, "FAIL", "port 6379 (redis:7)", "in use by redis-server (pid 4545)")
+	assertCheck(t, res.Stdout, "ok", "port 1025 (mailpit:v1)", "bound by Portby")
+}

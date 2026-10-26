@@ -83,7 +83,17 @@ func runDoctor(ctx context.Context, env Env, args []string) error {
 
 	checkService(ctx, r, plat)
 	for _, port := range []int{httpsPort, httpPort} {
-		checkPort(ctx, r, plat, port, info.PID)
+		checkPort(ctx, r, plat, port, "", info.PID)
+	}
+	if daemonErr == nil {
+		// Each Service's port, which Portby listens on to start it.
+		services, err := daemon.Services(daemonCtx)
+		if err != nil {
+			r.check(statusWarn, "Service ports", "can't list the Services: "+err.Error(), "")
+		}
+		for _, s := range services {
+			checkPort(ctx, r, plat, s.Port, s.Name, info.PID)
+		}
 	}
 	checkPortPermission(ctx, r, plat)
 	checkCA(ctx, r, plat, p.CARootCert())
@@ -179,9 +189,14 @@ func checkService(ctx context.Context, r *report, plat platform.Platform) {
 	}
 }
 
-// checkPort reports who holds port. daemonPID is the running daemon's, or 0.
-func checkPort(ctx context.Context, r *report, plat platform.Platform, port, daemonPID int) {
+// checkPort reports who holds port, which Portby needs for what (such as
+// "redis:7"; "" for its own HTTP and HTTPS ports). daemonPID is the running
+// daemon's, or 0.
+func checkPort(ctx context.Context, r *report, plat platform.Platform, port int, what string, daemonPID int) {
 	name := fmt.Sprintf("port %d", port)
+	if what != "" {
+		name += " (" + what + ")"
+	}
 	holders, err := plat.PortHolders(ctx, port)
 	if err != nil {
 		r.check(statusWarn, name, "can't tell who is listening: "+err.Error(), "")
@@ -193,7 +208,7 @@ func checkPort(ctx context.Context, r *report, plat platform.Platform, port, dae
 			r.check(statusOK, name, "bound by Portby", "")
 			return
 		}
-		others = append(others, describeHolder(h))
+		others = append(others, h.String())
 	}
 	switch {
 	case len(others) > 0:
@@ -203,20 +218,6 @@ func checkPort(ctx context.Context, r *report, plat platform.Platform, port, dae
 		r.check(statusFail, name, "free, but Portby is not listening on it",
 			"start the daemon with `portby install`; if it is running, see `journalctl --user -u portby.service`")
 	}
-}
-
-func describeHolder(h platform.Holder) string {
-	program := h.Program
-	if program == "" {
-		program = "a process Portby can't see (another user's)"
-	}
-	if h.Windows {
-		program = "Windows program " + program
-	}
-	if h.PID != 0 {
-		return fmt.Sprintf("%s (pid %d)", program, h.PID)
-	}
-	return program
 }
 
 func checkPortPermission(ctx context.Context, r *report, plat platform.Platform) {

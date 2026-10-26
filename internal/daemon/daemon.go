@@ -74,6 +74,9 @@ type Config struct {
 	// ContainerPrefix starts the names of Services' containers and
 	// volumes; "portby" if empty.
 	ContainerPrefix string
+	// Platform tells who holds a port a Service can't listen on. Nil
+	// means the real one for this machine.
+	Platform platform.Platform
 	// DashboardDomain is where the Dashboard is served,
 	// dashboard.DefaultDomain if empty. Tests running several daemons at
 	// once give each its own, since Caddy's certificate cache is shared.
@@ -166,6 +169,9 @@ func Start(cfg Config) (*Daemon, error) {
 	if cfg.ContainerEngine == nil {
 		cfg.ContainerEngine = discoverEngine(cfg.Env)
 	}
+	if cfg.Platform == nil {
+		cfg.Platform = platform.Detect(getenvOf(cfg.Env))
+	}
 	reg, err := registry.Open(cfg.Paths.Registry())
 	if err != nil {
 		return nil, err
@@ -200,6 +206,7 @@ func Start(cfg Config) (*Daemon, error) {
 		Hosts:       cfg.ServiceHosts,
 		Prefix:      cfg.ContainerPrefix,
 		IdleTimeout: d.serviceIdleTimeout,
+		PortHolders: d.portHolders,
 	})
 	d.serveRecordedServices()
 	d.stopping, d.stop = context.WithCancel(context.Background())
@@ -321,10 +328,9 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 	return err
 }
 
-// discoverEngine is the container engine found through the platform layer
-// (the same sockets `portby doctor` checks), looked up on first use.
-func discoverEngine(env []string) container.Engine {
-	getenv := func(key string) string {
+// getenvOf looks keys up in env, the last setting winning.
+func getenvOf(env []string) func(string) string {
+	return func(key string) string {
 		for _, kv := range slices.Backward(env) {
 			if k, v, ok := strings.Cut(kv, "="); ok && k == key {
 				return v
@@ -332,6 +338,27 @@ func discoverEngine(env []string) container.Engine {
 		}
 		return ""
 	}
+}
+
+// portHolders describes who listens on port, for a Service that can't.
+func (d *Daemon) portHolders(port int) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	holders, err := d.cfg.Platform.PortHolders(ctx, port)
+	if err != nil {
+		return ""
+	}
+	var names []string
+	for _, h := range holders {
+		names = append(names, h.String())
+	}
+	return strings.Join(names, ", ")
+}
+
+// discoverEngine is the container engine found through the platform layer
+// (the same sockets `portby doctor` checks), looked up on first use.
+func discoverEngine(env []string) container.Engine {
+	getenv := getenvOf(env)
 	return &container.Discovered{Find: func(ctx context.Context) (string, error) {
 		e, err := platform.Detect(getenv).ContainerEngine(ctx)
 		return strings.TrimPrefix(e.Address, "unix://"), err

@@ -10,6 +10,7 @@ package platform
 import (
 	"context"
 	"crypto/x509"
+	"fmt"
 )
 
 // Platform is the OS-specific behaviour Portby needs. Methods that change the
@@ -97,6 +98,21 @@ type Holder struct {
 	PID     int
 	// Windows is true for a Windows program seen from WSL2.
 	Windows bool
+}
+
+// String describes the holder for people, such as "nginx (pid 4242)".
+func (h Holder) String() string {
+	program := h.Program
+	if program == "" {
+		program = "a process Portby can't see (another user's)"
+	}
+	if h.Windows {
+		program = "Windows program " + program
+	}
+	if h.PID != 0 {
+		return fmt.Sprintf("%s (pid %d)", program, h.PID)
+	}
+	return program
 }
 
 // Engine is a reachable container engine.

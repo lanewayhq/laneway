@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
+	"github.com/mrsafalpiya/portby.dev/internal/platform"
 	"github.com/mrsafalpiya/portby.dev/internal/testkit"
 )
 
@@ -521,11 +522,13 @@ func TestAServiceWhosePortIsTakenSaysSo(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ln.Close()
+	d.Platform.SetPortHolders(6379, platform.Holder{Program: "redis-server", PID: 4545})
 	d.MustRunCLI(serviceProject(t, "svc-port-taken", `redis = "7"`, "").Dir, "link")
 
 	out := d.MustRunCLI(d.Home, "services").Stdout
 	assertContains(t, out, "redis:7: Portby can't listen on port 6379")
 	assertContains(t, out, "address already in use")
+	assertContains(t, out, "in use by redis-server (pid 4545)")
 }
 
 func TestAServiceStoppedBehindPortbysBackStartsOnTheNextConnection(t *testing.T) {
