@@ -17,13 +17,15 @@ func TestCrashedProcessRestartsAfterBackoff(t *testing.T) {
 	clk := clock.NewFake(time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC))
 	d := testkit.StartDaemon(t, testkit.WithClock(clk))
 	server := testkit.TestServer(t)
-	// Crashes on its first start only.
+	// Crashes soon after its first start only. (A Process that exits
+	// before it is up fails the lazy start instead: see lazy_test.go.)
 	repo := gitfixture.New(t, "crash-once").
 		WriteFile("portby.toml", processConfig(
-			"echo boot; if [ -e crashed ]; then exec "+server+"; fi; touch crashed; exit 1")).
+			"echo boot; if [ -e crashed ]; then exec "+server+"; fi; touch crashed; exec "+server+" --exit-after 300ms")).
 		Commit("declare web Process")
 
 	d.MustRunCLI(repo.Dir, "link")
+	d.GetServer("https://crash-once.localhost/")
 
 	waitForLogs(t, d, repo.Dir, []string{"logs", "web"}, "restarting in 1s")
 	if delay := waitForTimer(t, clk); delay != time.Second {
@@ -75,9 +77,10 @@ func TestProcessThatKeepsCrashingIsMarkedFailed(t *testing.T) {
 	clk := clock.NewFake(time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC))
 	d := testkit.StartDaemon(t, testkit.WithClock(clk))
 	repo := gitfixture.New(t, "crash-loop").
-		WriteFile("portby.toml", processConfig("echo boot; exit 1")).
+		WriteFile("portby.toml", processConfig("echo boot; exec "+testkit.TestServer(t)+" --exit-after 300ms")).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
+	d.GetServer("https://crash-loop.localhost/")
 
 	// Each restart waits twice as long as the one before.
 	for i, want := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second} {
@@ -118,9 +121,10 @@ func TestCrashesSpreadOverMoreThanTwoMinutesDoNotFailAProcess(t *testing.T) {
 	clk := clock.NewFake(time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC))
 	d := testkit.StartDaemon(t, testkit.WithClock(clk))
 	repo := gitfixture.New(t, "crash-sometimes").
-		WriteFile("portby.toml", processConfig("echo boot; exit 1")).
+		WriteFile("portby.toml", processConfig("echo boot; exec "+testkit.TestServer(t)+" --exit-after 300ms")).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
+	d.GetServer("https://crash-sometimes.localhost/")
 
 	// Each restart happens a minute after it's due, so no 2 minutes ever
 	// hold more than 3 crashes.

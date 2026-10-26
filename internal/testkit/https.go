@@ -68,16 +68,39 @@ type Response struct {
 // fails the test if the request fails.
 func (d *Daemon) Get(url string) Response {
 	d.t.Helper()
-	resp, err := d.HTTPS().Get(url)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		d.t.Fatalf("GET %s: %v", url, err)
+	}
+	return d.do(req)
+}
+
+func (d *Daemon) do(req *http.Request) Response {
+	d.t.Helper()
+	resp, err := d.HTTPS().Do(req)
+	if err != nil {
+		d.t.Fatalf("%s %s: %v", req.Method, req.URL, err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		d.t.Fatalf("GET %s: reading body: %v", url, err)
+		d.t.Fatalf("%s %s: reading body: %v", req.Method, req.URL, err)
 	}
 	return Response{Response: resp, Body: string(body)}
+}
+
+// Navigate is Get as a browser navigating to url sends it: with
+// Sec-Fetch-Mode: navigate and an Accept header preferring HTML.
+func (d *Daemon) Navigate(url string) Response {
+	d.t.Helper()
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		d.t.Fatalf("GET %s: %v", url, err)
+	}
+	req.Header.Set("Sec-Fetch-Mode", "navigate")
+	req.Header.Set("Sec-Fetch-Dest", "document")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	return d.do(req)
 }
 
 // ServerResponse is what the TestServer Process answers every request with.

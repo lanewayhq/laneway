@@ -1,6 +1,6 @@
-// Package registry is the daemon's persistent record of Linked Projects. Later
-// tickets extend it with Worktrees, Aliases, Service port assignments and
-// Orphans. Every change is written to disk before it is acknowledged, so
+// Package registry is the daemon's persistent record of Linked Projects and
+// their Worktrees. Later tickets extend it with Aliases, Service port
+// assignments and Orphans. Every change is written to disk before it is acknowledged, so
 // registrations survive daemon restarts.
 package registry
 
@@ -13,6 +13,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
+
+	"github.com/mrsafalpiya/portby.dev/internal/naming"
 )
 
 // Project is a Linked git repository.
@@ -39,8 +41,9 @@ type Registry struct {
 
 // state is the on-disk format. Version lets later tickets migrate it.
 type state struct {
-	Version  int       `json:"version"`
-	Projects []Project `json:"projects"`
+	Version   int        `json:"version"`
+	Projects  []Project  `json:"projects"`
+	Worktrees []Worktree `json:"worktrees,omitempty"`
 }
 
 const currentVersion = 1
@@ -99,6 +102,141 @@ func (r *Registry) AddProject(p Project) error {
 	}
 	next := r.state
 	next.Projects = append(slices.Clone(r.state.Projects), p)
+	if err := r.save(next); err != nil {
+		return err
+	}
+	r.state = next
+	return nil
+}
+
+// Worktree is a linked (not main) Worktree of a Project, as last discovered
+// in git's worktree registry.
+type Worktree struct {
+	// Project is the owning Project's Path.
+	Project string `json:"project"`
+	// Name is git's name for the worktree.
+	Name string `json:"name"`
+	Path string `json:"path"`
+	// Label is the Worktree's part of its Domain, unique within the Project.
+	// It is assigned once and kept, so a Domain doesn't change when another
+	// Worktree with a clashing name comes or goes.
+	Label string `json:"label"`
+}
+
+// Found is a linked worktree seen in git's worktree registry.
+type Found struct {
+	Name string
+	Path string
+}
+
+// Worktrees returns the linked Worktrees of the Project at project, sorted
+// by name.
+func (r *Registry) Worktrees(project string) []Worktree {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []Worktree
+	for _, w := range r.state.Worktrees {
+		if w.Project == project {
+			out = append(out, w)
+		}
+	}
+	slices.SortFunc(out, func(a, b Worktree) int { return strings.Compare(a.Name, b.Name) })
+	return out
+}
+
+// WorktreeChanges is how a Project's linked Worktrees change to match what
+// was found in git's worktree registry. Build it with PlanWorktrees and
+// record it with ApplyWorktrees.
+type WorktreeChanges struct {
+	project string
+	next    []Worktree // the Project's Worktrees afterwards
+	// Added and Removed are the Worktrees that appear and disappear. A
+	// Worktree that moved to another path is in both, with the same label.
+	Added, Removed []Worktree
+}
+
+// Empty reports whether nothing changes.
+func (c WorktreeChanges) Empty() bool { return len(c.Added) == 0 && len(c.Removed) == 0 }
+
+// PlanWorktrees works out how to make found the complete set of linked
+// Worktrees of the Project at project. It changes nothing; the caller must
+// not plan or apply other changes for the Project until it has applied this
+// one.
+//
+// New Worktrees get their name's DomainLabel, or that label plus a hash of
+// their name if another Worktree of the Project already uses it.
+func (r *Registry) PlanWorktrees(project string, found []Found) WorktreeChanges {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	c := WorktreeChanges{project: project}
+	foundPath := map[string]string{} // name → path
+	for _, f := range found {
+		foundPath[f.Name] = f.Path
+	}
+	known := map[string]bool{}
+	taken := map[string]bool{} // labels in use
+	for _, w := range r.state.Worktrees {
+		path, ok := foundPath[w.Name]
+		switch {
+		case w.Project != project:
+			continue
+		case !ok:
+			c.Removed = append(c.Removed, w)
+			continue
+		case path != w.Path:
+			c.Removed = append(c.Removed, w)
+			w.Path = path
+			c.Added = append(c.Added, w)
+		}
+		c.next = append(c.next, w)
+		known[w.Name] = true
+		taken[w.Label] = true
+	}
+	// Names that are already valid labels go first, so "feat-x" keeps its
+	// own name when "feat_x" turns up in the same scan.
+	fresh := slices.Clone(found)
+	slices.SortFunc(fresh, func(a, b Found) int {
+		ra, rb := naming.DomainLabel(a.Name) != a.Name, naming.DomainLabel(b.Name) != b.Name
+		if ra != rb {
+			if ra {
+				return 1
+			}
+			return -1
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
+	for _, f := range fresh {
+		if known[f.Name] {
+			continue
+		}
+		label := naming.DomainLabel(f.Name)
+		for seed := f.Name; taken[label]; seed += "'" {
+			label = naming.DomainLabelWithHash(f.Name, seed)
+		}
+		taken[label] = true
+		known[f.Name] = true
+		w := Worktree{Project: project, Name: f.Name, Path: f.Path, Label: label}
+		c.Added = append(c.Added, w)
+		c.next = append(c.next, w)
+	}
+	return c
+}
+
+// ApplyWorktrees records changes planned by PlanWorktrees and persists them.
+func (r *Registry) ApplyWorktrees(c WorktreeChanges) error {
+	if c.Empty() {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var all []Worktree
+	for _, w := range r.state.Worktrees {
+		if w.Project != c.project {
+			all = append(all, w)
+		}
+	}
+	next := r.state
+	next.Worktrees = append(all, c.next...)
 	if err := r.save(next); err != nil {
 		return err
 	}

@@ -16,21 +16,27 @@ func (d *Daemon) worktreeInfo(ctx context.Context, dir string) (api.WorktreeInfo
 		return api.WorktreeInfo{}, err
 	}
 	info := api.WorktreeInfo{
-		Project:  apiProject(p.Name, p.Path),
+		Project:  api.Project{Name: p.Name, Path: p.Path},
 		Worktree: api.Worktree{Name: checkout.Name, Path: checkout.Dir, Main: checkout.Main()},
-		Domain:   worktreeDomain(p, checkout),
+		Domain:   d.checkoutDomain(p, checkout),
 	}
+	info.Worktree.Domain = info.Domain
 	if info.Domain != "" {
 		info.URL = "https://" + info.Domain + "/"
 	}
 	return info, nil
 }
 
-// worktreeDomain is the Domain a Worktree is served at, or "" if it has none.
-// Only the main Worktree is served so far; Worktree Domains are ticket #12.
-func worktreeDomain(p registry.Project, c gitrepo.Checkout) string {
-	if !c.Main() {
-		return ""
+// checkoutDomain is the Domain the checkout is served at, or "" if the
+// Worktree Watcher hasn't recorded it yet.
+func (d *Daemon) checkoutDomain(p registry.Project, c gitrepo.Checkout) string {
+	if c.Main() {
+		return domainOf(p)
 	}
-	return domainOf(p)
+	for _, w := range d.registry.Worktrees(p.Path) {
+		if w.Name == c.Name {
+			return worktreeDomain(p, w)
+		}
+	}
+	return ""
 }

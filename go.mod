@@ -5,6 +5,7 @@ go 1.27.0
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/caddyserver/caddy/v2 v2.11.7
+	github.com/fsnotify/fsnotify v1.10.1
 )
 
 require (

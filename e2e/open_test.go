@@ -39,3 +39,19 @@ func TestOpenOutsideALinkedRepositoryFails(t *testing.T) {
 		t.Fatalf("opened %q, want nothing", got)
 	}
 }
+
+func TestOpenInALinkedWorktreeOpensItsWorktreeDomain(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	repo := gitfixture.New(t, "open-wt")
+	d.MustRunCLI(repo.Dir, "link")
+	wt := repo.AddWorktree("feature-x")
+	waitForWorktree(t, d, "open-wt", "feature-x")
+
+	d.MustRunCLI(wt.Dir, "open")
+
+	want := []string{"https://feature-x.open-wt.localhost/"}
+	if got := d.Platform.OpenedURLs(); !slices.Equal(got, want) {
+		t.Fatalf("opened %q, want %q", got, want)
+	}
+}

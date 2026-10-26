@@ -22,6 +22,7 @@ func TestProcessesRunWithTheRuntimeOnPathWithoutMise(t *testing.T) {
 		Commit("declare web Process")
 
 	d.MustRunCLI(repo.Dir, "link")
+	startByBrowsing(t, d, "runtime-path.localhost")
 
 	waitForLogs(t, d, repo.Dir, []string{"logs", "web"}, "PHP 8.3.4 (stub)")
 }
@@ -41,6 +42,7 @@ func TestProcessesRunWithTheRuntimesMiseResolvesForTheWorktree(t *testing.T) {
 		Commit("declare web Process")
 
 	d.MustRunCLI(repo.Dir, "link")
+	startByBrowsing(t, d, "runtime-mise.localhost")
 
 	out := waitForLogs(t, d, repo.Dir, []string{"logs", "web"}, "from-mise=")
 	assertLines(t, out, "PHP 8.4.2 (stub) --version", "from-mise=yes")
@@ -58,6 +60,7 @@ func TestAWorktreeStartReportsRuntimeMismatchesInItsOutput(t *testing.T) {
 		Commit("a PHP and Node Project")
 
 	d.MustRunCLI(repo.Dir, "link")
+	startByBrowsing(t, d, "runtime-mismatch.localhost")
 
 	out := waitForLogs(t, d, repo.Dir, []string{"logs", "web"}, "booted")
 	assertContains(t, out, `portby: Runtime warning: PHP 8.2.10 doesn't satisfy require.php "^8.3" in composer.json`)
@@ -76,6 +79,7 @@ func TestAWorktreeStartReportsAMissingRuntimeWithHowToInstallItWithMise(t *testi
 		Commit("a PHP Project")
 
 	d.MustRunCLI(repo.Dir, "link")
+	startByBrowsing(t, d, "runtime-missing.localhost")
 
 	out := waitForLogs(t, d, repo.Dir, []string{"logs", "web"}, "booted")
 	assertContains(t, out, "php@8.4.1, but it isn't installed; run `mise install`")

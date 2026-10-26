@@ -16,6 +16,9 @@ func Encode(w io.Writer, l Layer) error {
 	if l.Name != nil {
 		fmt.Fprintf(&b, "name = %s\n", quote(*l.Name))
 	}
+	if l.StartTimeout != nil {
+		fmt.Fprintf(&b, "start_timeout = %s\n", quote(l.StartTimeout.String()))
+	}
 	for _, name := range slices.Sorted(maps.Keys(l.Processes)) {
 		p := l.Processes[name]
 		if b.Len() > 0 {

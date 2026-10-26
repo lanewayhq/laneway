@@ -1,8 +1,16 @@
 // Command testserver is the tiny HTTP server tests declare as a Process. It
-// listens on 127.0.0.1 at --port, or at $PORT when --port is not given, and
+// listens on 127.0.0.1 at --port, or at $PORT when --port is not given (after
+// waiting --delay, to stand in for a slow-booting app), and
 // answers every request with a JSON description of itself and the request.
 // Requests to /ws are upgraded to a WebSocket that echoes back every byte it
 // receives.
+//
+// With --exit-after it exits with status 1 that long after it starts
+// listening, like an app that crashes once it is up.
+//
+// With --bind-only it stands in for an app that never finishes booting: it
+// binds the port, so nothing else can take it, but never listens, so
+// connections are refused.
 package main
 
 import (
@@ -15,7 +23,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
+	"syscall"
+	"time"
 )
 
 // Response is what the server answers with. Keep it in step with
@@ -32,17 +43,34 @@ type Response struct {
 func main() {
 	port := flag.String("port", os.Getenv("PORT"), "port to listen on (default $PORT)")
 	name := flag.String("name", "testserver", "name to report in responses")
+	delay := flag.Duration("delay", 0, "how long to wait before listening")
+	bindOnly := flag.Bool("bind-only", false, "bind the port but never listen")
+	exitAfter := flag.Duration("exit-after", 0, "exit with status 1 this long after listening")
 	flag.Parse()
 	if *port == "" {
 		fmt.Fprintln(os.Stderr, "testserver: no --port and no $PORT")
 		os.Exit(2)
 	}
+	if *bindOnly {
+		if err := bind(*port); err != nil {
+			fmt.Fprintln(os.Stderr, "testserver:", err)
+			os.Exit(1)
+		}
+		select {}
+	}
+	time.Sleep(*delay)
 	ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", *port))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "testserver:", err)
 		os.Exit(1)
 	}
 	_, listenPort, _ := net.SplitHostPort(ln.Addr().String())
+	if *exitAfter > 0 {
+		time.AfterFunc(*exitAfter, func() {
+			fmt.Fprintln(os.Stderr, "testserver: exiting as asked")
+			os.Exit(1)
+		})
+	}
 	err = http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/ws" {
 			echoWebSocket(w, r)
@@ -60,6 +88,19 @@ func main() {
 	}))
 	fmt.Fprintln(os.Stderr, "testserver:", err)
 	os.Exit(1)
+}
+
+// bind binds a TCP socket to 127.0.0.1:port without listening on it.
+func bind(port string) error {
+	n, err := strconv.Atoi(port)
+	if err != nil {
+		return err
+	}
+	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM, 0)
+	if err != nil {
+		return err
+	}
+	return syscall.Bind(fd, &syscall.SockaddrInet4{Port: n, Addr: [4]byte{127, 0, 0, 1}})
 }
 
 // echoWebSocket completes the WebSocket handshake and then echoes raw bytes.

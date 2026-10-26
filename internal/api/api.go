@@ -25,9 +25,8 @@ type Project struct {
 	Name string `json:"name"`
 	// Path is the main Worktree's directory.
 	Path string `json:"path"`
-	// Processes are the main Worktree's Processes, sorted by name. Only
-	// GET /v1/projects fills them in.
-	Processes []Process `json:"processes,omitempty"`
+	// Worktrees are the Project's Worktrees, the main one first.
+	Worktrees []Worktree `json:"worktrees"`
 }
 
 // Process is one of a Worktree's Processes and what it is doing.
@@ -45,6 +44,11 @@ type Worktree struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
 	Main bool   `json:"main"`
+	// Domain is the hostname the Worktree is served at.
+	Domain string `json:"domain,omitempty"`
+	// Processes are the Worktree's Processes, sorted by name. Only
+	// GET /v1/projects fills them in.
+	Processes []Process `json:"processes,omitempty"`
 }
 
 // ProjectList is the body of GET /v1/projects.

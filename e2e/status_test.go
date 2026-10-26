@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -48,8 +49,39 @@ func TestProjectsSurviveDaemonRestart(t *testing.T) {
 	}
 }
 
+func TestStatusListsWorktreesUnderTheirProjects(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	shop := gitfixture.New(t, "shop")
+	blog := gitfixture.New(t, "blog")
+	d.MustRunCLI(shop.Dir, "link")
+	d.MustRunCLI(blog.Dir, "link")
+	wt := shop.AddWorktree("checkout-v2")
+	d.MustRunCLI(wt.Dir, "link") // finds the new Worktree straight away
+
+	res := d.MustRunCLI(d.Home, "status")
+	want := [][]string{
+		{"PROJECT", "DOMAIN", "PATH", "PROCESSES"},
+		{"blog", "blog.localhost", blog.Dir},
+		{"shop", "shop.localhost", shop.Dir},
+		{"checkout-v2", "checkout-v2.shop.localhost", wt.Dir},
+	}
+	lines := strings.Split(strings.TrimRight(res.Stdout, "\n"), "\n")
+	if len(lines) != len(want) {
+		t.Fatalf("status has %d lines, want %d:\n%s", len(lines), len(want), res.Stdout)
+	}
+	for i, fields := range want {
+		if got := strings.Fields(lines[i]); !slices.Equal(got, fields) {
+			t.Fatalf("status line %d = %q, want %v\n%s", i, lines[i], fields, res.Stdout)
+		}
+	}
+	if !strings.HasPrefix(lines[3], "  ") {
+		t.Fatalf("Worktree row %q is not indented under its Project:\n%s", lines[3], res.Stdout)
+	}
+}
+
 // assertStatusRows checks `portby status` lists exactly rows of (Project, path)
-// in order, after its header line.
+// in order, after its header line. Each row's Domain sits between the two.
 func assertStatusRows(t *testing.T, out string, rows [][2]string) {
 	t.Helper()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -58,7 +90,7 @@ func assertStatusRows(t *testing.T, out string, rows [][2]string) {
 	}
 	for i, row := range rows {
 		fields := strings.Fields(lines[i+1])
-		if len(fields) != 2 || fields[0] != row[0] || fields[1] != row[1] {
+		if len(fields) != 3 || fields[0] != row[0] || fields[2] != row[1] {
 			t.Fatalf("status row %d = %q, want %s %s\n%s", i, lines[i+1], row[0], row[1], out)
 		}
 	}

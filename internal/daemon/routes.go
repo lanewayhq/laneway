@@ -24,9 +24,12 @@ func (d *Daemon) routes() http.Handler {
 func (d *Daemon) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	list := api.ProjectList{Projects: []api.Project{}}
 	for _, p := range d.registry.Projects() {
-		ap := apiProject(p.Name, p.Path)
-		for _, st := range d.supervisor.Processes(p.Path) {
-			ap.Processes = append(ap.Processes, api.Process{Name: st.Name, State: string(st.State)})
+		ap := d.apiProject(p)
+		for i, w := range ap.Worktrees {
+			for _, st := range d.supervisor.Processes(w.Path) {
+				w.Processes = append(w.Processes, api.Process{Name: st.Name, State: string(st.State)})
+			}
+			ap.Worktrees[i] = w
 		}
 		list.Projects = append(list.Projects, ap)
 	}

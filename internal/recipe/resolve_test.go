@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mrsafalpiya/portby.dev/internal/config"
 	"github.com/mrsafalpiya/portby.dev/internal/recipe"
@@ -148,6 +149,22 @@ func TestALaterLayerCanChooseADifferentPrimaryProcess(t *testing.T) {
 	}
 }
 
+func TestLocalConfigOverridesTheStartTimeout(t *testing.T) {
+	res := mustResolveFixture(t, "start-timeout")
+
+	if res.StartTimeout != 150*time.Second {
+		t.Errorf("StartTimeout = %v, want 2m30s", res.StartTimeout)
+	}
+}
+
+func TestTheStartTimeoutIsUnsetByDefault(t *testing.T) {
+	res := mustResolveFixture(t, "committed-only")
+
+	if res.StartTimeout != 0 {
+		t.Errorf("StartTimeout = %v, want 0 (the daemon's default)", res.StartTimeout)
+	}
+}
+
 func TestInvalidConfigNamesTheFileAndTheKey(t *testing.T) {
 	tests := []struct {
 		fixture string
@@ -162,6 +179,8 @@ func TestInvalidConfigNamesTheFileAndTheKey(t *testing.T) {
 		{"invalid-processes-not-table", config.FileName, []string{"processes", "table"}},
 		{"invalid-process-not-table", config.FileName, []string{"processes.web", "table"}},
 		{"invalid-empty-name", config.FileName, []string{"name", "empty"}},
+		{"invalid-start-timeout", config.FileName, []string{"start_timeout"}},
+		{"invalid-start-timeout-negative", config.FileName, []string{"start_timeout", "positive"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.fixture, func(t *testing.T) {
@@ -225,7 +244,7 @@ func TestResolveDirReportsInvalidConfig(t *testing.T) {
 // What `portby init` writes must mean the same thing as the config it was
 // resolved from, whether or not the Recipe still detects the Project.
 func TestTheResolvedConfigWrittenAsALayerResolvesToItself(t *testing.T) {
-	for _, fixture := range []string{"committed-only", "local-overrides", "recipe-defaults", "recipe-reenabled", "primary-moved"} {
+	for _, fixture := range []string{"committed-only", "local-overrides", "recipe-defaults", "recipe-reenabled", "primary-moved", "start-timeout"} {
 		t.Run(fixture, func(t *testing.T) {
 			res := mustResolveFixture(t, fixture, fixtureStack{})
 

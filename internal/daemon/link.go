@@ -39,21 +39,15 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 	if name == "" {
 		name = filepath.Base(checkout.MainDir)
 	}
-	res := api.LinkResponse{
-		Project: apiProject(name, checkout.MainDir),
-		Worktree: api.Worktree{
-			Name: checkout.Name,
-			Path: checkout.Dir,
-			Main: checkout.Main(),
-		},
-	}
+	res := api.LinkResponse{}
 	project := registry.Project{Name: name, Path: checkout.MainDir}
 	err = d.registry.AddProject(project)
 	switch {
 	case errors.Is(err, registry.ErrAlreadyLinked):
-		existing, _ := d.registry.ProjectAt(checkout.MainDir)
-		res.Project = apiProject(existing.Name, existing.Path)
+		project, _ = d.registry.ProjectAt(checkout.MainDir)
 		res.AlreadyLinked = true
+		// Linking from a Worktree the Watcher hasn't reported yet finds it.
+		d.syncWorktrees(ctx, project)
 	case errors.Is(err, registry.ErrNameTaken):
 		return api.LinkResponse{}, &api.Error{
 			Code: api.CodeNameTaken,
@@ -63,11 +57,28 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 	case err != nil:
 		return api.LinkResponse{}, err
 	default:
-		d.startProject(ctx, project)
+		d.serveProject(project)
+		d.syncWorktrees(ctx, project)
+	}
+	res.Project = d.apiProject(project)
+	res.Worktree = api.Worktree{Name: checkout.Name, Path: checkout.Dir, Main: checkout.Main()}
+	for _, w := range res.Project.Worktrees {
+		if w.Path == checkout.Dir {
+			res.Worktree = w
+		}
 	}
 	return res, nil
 }
 
-func apiProject(name, path string) api.Project {
-	return api.Project{Name: name, Path: path}
+// apiProject describes p and its Worktrees, the main one first.
+func (d *Daemon) apiProject(p registry.Project) api.Project {
+	res := api.Project{Name: p.Name, Path: p.Path, Worktrees: []api.Worktree{
+		{Path: p.Path, Main: true, Domain: domainOf(p)},
+	}}
+	for _, w := range d.registry.Worktrees(p.Path) {
+		res.Worktrees = append(res.Worktrees, api.Worktree{
+			Name: w.Name, Path: w.Path, Domain: worktreeDomain(p, w),
+		})
+	}
+	return res
 }

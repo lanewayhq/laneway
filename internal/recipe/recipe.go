@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"time"
 
 	"github.com/mrsafalpiya/portby.dev/internal/config"
 	"github.com/mrsafalpiya/portby.dev/internal/runtimes"
@@ -50,6 +51,9 @@ type Resolved struct {
 	Processes []Process
 	// Disabled names the Processes config turned off, sorted.
 	Disabled []string
+	// StartTimeout is how long the Primary Process gets to accept
+	// connections when its Worktree starts; 0 means the daemon's default.
+	StartTimeout time.Duration
 	// Warnings are problems that didn't stop resolution, such as unknown
 	// keys. Each names the file it comes from.
 	Warnings []string
@@ -74,6 +78,9 @@ func (r Resolved) Layer() config.Layer {
 	var l config.Layer
 	if r.Name != "" {
 		l.Name = &r.Name
+	}
+	if r.StartTimeout != 0 {
+		l.StartTimeout = &r.StartTimeout
 	}
 	if len(r.Processes)+len(r.Disabled) > 0 {
 		l.Processes = map[string]config.ProcessLayer{}
@@ -135,6 +142,9 @@ func Resolve(in Input) (Resolved, error) {
 		res.Warnings = append(res.Warnings, l.Warnings...)
 		if l.Name != nil {
 			res.Name = *l.Name
+		}
+		if l.StartTimeout != nil {
+			res.StartTimeout = *l.StartTimeout
 		}
 		for name, pl := range l.Processes {
 			p := procs[name]

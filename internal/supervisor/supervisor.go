@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"math/rand/v2"
 	"net"
 	"os"
 	"os/exec"
@@ -234,6 +235,7 @@ type Process struct {
 	state   State
 	run     *run        // the current run; nil unless running
 	port    int         // the latest run's port
+	command string      // the latest run's command, with {port} replaced
 	crashes []time.Time // when it crashed, within the last CrashWindow
 	timer   clock.Timer // the pending restart, if any
 	stopped bool        // stop was called; nothing restarts it any more
@@ -285,6 +287,7 @@ func (p *Process) startRun() error {
 	// closing it.
 	outR, outW, err := os.Pipe()
 	if err != nil {
+		releasePort(port)
 		return fmt.Errorf("starting Process %q: %w", spec.Name, err)
 	}
 	cmd.Stdout, cmd.Stderr = outW, outW
@@ -295,6 +298,7 @@ func (p *Process) startRun() error {
 	outW.Close()
 	if err != nil {
 		outR.Close()
+		releasePort(port)
 		return fmt.Errorf("starting Process %q: %w", spec.Name, err)
 	}
 	r := &run{port: port, cmd: cmd, exited: make(chan struct{})}
@@ -305,7 +309,7 @@ func (p *Process) startRun() error {
 		p.s.copyOutput(p.group, spec.Name, outR)
 	})
 	go p.wait(r, outputRead)
-	p.run, p.port, p.state = r, port, StateRunning
+	p.run, p.port, p.command, p.state = r, port, command, StateRunning
 	p.log.Info("process started", "port", port, "command", command)
 	return nil
 }
@@ -314,6 +318,7 @@ func (p *Process) startRun() error {
 // unless it was stopped.
 func (p *Process) wait(r *run, outputRead <-chan struct{}) {
 	r.exitErr = r.cmd.Wait()
+	releasePort(r.port)
 	// Its last output goes in before anything reports the exit. A
 	// grandchild still holding the pipe can't hold this up for long.
 	select {
@@ -381,16 +386,43 @@ func (p *Process) status() Status {
 	return Status{Name: p.spec.Name, State: p.state}
 }
 
-// freePort asks the kernel for a free loopback port. Something else could
-// take it before the Process binds it, but a fresh one is picked on every
-// start.
+// Process ports come from this range rather than from the kernel (port 0):
+// the kernel soon hands a freed ephemeral port to the next program asking
+// for one, often before a slow-booting Process has bound it.
+const minPort, maxPort = 20000, 29999
+
+// ports are the ports given to runs that haven't exited yet.
+var ports = struct {
+	sync.Mutex
+	inUse map[int]bool
+}{inUse: map[int]bool{}}
+
+// freePort picks a random loopback port in the range that is free now and
+// not given to another run. Something else could still take it before the
+// Process binds it, but a fresh one is picked on every start.
 func freePort() (int, error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
+	ports.Lock()
+	defer ports.Unlock()
+	for range 100 {
+		port := minPort + rand.IntN(maxPort-minPort+1)
+		if ports.inUse[port] {
+			continue
+		}
+		ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+		if err != nil {
+			continue
+		}
+		ln.Close()
+		ports.inUse[port] = true
+		return port, nil
 	}
-	defer ln.Close()
-	return ln.Addr().(*net.TCPAddr).Port, nil
+	return 0, fmt.Errorf("no free port between %d and %d", minPort, maxPort)
+}
+
+func releasePort(port int) {
+	ports.Lock()
+	delete(ports.inUse, port)
+	ports.Unlock()
 }
 
 // Addr is the loopback address the Process was last told to listen on.
@@ -398,6 +430,13 @@ func (p *Process) Addr() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return net.JoinHostPort("127.0.0.1", strconv.Itoa(p.port))
+}
+
+// Command is the command the Process was last started with, as run.
+func (p *Process) Command() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.command
 }
 
 // WaitUp waits until the Process accepts TCP connections on its port. It
