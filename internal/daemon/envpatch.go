@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
+	"strings"
 
 	"github.com/mrsafalpiya/portby.dev/internal/api"
 	"github.com/mrsafalpiya/portby.dev/internal/envpatch"
@@ -52,7 +53,9 @@ func envVars(p registry.Project, w worktreeRef, db recipe.Database) map[string]s
 		"project":  p.Name,
 		"worktree": w.name,
 		"domain":   w.domain,
-		"url":      "https://" + w.domain,
+		// No trailing slash, as Laravel's APP_URL has it, so templates
+		// can append a path: "{url}/shop".
+		"url": strings.TrimSuffix(domainURL(w.domain), "/"),
 	}
 	if name, ok := worktreeDatabase(p, w, db); ok {
 		vars["db"] = name

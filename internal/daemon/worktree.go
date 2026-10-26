@@ -23,11 +23,17 @@ func (d *Daemon) worktreeInfo(ctx context.Context, dir string) (api.WorktreeInfo
 	info.Worktree.Domain = info.Domain
 	info.Worktree.Aliases = d.aliasDomains(p, checkout.Name)
 	if info.Domain != "" {
-		info.URL = "https://" + info.Domain + "/"
+		info.URL = domainURL(info.Domain)
 		info.Worktree.Setup = d.setupOf(checkout.Dir)
 		info.Database = d.databaseInfo(p, checkout.Dir)
 	}
 	return info, nil
+}
+
+// domainURL is the URL of the page served at domain, as the API and
+// `portby info` give it: "https://shop.localhost/".
+func domainURL(domain string) string {
+	return "https://" + domain + "/"
 }
 
 // checkoutDomain is the Domain the checkout is served at, or "" if the

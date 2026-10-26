@@ -18,7 +18,7 @@ var Variables = append([]string{
 	"project",  // the Project name
 	"worktree", // git's name for the Worktree; empty for the main Worktree
 	"domain",   // the Worktree's Domain, such as feat-x.shop.localhost
-	"url",      // the Worktree's URL, such as https://feat-x.shop.localhost
+	"url",      // the Worktree's URL without a trailing slash, such as https://feat-x.shop.localhost
 	"db",       // the Worktree's database: for SQLite, the file's absolute path; else its name
 	// Where the database is, for a database in a Service: its Service's
 	// host, port and credentials.

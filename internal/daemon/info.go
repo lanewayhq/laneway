@@ -29,7 +29,7 @@ func (d *Daemon) info(ctx context.Context, dir string) (api.Info, error) {
 		Services:      []api.InfoService{},
 	}
 	for _, domain := range wt.Worktree.Aliases {
-		info.Aliases = append(info.Aliases, api.InfoAlias{Domain: domain, URL: "https://" + domain + "/"})
+		info.Aliases = append(info.Aliases, api.InfoAlias{Domain: domain, URL: domainURL(domain)})
 	}
 	if s := wt.Worktree.Setup; s != nil {
 		info.Setup = &api.InfoSetup{State: s.State, Step: s.Step, Error: s.Error,
@@ -72,9 +72,9 @@ func processInfo(declared []recipe.Process, runs []supervisor.Status, domain str
 		switch {
 		case domain == "":
 		case p.Primary:
-			ip.URL = "https://" + domain + "/"
+			ip.URL = domainURL(domain)
 		case p.HTTP:
-			ip.URL = "https://" + p.Name + "." + domain + "/"
+			ip.URL = domainURL(p.Name + "." + domain)
 		}
 		out = append(out, ip)
 	}
