@@ -22,9 +22,9 @@ func (d *Daemon) unlink(ctx context.Context, dir string) (api.UnlinkResponse, er
 	d.syncMu.Lock()
 	defer d.syncMu.Unlock()
 	res := api.UnlinkResponse{Project: d.apiProject(p), Orphans: []api.Orphan{}}
-	worktrees := []envWorktree{mainEnvWorktree(p)}
+	worktrees := []worktreeRef{mainWorktreeRef(p)}
 	for _, w := range d.registry.Worktrees(p.Path) {
-		worktrees = append(worktrees, linkedEnvWorktree(p, w))
+		worktrees = append(worktrees, linkedWorktreeRef(p, w))
 	}
 	// The databases are worked out from each Worktree's own config, or
 	// the main Worktree's if it can't be read.

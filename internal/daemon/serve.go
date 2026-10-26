@@ -31,9 +31,8 @@ const DefaultIdleTimeout = 15 * time.Minute
 // served is one Domain and the Worktree behind it. Its Processes are lazy:
 // nothing runs until the first request for the Domain starts them.
 type served struct {
+	worktreeRef
 	project string
-	domain  string
-	dir     string // the Worktree's directory
 	group   string // the Supervisor group running the Worktree's Processes
 
 	// ctx is cancelled when the Domain stops being served, which ends a
@@ -53,8 +52,8 @@ type served struct {
 	alwaysServices func()
 
 	mu    sync.Mutex
-	start *start // the running or last start; nil until the first request
-	idle  bool   // it went Idle, and hasn't been started or stopped since
+	start *startAttempt // the running or last start; nil until the first request
+	idle  bool          // it went Idle, and hasn't been started or stopped since
 }
 
 // state is what the API reports for the Worktree.
@@ -79,8 +78,8 @@ func (s *served) state() string {
 	}
 }
 
-// start is one attempt to start a Worktree's Processes.
-type start struct {
+// startAttempt is one attempt to start a Worktree's Processes.
+type startAttempt struct {
 	done    chan struct{} // closed once the Primary Process is up or has failed
 	primary string        // the Primary Process's name, once up
 	// routed are the other HTTP Processes, served at <process>.<domain>,
@@ -113,23 +112,24 @@ func domainOf(p registry.Project) string {
 // serveProject applies the main Worktree's Env Patch, serves it at its
 // Domain and begins preparing it if it isn't Ready.
 func (d *Daemon) serveProject(p registry.Project) {
-	d.applyEnvPatch(p, mainEnvWorktree(p))
-	d.serveWorktree(p, domainOf(p), p.Path)
-	d.reclaimOrphans(p, mainEnvWorktree(p))
-	d.prepare(p, mainEnvWorktree(p), false)
+	w := mainWorktreeRef(p)
+	d.applyEnvPatch(p, w)
+	d.serveWorktree(p, w)
+	d.reclaimOrphans(p, w)
+	d.prepare(p, w, false)
 }
 
-// serveWorktree makes the Worktree at dir known to the proxy at domain and
+// serveWorktree makes the Worktree w known to the proxy at its Domain and
 // starts its always Processes once it is Ready. Its lazy Processes start on
 // the first request for the Domain.
-func (d *Daemon) serveWorktree(p registry.Project, domain, dir string) {
-	s := &served{project: p.Name, domain: domain, dir: dir, group: dir}
+func (d *Daemon) serveWorktree(p registry.Project, w worktreeRef) {
+	s := &served{worktreeRef: w, project: p.Name, group: w.dir}
 	s.ctx, s.cancel = context.WithCancel(d.stopping)
 	s.activity = activity.New(d.cfg.Clock, DefaultIdleTimeout, func() { d.goIdle(s) })
 	d.servedMu.Lock()
-	d.served[domain] = s
+	d.served[w.domain] = s
 	d.servedMu.Unlock()
-	d.serveServicesOf(dir)
+	d.serveServicesOf(w.dir)
 	d.startAlways(s)
 }
 
@@ -258,11 +258,11 @@ func (d *Daemon) stopWorktree(ctx context.Context, domain, dir string) {
 
 // starting returns the Worktree's current start, beginning one if there is
 // none, so simultaneous first requests share a single start.
-func (d *Daemon) starting(s *served) *start {
+func (d *Daemon) starting(s *served) *startAttempt {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.start == nil || s.start.retry || d.setupRetried(s) {
-		st := &start{done: make(chan struct{})}
+		st := &startAttempt{done: make(chan struct{})}
 		s.start = st
 		s.idle = false
 		d.startsMu.Lock()
@@ -288,7 +288,7 @@ func (d *Daemon) starting(s *served) *start {
 // running and waits for the Primary Process to accept connections. It
 // returns the Primary Process's name, and records the other HTTP Processes
 // and the lazy and manual ones in st.
-func (d *Daemon) bootWorktree(s *served, st *start) (string, error) {
+func (d *Daemon) bootWorktree(s *served, st *startAttempt) (string, error) {
 	// Setup can take minutes: wait for it before taking the lifecycle
 	// lock, so `portby down` doesn't wait for it too.
 	if err := d.waitForReady(s); err != nil {
@@ -384,7 +384,7 @@ func (d *Daemon) bootWorktree(s *served, st *start) (string, error) {
 // page names Vite's address only once Vite has written public/hot, which it
 // does when it starts listening (spike #2). Only the Primary Process decides
 // whether the start succeeds; one that doesn't come up is just logged.
-func (d *Daemon) waitForRouted(ctx context.Context, s *served, st *start, started []recipe.Process) {
+func (d *Daemon) waitForRouted(ctx context.Context, s *served, st *startAttempt, started []recipe.Process) {
 	var wg sync.WaitGroup
 	for _, proc := range started {
 		p, ok := d.supervisor.Process(s.group, proc.Name)
@@ -430,7 +430,7 @@ func (d *Daemon) goIdle(s *served) {
 	d.stopProcesses(s, st.lazy)
 }
 
-func isDone(st *start) bool {
+func isDone(st *startAttempt) bool {
 	select {
 	case <-st.done:
 		return true

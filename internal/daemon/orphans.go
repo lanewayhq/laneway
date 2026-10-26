@@ -36,7 +36,7 @@ const (
 // the main Worktree's) and its Test Database. cfg is the config they come
 // from. None unless the database is in a Service whose Engine can drop
 // databases (database.Dropper): a SQLite file goes with its Worktree.
-func worktreeOrphans(p registry.Project, w envWorktree, cfg recipe.Resolved, since time.Time) []registry.Orphan {
+func worktreeOrphans(p registry.Project, w worktreeRef, cfg recipe.Resolved, since time.Time) []registry.Orphan {
 	svc, ok := cfg.DatabaseService()
 	if !ok {
 		return nil
@@ -62,7 +62,7 @@ func worktreeOrphans(p registry.Project, w envWorktree, cfg recipe.Resolved, sin
 // orphanWorktree turns the databases of the Worktree w, which was removed,
 // into Orphans. Its checkout is gone, so they are worked out from the main
 // Worktree's config.
-func (d *Daemon) orphanWorktree(p registry.Project, w envWorktree) {
+func (d *Daemon) orphanWorktree(p registry.Project, w worktreeRef) {
 	cfg, err := recipe.ResolveDir(p.Path)
 	if err != nil {
 		d.log.Error("finding the databases of a removed Worktree", "project", p.Name, "worktree", w.name, "err", err)
@@ -76,7 +76,7 @@ func (d *Daemon) orphanWorktree(p registry.Project, w envWorktree) {
 // the same name), so they aren't dropped while it uses them: its setup then
 // finds them and leaves them as they are. It runs whenever a Worktree is
 // served, before its setup begins.
-func (d *Daemon) reclaimOrphans(p registry.Project, w envWorktree) {
+func (d *Daemon) reclaimOrphans(p registry.Project, w worktreeRef) {
 	cfg, err := recipe.ResolveDir(w.dir)
 	if err != nil {
 		return

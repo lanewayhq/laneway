@@ -124,12 +124,12 @@ func (d *Daemon) nameTaken(name string) (string, bool) {
 // linkEnvPatch works out the Env Patch of every Worktree of p and, with
 // apply, applies it. It returns the env files that change.
 func (d *Daemon) linkEnvPatch(ctx context.Context, p registry.Project, apply bool) ([]api.EnvFilePatch, error) {
-	worktrees, err := d.projectEnvWorktrees(ctx, p)
+	worktrees, err := d.projectWorktreeRefs(ctx, p)
 	if err != nil {
 		return nil, err
 	}
 	type filePlan struct {
-		w    envWorktree
+		w    worktreeRef
 		plan envpatch.Plan
 	}
 	var plans []filePlan

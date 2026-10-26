@@ -24,7 +24,7 @@ func databaseEngine(db recipe.Database, server database.Server) database.Engine 
 
 // worktreeDatabase is the database the Worktree w uses, which the Env Patch's
 // {db} holds, and whether the Project has one.
-func worktreeDatabase(p registry.Project, w envWorktree, db recipe.Database) (string, bool) {
+func worktreeDatabase(p registry.Project, w worktreeRef, db recipe.Database) (string, bool) {
 	e := databaseEngine(db, database.Server{})
 	if e == nil {
 		return "", false
@@ -54,7 +54,7 @@ func databaseVars(cfg recipe.Resolved, vars map[string]string) map[string]string
 // config's mode says; false if the Project has none. A database in a Service
 // starts the Service first (pulling its image if needed) and keeps it from
 // going Idle until the step ends.
-func (d *Daemon) databaseStep(p registry.Project, w envWorktree, cfg recipe.Resolved) (prepare.Step, bool) {
+func (d *Daemon) databaseStep(p registry.Project, w worktreeRef, cfg recipe.Resolved) (prepare.Step, bool) {
 	db := cfg.Database
 	names := databaseEngine(db, database.Server{})
 	if names == nil {

@@ -49,17 +49,18 @@ func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
 	for _, w := range changes.Removed {
 		d.log.Info("Worktree removed", "project", p.Name, "worktree", w.Name, "path", w.Path)
 		d.stopWorktree(ctx, worktreeDomain(p, w), w.Path)
-		d.teardown(p, linkedEnvWorktree(p, w))
+		d.teardown(p, linkedWorktreeRef(p, w))
 		// A moved Worktree is removed and added again: its databases
 		// stay its own.
 		if !slices.ContainsFunc(changes.Added, func(a registry.Worktree) bool { return a.Name == w.Name }) {
-			d.orphanWorktree(p, linkedEnvWorktree(p, w))
+			d.orphanWorktree(p, linkedWorktreeRef(p, w))
 		}
 	}
 	for _, w := range changes.Added {
 		d.log.Info("Worktree discovered", "project", p.Name, "worktree", w.Name, "path", w.Path)
-		d.applyEnvPatch(p, linkedEnvWorktree(p, w))
-		d.serveWorktree(p, worktreeDomain(p, w), w.Path)
+		ref := linkedWorktreeRef(p, w)
+		d.applyEnvPatch(p, ref)
+		d.serveWorktree(p, ref)
 	}
 	if err := d.registry.ApplyWorktrees(changes); err != nil {
 		d.log.Error("recording Worktrees", "project", p.Name, "err", err)
@@ -71,8 +72,9 @@ func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
 	// Setup begins once the Registry knows the Worktree, so its setup
 	// steps see it as `portby` reports it.
 	for _, w := range changes.Added {
-		d.reclaimOrphans(p, linkedEnvWorktree(p, w))
-		d.prepare(p, linkedEnvWorktree(p, w), false)
+		ref := linkedWorktreeRef(p, w)
+		d.reclaimOrphans(p, ref)
+		d.prepare(p, ref, false)
 	}
 	var dirs []string
 	for _, w := range d.registry.Worktrees(p.Path) {
@@ -119,15 +121,15 @@ func (d *Daemon) serveKnownWorktrees(p registry.Project) {
 	d.syncMu.Lock()
 	defer d.syncMu.Unlock()
 	for _, w := range d.registry.Worktrees(p.Path) {
-		domain := worktreeDomain(p, w)
+		ref := linkedWorktreeRef(p, w)
 		d.servedMu.Lock()
-		_, ok := d.served[domain]
+		_, ok := d.served[ref.domain]
 		d.servedMu.Unlock()
 		if !ok {
-			d.applyEnvPatch(p, linkedEnvWorktree(p, w))
-			d.serveWorktree(p, domain, w.Path)
+			d.applyEnvPatch(p, ref)
+			d.serveWorktree(p, ref)
 		}
 		// A setup the daemon was stopped in the middle of runs again.
-		d.prepare(p, linkedEnvWorktree(p, w), false)
+		d.prepare(p, ref, false)
 	}
 }

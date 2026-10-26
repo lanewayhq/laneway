@@ -121,7 +121,7 @@ func releaseAlwaysServices(s *served) {
 
 // releaseServices ends the use of Services by the Worktree st started,
 // when it stops or st is dropped. It does nothing if st didn't succeed.
-func (st *start) releaseServices() {
+func (st *startAttempt) releaseServices() {
 	if st.release != nil {
 		st.release()
 	}

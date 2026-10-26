@@ -17,7 +17,7 @@ import (
 // decision is on and the database's engine makes them (database.TestEngine).
 // Every Worktree has its own, whatever the database mode: even Worktrees
 // sharing the main Worktree's database never share a Test Database.
-func worktreeTestDatabase(p registry.Project, w envWorktree, cfg recipe.Resolved) (string, bool) {
+func worktreeTestDatabase(p registry.Project, w worktreeRef, cfg recipe.Resolved) (string, bool) {
 	if !cfg.TestDatabase {
 		return "", false
 	}
@@ -32,7 +32,7 @@ func worktreeTestDatabase(p registry.Project, w envWorktree, cfg recipe.Resolved
 // Database, always empty and never copied; false if config's Test Database
 // decision is off. It starts the database's Service like the database step
 // and keeps it from going Idle until the step ends.
-func (d *Daemon) testDatabaseStep(p registry.Project, w envWorktree, cfg recipe.Resolved) (prepare.Step, bool) {
+func (d *Daemon) testDatabaseStep(p registry.Project, w worktreeRef, cfg recipe.Resolved) (prepare.Step, bool) {
 	if !cfg.TestDatabase {
 		return prepare.Step{}, false
 	}
@@ -61,7 +61,7 @@ func (d *Daemon) testDatabaseStep(p registry.Project, w envWorktree, cfg recipe.
 // dir: the {db} and {test_db} it is given. nil if the Registry doesn't know
 // the Worktree, its config can't be read or the Project has no database.
 func (d *Daemon) databaseInfo(p registry.Project, dir string) *api.Database {
-	w, ok := d.envWorktreeOf(p, dir)
+	w, ok := d.worktreeRefOf(p, dir)
 	if !ok {
 		return nil
 	}

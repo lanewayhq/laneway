@@ -21,8 +21,10 @@ const envFileName = ".env"
 // Worktree's Test Database.
 const testEnvFileName = ".env.testing"
 
-// envWorktree is a Worktree as the Env Patch sees it.
-type envWorktree struct {
+// worktreeRef identifies one Worktree of a Project: its names, directory and
+// Domain. The Env Patch, setup and Orphans work from it, and every served
+// Domain carries one.
+type worktreeRef struct {
 	name string // git's name; "" for the main Worktree
 	// label is the Worktree's part of its Domain, unique within the Project
 	// ("" for the main Worktree). Its database names come from it, so two
@@ -33,19 +35,19 @@ type envWorktree struct {
 	main   bool
 }
 
-func mainEnvWorktree(p registry.Project) envWorktree {
-	return envWorktree{dir: p.Path, domain: domainOf(p), main: true}
+func mainWorktreeRef(p registry.Project) worktreeRef {
+	return worktreeRef{dir: p.Path, domain: domainOf(p), main: true}
 }
 
-func linkedEnvWorktree(p registry.Project, w registry.Worktree) envWorktree {
-	return envWorktree{name: w.Name, label: w.Label, dir: w.Path, domain: worktreeDomain(p, w)}
+func linkedWorktreeRef(p registry.Project, w registry.Worktree) worktreeRef {
+	return worktreeRef{name: w.Name, label: w.Label, dir: w.Path, domain: worktreeDomain(p, w)}
 }
 
 // envVars are the template variables' values for the Worktree w. They are
 // the Env Patch's inputs besides the templates: when one changes (an Alias
 // changing the URL, #13), call applyEnvPatch for the Worktree again. db is
 // the Project's database config; {db} is only set if it has one.
-func envVars(p registry.Project, w envWorktree, db recipe.Database) map[string]string {
+func envVars(p registry.Project, w worktreeRef, db recipe.Database) map[string]string {
 	vars := map[string]string{
 		"project":  p.Name,
 		"worktree": w.name,
@@ -61,7 +63,7 @@ func envVars(p registry.Project, w envWorktree, db recipe.Database) map[string]s
 // planEnvPatch works out how the Worktree's .env changes to carry its Env
 // Patch, from the templates in the Worktree's own config. A Project without
 // templates gets no Env Patch: its env files are never touched.
-func (d *Daemon) planEnvPatch(p registry.Project, w envWorktree) (envpatch.Plan, error) {
+func (d *Daemon) planEnvPatch(p registry.Project, w worktreeRef) (envpatch.Plan, error) {
 	cfg, err := recipe.ResolveDir(w.dir)
 	templates := cfg.EnvFor(w.main)
 	if err != nil || len(templates) == 0 {
@@ -82,7 +84,7 @@ func (d *Daemon) planEnvPatch(p registry.Project, w envWorktree) (envpatch.Plan,
 
 // envPatchVars are the template variables' values for the Worktree w whose
 // config is cfg: envVars, its Services' and its databases'.
-func (d *Daemon) envPatchVars(p registry.Project, w envWorktree, cfg recipe.Resolved) map[string]string {
+func (d *Daemon) envPatchVars(p registry.Project, w worktreeRef, cfg recipe.Resolved) map[string]string {
 	vars := envVars(p, w, cfg.Database)
 	services := d.serviceVars(cfg.Services)
 	maps.Copy(vars, services)
@@ -101,7 +103,7 @@ func (d *Daemon) envPatchVars(p registry.Project, w envWorktree, cfg recipe.Reso
 // .env.testing from nothing: when neither the Worktree nor the main Worktree
 // has one, test config is left alone and missing is the Test Database the
 // tests won't use, for a warning.
-func (d *Daemon) planTestEnvPatch(p registry.Project, w envWorktree) (plan envpatch.Plan, missing string, err error) {
+func (d *Daemon) planTestEnvPatch(p registry.Project, w worktreeRef) (plan envpatch.Plan, missing string, err error) {
 	cfg, err := recipe.ResolveDir(w.dir)
 	templates := cfg.EnvFor(w.main)
 	if err != nil || len(templates) == 0 {
@@ -144,7 +146,7 @@ func testEnvWarning(p registry.Project, testDB string) string {
 // (at daemon start, on Link and on discovery) and whenever a Worktree's
 // Processes start, so template changes apply then. Re-applying a patch that
 // is in place changes nothing. It reports whether it changed .env.
-func (d *Daemon) applyEnvPatch(p registry.Project, w envWorktree) (changed bool) {
+func (d *Daemon) applyEnvPatch(p registry.Project, w worktreeRef) (changed bool) {
 	plan, err := d.planEnvPatch(p, w)
 	if err == nil {
 		err = d.applyPlan(p, plan)
@@ -193,21 +195,21 @@ func (d *Daemon) applyServedEnvPatch(s *served) bool {
 			continue
 		}
 		if s.dir == p.Path {
-			return d.applyEnvPatch(p, mainEnvWorktree(p))
+			return d.applyEnvPatch(p, mainWorktreeRef(p))
 		}
 		for _, w := range d.registry.Worktrees(p.Path) {
 			if w.Path == s.dir {
-				return d.applyEnvPatch(p, linkedEnvWorktree(p, w))
+				return d.applyEnvPatch(p, linkedWorktreeRef(p, w))
 			}
 		}
 	}
 	return false
 }
 
-// projectEnvWorktrees are the Project's Worktrees as they will be once
+// projectWorktreeRefs are the Project's Worktrees as they will be once
 // syncWorktrees has run: the main one, then the linked ones git knows,
 // including those the Registry hasn't recorded yet. It changes nothing.
-func (d *Daemon) projectEnvWorktrees(ctx context.Context, p registry.Project) ([]envWorktree, error) {
+func (d *Daemon) projectWorktreeRefs(ctx context.Context, p registry.Project) ([]worktreeRef, error) {
 	d.syncMu.Lock()
 	defer d.syncMu.Unlock()
 	found, _, err := d.foundWorktrees(ctx, p)
@@ -219,20 +221,20 @@ func (d *Daemon) projectEnvWorktrees(ctx context.Context, p registry.Project) ([
 	for _, w := range changes.Removed {
 		removed[w.Path] = true
 	}
-	out := []envWorktree{mainEnvWorktree(p)}
+	out := []worktreeRef{mainWorktreeRef(p)}
 	for _, w := range d.registry.Worktrees(p.Path) {
 		if !removed[w.Path] {
-			out = append(out, linkedEnvWorktree(p, w))
+			out = append(out, linkedWorktreeRef(p, w))
 		}
 	}
 	for _, w := range changes.Added {
-		out = append(out, linkedEnvWorktree(p, w))
+		out = append(out, linkedWorktreeRef(p, w))
 	}
 	return out, nil
 }
 
 // envPatchFor describes a planned patch of the Worktree w for the API.
-func envPatchFor(w envWorktree, plan envpatch.Plan) api.EnvFilePatch {
+func envPatchFor(w worktreeRef, plan envpatch.Plan) api.EnvFilePatch {
 	res := api.EnvFilePatch{
 		Worktree: api.Worktree{Name: w.name, Path: w.dir, Main: w.main, Domain: w.domain},
 		Path:     plan.Path,

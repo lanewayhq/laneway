@@ -34,7 +34,7 @@ import (
 // when its ctx is cancelled (the Worktree was removed or the daemon is
 // stopping) and should be safe to run again: a Failed setup is retried from
 // the first step, and so is one the daemon stopped in the middle of.
-func (d *Daemon) setupPlan(p registry.Project, w envWorktree) prepare.Plan {
+func (d *Daemon) setupPlan(p registry.Project, w worktreeRef) prepare.Plan {
 	return func(ctx context.Context) ([]prepare.Step, error) {
 		cfg, err := recipe.ResolveDir(w.dir)
 		if err != nil {
@@ -74,14 +74,14 @@ func (d *Daemon) setupPlan(p registry.Project, w envWorktree) prepare.Plan {
 
 // prepare begins preparing the Worktree w unless it is Preparing or has
 // been. With retry, a Failed Worktree is prepared again.
-func (d *Daemon) prepare(p registry.Project, w envWorktree, retry bool) {
+func (d *Daemon) prepare(p registry.Project, w worktreeRef, retry bool) {
 	d.preparer.Begin(w.dir, d.setupPlan(p, w), retry)
 }
 
 // teardown forgets the setup of the removed Worktree w, stopping it if it is
 // still running, and runs the Project's on_remove steps in the main
 // Worktree's directory in the background.
-func (d *Daemon) teardown(p registry.Project, w envWorktree) {
+func (d *Daemon) teardown(p registry.Project, w worktreeRef) {
 	d.preparer.Forget(w.dir)
 	d.preparer.Go(fmt.Sprintf("on_remove for Worktree %q of Project %q", w.name, p.Name),
 		func(ctx context.Context) ([]prepare.Step, error) {
@@ -105,7 +105,7 @@ func (d *Daemon) teardown(p registry.Project, w envWorktree) {
 // variable (PORTBY_PROJECT, PORTBY_WORKTREE, PORTBY_DOMAIN, PORTBY_URL,
 // PORTBY_DB, PORTBY_TEST_DB, …) and PORTBY_WORKTREE_PATH, so on_remove
 // steps know which Worktree went. cfg is the config the steps come from.
-func (d *Daemon) setupEnv(ctx context.Context, p registry.Project, w envWorktree, dir string, cfg recipe.Resolved) []string {
+func (d *Daemon) setupEnv(ctx context.Context, p registry.Project, w worktreeRef, dir string, cfg recipe.Resolved) []string {
 	env := runtimes.Environ(ctx, dir, d.cfg.Env).Vars
 	vars := envVars(p, w, cfg.Database)
 	if name, ok := worktreeTestDatabase(p, w, cfg); ok {
@@ -131,10 +131,10 @@ func (d *Daemon) worktreeReady(ctx context.Context, req api.ReadyRequest) (api.W
 	if err != nil {
 		return api.WorktreeInfo{}, err
 	}
-	w, ok := d.envWorktreeOf(p, checkout.Dir)
+	w, ok := d.worktreeRefOf(p, checkout.Dir)
 	if !ok {
 		d.syncWorktrees(ctx, p)
-		if w, ok = d.envWorktreeOf(p, checkout.Dir); !ok {
+		if w, ok = d.worktreeRefOf(p, checkout.Dir); !ok {
 			return api.WorktreeInfo{}, &api.Error{
 				Code:    api.CodeUnknownWorktree,
 				Message: fmt.Sprintf("git doesn't list %s as a worktree of %s yet", checkout.Dir, p.Path),
@@ -188,17 +188,17 @@ func isClosing(c <-chan struct{}) bool {
 	}
 }
 
-// envWorktreeOf is the Project's Worktree at dir, if the Registry knows it.
-func (d *Daemon) envWorktreeOf(p registry.Project, dir string) (envWorktree, bool) {
+// worktreeRefOf is the Project's Worktree at dir, if the Registry knows it.
+func (d *Daemon) worktreeRefOf(p registry.Project, dir string) (worktreeRef, bool) {
 	if dir == p.Path {
-		return mainEnvWorktree(p), true
+		return mainWorktreeRef(p), true
 	}
 	for _, w := range d.registry.Worktrees(p.Path) {
 		if w.Path == dir {
-			return linkedEnvWorktree(p, w), true
+			return linkedWorktreeRef(p, w), true
 		}
 	}
-	return envWorktree{}, false
+	return worktreeRef{}, false
 }
 
 // waitForReady waits until the served Worktree s is Ready, so a start never
