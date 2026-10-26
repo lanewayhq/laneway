@@ -79,15 +79,8 @@ func TestBinary(t *testing.T) {
 func waitForDaemon(t *testing.T, socket string) {
 	t.Helper()
 	c := client.New(socket)
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	testkit.WaitUntil(t, 10*time.Second, "the daemon to answer on "+socket, func() bool {
 		_, err := c.Projects(context.Background())
-		if err == nil {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("daemon did not come up on %s: %v", socket, err)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		return err == nil
+	})
 }

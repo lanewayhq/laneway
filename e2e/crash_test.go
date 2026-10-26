@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -98,13 +99,8 @@ func waitForRestart(t *testing.T, clk *clock.Fake) time.Duration {
 // waitForBoots waits until the web Process has printed "boot" n times.
 func waitForBoots(t *testing.T, d *testkit.Daemon, dir string, n int) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for countBoots(d, dir) != n {
-		if time.Now().After(deadline) {
-			t.Fatalf("Process started %d times, want %d:\n%s", countBoots(d, dir), n, d.MustRunCLI(dir, "logs", "web").Stdout)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	testkit.WaitUntil(t, 10*time.Second, fmt.Sprintf("the web Process to have started %d times", n),
+		func() bool { return countBoots(d, dir) == n })
 }
 
 // countBoots counts the "boot" lines the web Process has printed.
@@ -146,7 +142,9 @@ func TestProcessThatKeepsCrashingIsMarkedFailed(t *testing.T) {
 		t.Fatalf("something is scheduled %s after the Process failed, want only Idle, a day away", delay)
 	}
 	clk.Advance(time.Hour)
-	time.Sleep(100 * time.Millisecond)
+	if n := clk.Pending(); n != 1 {
+		t.Fatalf("%d timers pending an hour after the Process failed, want only Idle", n)
+	}
 	if boots := countBoots(d, repo.Dir); boots != 5 {
 		t.Fatalf("Process started %d times, want 5", boots)
 	}

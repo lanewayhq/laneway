@@ -48,8 +48,11 @@ func TestLinkStartsNothingUntilTheFirstRequest(t *testing.T) {
 		Commit("declare web Process")
 
 	d.MustRunCLI(repo.Dir, "link")
-	// Long enough for a Process started by link to have run its first line.
-	time.Sleep(500 * time.Millisecond)
+	// Once Ready, a Worktree link had started would be starting or running.
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	if w := worktreeState(t, d, "lazy-first.localhost"); w.State != "stopped" || len(w.Processes) != 0 {
+		t.Fatalf("after link the Worktree is %q with Processes %+v, want stopped with none", w.State, w.Processes)
+	}
 	if n := starts(t, log); n != 0 {
 		t.Fatalf("Process started %d times after link, want 0", n)
 	}
@@ -116,11 +119,7 @@ func TestBrowserGetsAnAutoRefreshingStartingPageUntilTheAppIsUp(t *testing.T) {
 	assertContains(t, page.Body, "lazy-page")
 
 	// What the browser does on each refresh, until the app loads.
-	deadline := time.Now().Add(15 * time.Second)
-	for page.StatusCode == http.StatusServiceUnavailable && time.Now().Before(deadline) {
-		time.Sleep(100 * time.Millisecond)
-		page = d.Navigate("https://lazy-page.localhost/dashboard")
-	}
+	page = navigateUntilStarted(t, d, "https://lazy-page.localhost/dashboard")
 	var res testkit.ServerResponse
 	if page.StatusCode != http.StatusOK || json.Unmarshal([]byte(page.Body), &res) != nil || res.Path != "/dashboard" {
 		t.Fatalf("after the Process came up: status %d, want the app's 200:\n%s", page.StatusCode, page.Body)
@@ -171,15 +170,15 @@ func TestAnotherProgramOnThePrimaryProcessPortIsNotMistakenForIt(t *testing.T) {
 }
 
 // navigateUntilStarted navigates to url, as the starting page's refreshes do,
-// until it gets something other than the starting page.
+// until it gets something other than the starting (or preparing) page, and
+// returns that.
 func navigateUntilStarted(t *testing.T, d *testkit.Daemon, url string) testkit.Response {
 	t.Helper()
-	deadline := time.Now().Add(15 * time.Second)
-	page := d.Navigate(url)
-	for page.StatusCode == http.StatusServiceUnavailable && time.Now().Before(deadline) {
-		time.Sleep(100 * time.Millisecond)
+	var page testkit.Response
+	testkit.WaitUntil(t, 15*time.Second, url+" to stop answering with the starting page", func() bool {
 		page = d.Navigate(url)
-	}
+		return page.StatusCode != http.StatusServiceUnavailable
+	})
 	return page
 }
 
@@ -280,17 +279,16 @@ func TestStoppingTheDaemonEndsAStartInProgress(t *testing.T) {
 // waitForPID waits for a Process to write its pid to file.
 func waitForPID(t *testing.T, file string) int {
 	t.Helper()
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
-		if b, err := os.ReadFile(file); err == nil {
-			if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil {
-				return pid
-			}
+	var pid int
+	testkit.WaitUntil(t, 15*time.Second, "a pid in "+file, func() bool {
+		b, err := os.ReadFile(file)
+		if err != nil {
+			return false
 		}
-		time.Sleep(25 * time.Millisecond)
-	}
-	t.Fatalf("no pid in %s", file)
-	return 0
+		pid, err = strconv.Atoi(strings.TrimSpace(string(b)))
+		return err == nil
+	})
+	return pid
 }
 
 // startByBrowsing starts the Worktree served at domain the way a browser
@@ -302,19 +300,14 @@ func startByBrowsing(t *testing.T, d *testkit.Daemon, domain string) {
 	if page := d.Navigate(url); page.StatusCode != http.StatusServiceUnavailable && page.StatusCode != http.StatusOK {
 		t.Fatalf("visiting %s: status %d:\n%s", url, page.StatusCode, page.Body)
 	}
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		status := d.MustRunCLI(d.Home, "status").Stdout
-		for line := range strings.Lines(status) {
+	testkit.WaitUntil(t, 10*time.Second, "`portby status` to show "+domain+"'s Processes running", func() bool {
+		for line := range strings.Lines(d.MustRunCLI(d.Home, "status").Stdout) {
 			if slices.Contains(strings.Fields(line), domain) && strings.Contains(line, ":running") {
-				return
+				return true
 			}
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("%s's Processes never showed as running:\n%s", domain, status)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		return false
+	})
 }
 
 func TestRemovingAWorktreeEndsAStartInProgress(t *testing.T) {

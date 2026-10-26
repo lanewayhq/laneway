@@ -34,17 +34,12 @@ func TestLogsShowAProcessOutput(t *testing.T) {
 // last stdout.
 func waitForLogs(t *testing.T, d *testkit.Daemon, dir string, args []string, want string) string {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		res := d.MustRunCLI(dir, args...)
-		if strings.Contains(res.Stdout, want) {
-			return res.Stdout
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("portby %s never showed %q; last output:\n%s", strings.Join(args, " "), want, res.Output())
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	var out string
+	testkit.WaitUntil(t, 10*time.Second, fmt.Sprintf("`portby %s` to show %q", strings.Join(args, " "), want), func() bool {
+		out = d.MustRunCLI(dir, args...).Stdout
+		return strings.Contains(out, want)
+	})
+	return out
 }
 
 // assertLines checks out consists of exactly the lines want, in order.
@@ -144,17 +139,10 @@ func TestFullOutputIsWrittenToALogFileInTheStateDirectory(t *testing.T) {
 // waitForFile waits until the file at path holds exactly want.
 func waitForFile(t *testing.T, path, want string) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	testkit.WaitUntil(t, 10*time.Second, fmt.Sprintf("%s to hold %q", path, want), func() bool {
 		data, err := os.ReadFile(path)
-		if err == nil && string(data) == want {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("%s never held %q; last read: %q, %v", path, want, data, err)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		return err == nil && string(data) == want
+	})
 }
 
 func TestLogFilesRotateAndKeepTheNewestOutput(t *testing.T) {

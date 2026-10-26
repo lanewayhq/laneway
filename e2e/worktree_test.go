@@ -311,11 +311,5 @@ func waitForNoWorktree(t *testing.T, d *testkit.Daemon, project, name string) {
 // discoveryTimeout.
 func eventually(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(discoveryTimeout)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out after %s waiting for %s", discoveryTimeout, what)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	testkit.WaitUntil(t, discoveryTimeout, what, cond)
 }

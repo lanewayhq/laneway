@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/mrsafalpiya/portby.dev/internal/testkit"
 )
@@ -208,7 +207,7 @@ func TestAVisitToAnAliasOrAProcessStartsTheWorktree(t *testing.T) {
 			t.Fatalf("first visit to %s: status %d, want the starting page:\n%s", url, page.StatusCode, page.Body)
 		}
 		assertContains(t, page.Body, "Starting")
-		got := navigateUntilUp(t, d, url)
+		got := serverResponse(t, url, navigateUntilStarted(t, d, url))
 		if got.Name != want {
 			t.Fatalf("%s reached %q, want %s", url, got.Name, want)
 		}
@@ -233,20 +232,13 @@ func TestAMistypedNameUnderADomainStartsNothing(t *testing.T) {
 	}
 }
 
-// navigateUntilUp keeps visiting url like a browser on the starting page
-// does, until the test server answers.
-func navigateUntilUp(t *testing.T, d *testkit.Daemon, url string) testkit.ServerResponse {
+// serverResponse decodes page, from url, as the test server's answer,
+// failing the test if it is anything else.
+func serverResponse(t *testing.T, url string, page testkit.Response) testkit.ServerResponse {
 	t.Helper()
-	deadline := time.Now().Add(15 * time.Second)
-	for {
-		page := d.Navigate(url)
-		var res testkit.ServerResponse
-		if page.StatusCode == http.StatusOK && json.Unmarshal([]byte(page.Body), &res) == nil {
-			return res
-		}
-		if page.StatusCode != http.StatusServiceUnavailable || time.Now().After(deadline) {
-			t.Fatalf("visiting %s: status %d, want the app:\n%s", url, page.StatusCode, page.Body)
-		}
-		time.Sleep(50 * time.Millisecond)
+	var res testkit.ServerResponse
+	if page.StatusCode != http.StatusOK || json.Unmarshal([]byte(page.Body), &res) != nil {
+		t.Fatalf("visiting %s: status %d, want the test server:\n%s", url, page.StatusCode, page.Body)
 	}
+	return res
 }
