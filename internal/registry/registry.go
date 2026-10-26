@@ -1,6 +1,6 @@
 // Package registry is the daemon's persistent record of Linked Projects,
-// their Worktrees and their Aliases. Later tickets extend it with Service
-// port assignments and Orphans. Every change is written to disk before it is acknowledged, so
+// their Worktrees and their Aliases, and the ports of Services. Later
+// tickets extend it with Orphans. Every change is written to disk before it is acknowledged, so
 // registrations survive daemon restarts.
 package registry
 
@@ -45,6 +45,7 @@ type state struct {
 	Projects  []Project  `json:"projects"`
 	Worktrees []Worktree `json:"worktrees,omitempty"`
 	Aliases   []Alias    `json:"aliases,omitempty"`
+	Services  []Service  `json:"services,omitempty"`
 }
 
 const currentVersion = 1
@@ -352,6 +353,72 @@ func (r *Registry) RemoveAlias(a Alias) error {
 	}
 	r.state = next
 	return nil
+}
+
+// Service is a Service and the port Portby listens on for it. Once a
+// Service has a port it keeps it, so connection settings never change.
+type Service struct {
+	// Engine and Version name the Service, such as redis and "7".
+	Engine  string `json:"engine"`
+	Version string `json:"version"`
+	Port    int    `json:"port"`
+}
+
+// ErrNoServicePort means every candidate port is taken by other Services.
+var ErrNoServicePort = errors.New("no free port for the Service")
+
+// Services returns every Service that has a port, sorted by engine and
+// version.
+func (r *Registry) Services() []Service {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := slices.Clone(r.state.Services)
+	slices.SortFunc(out, func(a, b Service) int {
+		return strings.Compare(a.Engine+":"+a.Version, b.Engine+":"+b.Version)
+	})
+	return out
+}
+
+// PlanService returns the Service with the port it has, or else the first of
+// candidates no other Service has. It changes nothing.
+func (r *Registry) PlanService(engine, version string, candidates []int) (Service, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	svc, _, err := r.planServiceLocked(engine, version, candidates)
+	return svc, err
+}
+
+// AddService is PlanService, recording the port the first time.
+func (r *Registry) AddService(engine, version string, candidates []int) (Service, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	svc, known, err := r.planServiceLocked(engine, version, candidates)
+	if err != nil || known {
+		return svc, err
+	}
+	next := r.state
+	next.Services = append(slices.Clone(r.state.Services), svc)
+	if err := r.save(next); err != nil {
+		return Service{}, err
+	}
+	r.state = next
+	return svc, nil
+}
+
+func (r *Registry) planServiceLocked(engine, version string, candidates []int) (Service, bool, error) {
+	taken := map[int]bool{}
+	for _, s := range r.state.Services {
+		if s.Engine == engine && s.Version == version {
+			return s, true, nil
+		}
+		taken[s.Port] = true
+	}
+	for _, port := range candidates {
+		if !taken[port] {
+			return Service{Engine: engine, Version: version, Port: port}, false, nil
+		}
+	}
+	return Service{}, false, fmt.Errorf("%s:%s: %w", engine, version, ErrNoServicePort)
 }
 
 // save writes s atomically: to a temp file in the same directory, then renamed

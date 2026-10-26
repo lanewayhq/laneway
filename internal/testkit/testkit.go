@@ -9,6 +9,8 @@ package testkit
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,14 +20,21 @@ import (
 	"github.com/mrsafalpiya/portby.dev/internal/cli"
 	"github.com/mrsafalpiya/portby.dev/internal/client"
 	"github.com/mrsafalpiya/portby.dev/internal/clock"
+	"github.com/mrsafalpiya/portby.dev/internal/container"
+	"github.com/mrsafalpiya/portby.dev/internal/container/containertest"
 	"github.com/mrsafalpiya/portby.dev/internal/daemon"
 	"github.com/mrsafalpiya/portby.dev/internal/paths"
 	"github.com/mrsafalpiya/portby.dev/internal/platform/platformtest"
 )
 
 // Option adjusts the daemon's Config before every start, including restarts.
-// A later ticket adds one for the fake container engine.
 type Option func(*daemon.Config)
+
+// WithContainerEngine makes the daemon run Services' containers with e
+// instead of Daemon.Engine, such as a real engine for slow-tier tests.
+func WithContainerEngine(e container.Engine) Option {
+	return func(cfg *daemon.Config) { cfg.ContainerEngine = e }
+}
 
 // WithClock makes the daemon read time from c, normally a *clock.Fake that
 // the test moves forward instead of waiting. The same clock is kept across
@@ -55,6 +64,15 @@ type Daemon struct {
 	Bin string
 	// Path is that PATH.
 	Path string
+	// Engine is the fake container engine Services run on (unless
+	// WithContainerEngine says otherwise). It is kept across restarts,
+	// like a real engine's containers.
+	Engine *containertest.Fake
+
+	// serviceHost is the loopback address Services listen on: a random one
+	// in 127.0.0.0/8 per daemon, so tests see Services' real ports (6379)
+	// without clashing with each other or with the machine's own.
+	serviceHost string
 
 	running *daemon.Daemon
 }
@@ -89,7 +107,8 @@ func StartDaemon(t testing.TB, opts ...Option) *Daemon {
 	if err != nil {
 		t.Fatalf("testkit: %v", err)
 	}
-	d := &Daemon{t: t, env: env, opts: opts, Home: home, Paths: p, Platform: platformtest.New(), Bin: bin, Path: path}
+	d := &Daemon{t: t, env: env, opts: opts, Home: home, Paths: p, Platform: platformtest.New(), Bin: bin, Path: path,
+		Engine: containertest.New(), serviceHost: randomLoopback()}
 	d.Start()
 	t.Cleanup(d.Stop)
 	return d
@@ -103,7 +122,8 @@ func (d *Daemon) Start() {
 	}
 	// Port 0: tests never bind fixed ports.
 	cfg := daemon.Config{Paths: d.Paths, ProxyAddr: "127.0.0.1:0",
-		Env: []string{"HOME=" + d.Home, "PATH=" + d.Path}}
+		Env:             []string{"HOME=" + d.Home, "PATH=" + d.Path},
+		ContainerEngine: d.Engine, ServiceHosts: []string{d.serviceHost}}
 	for _, opt := range d.opts {
 		opt(&cfg)
 	}
@@ -112,6 +132,15 @@ func (d *Daemon) Start() {
 		d.t.Fatalf("testkit: starting daemon: %v", err)
 	}
 	d.running = running
+}
+
+// ServiceHost is the address the daemon's Services listen on, at their real
+// ports.
+func (d *Daemon) ServiceHost() string { return d.serviceHost }
+
+// randomLoopback is a random address in 127.0.0.0/8 other than 127.0.0.1.
+func randomLoopback() string {
+	return fmt.Sprintf("127.%d.%d.%d", 1+rand.IntN(254), rand.IntN(256), 1+rand.IntN(254))
 }
 
 // Stop shuts the daemon down gracefully. It is safe to call more than once.

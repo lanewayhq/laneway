@@ -93,6 +93,9 @@ type start struct {
 	lazy []string
 	// manual are the manual Processes, which requests don't start.
 	manual map[string]bool
+	// release ends the running Worktree's use of its Services (see
+	// services.go), once the start succeeded; nil before.
+	release func()
 }
 
 // domainOf is the main Worktree's Domain.
@@ -118,6 +121,7 @@ func (d *Daemon) serveWorktree(p registry.Project, domain, dir string) {
 	d.servedMu.Lock()
 	d.served[domain] = s
 	d.servedMu.Unlock()
+	d.serveServicesOf(dir)
 	d.startAlways(s)
 }
 
@@ -223,6 +227,7 @@ func (d *Daemon) stopWorktree(ctx context.Context, domain, dir string) {
 		s.mu.Unlock()
 		if st != nil {
 			<-st.done
+			st.releaseServices()
 		}
 		// A startAlways that got the lock first finishes before StopGroup;
 		// one that gets it later sees s.ctx cancelled.
@@ -286,6 +291,7 @@ func (d *Daemon) bootWorktree(s *served, st *start) (string, error) {
 	for _, w := range cfg.Warnings {
 		d.log.Warn("config", "project", s.project, "warning", w)
 	}
+	d.serveServices(cfg.Services)
 	global, err := config.LoadGlobal(d.cfg.Paths.GlobalConfig())
 	if err != nil {
 		return "", fmt.Errorf("Project %q could not be started: %w", s.project, err)
@@ -331,6 +337,7 @@ func (d *Daemon) bootWorktree(s *served, st *start) (string, error) {
 	proc, _ := d.supervisor.Process(s.group, primary)
 	err = proc.WaitUp(ctx)
 	if err == nil {
+		st.release = d.useServices(cfg.Services)
 		return primary, nil
 	}
 	// The start failed: stop what it started, so a later start begins
@@ -370,6 +377,7 @@ func (d *Daemon) goIdle(s *served) {
 	if !started {
 		return
 	}
+	st.releaseServices()
 	d.log.Info("Worktree is Idle", "project", s.project, "domain", s.domain)
 	d.stopProcesses(s, st.lazy)
 }

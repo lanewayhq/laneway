@@ -72,6 +72,15 @@ func Encode(w io.Writer, l Layer) error {
 			fmt.Fprintf(&b, "%s = %s\n", key(k), quote(l.Env[k]))
 		}
 	}
+	if len(l.Services) > 0 {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString("[services]\n")
+		for _, k := range slices.Sorted(maps.Keys(l.Services)) {
+			fmt.Fprintf(&b, "%s = %s\n", key(k), quote(l.Services[k]))
+		}
+	}
 	_, err := io.WriteString(w, b.String())
 	return err
 }

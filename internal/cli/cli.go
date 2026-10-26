@@ -63,6 +63,7 @@ var commands = map[string]command{
 	"logs":     {"Show (or follow with -f) Process output", runLogs},
 	"open":     {"Open the current Worktree's Domain in the browser", runOpen},
 	"restart":  {"Restart the current Worktree's Processes (or one Process)", control("restart")},
+	"services": {"List shared Services, or start/stop them (services [ls|up|down] [name])", runServices},
 	"status":   {"List Linked Projects and their Processes", runStatus},
 	"up":       {"Start the current Worktree's Processes (or one Process)", control("up")},
 	"worktree": {"Manage Worktrees (add <name> [--branch], ready [--retry], alias <name> [--remove])", runWorktree},

@@ -22,6 +22,8 @@ func (d *Daemon) routes() http.Handler {
 	mux.HandleFunc("POST /v1/worktree/{action}", d.handleControl)
 	mux.HandleFunc("POST /v1/aliases", d.handleAddAlias)
 	mux.HandleFunc("DELETE /v1/aliases/{name}", d.handleRemoveAlias)
+	mux.HandleFunc("GET /v1/services", d.handleListServices)
+	mux.HandleFunc("POST /v1/services/{action}", d.handleControlServices)
 	return mux
 }
 
@@ -107,6 +109,23 @@ func (d *Daemon) handleRemoveAlias(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
+func (d *Daemon) handleListServices(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, d.listServices())
+}
+
+func (d *Daemon) handleControlServices(w http.ResponseWriter, r *http.Request) {
+	var req api.ServiceRequest
+	if !readJSON(w, r, &req) {
+		return
+	}
+	res, err := d.controlServices(r.Context(), r.PathValue("action"), req)
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
 func (d *Daemon) handleDaemonInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, api.DaemonInfo{PID: os.Getpid(), ProxyAddr: d.proxy.Addr().String()})
 }
@@ -145,6 +164,9 @@ var statusFor = map[string]int{
 	api.CodeInvalidConfig: http.StatusUnprocessableEntity,
 
 	api.CodeShuttingDown: http.StatusServiceUnavailable,
+
+	api.CodeUnknownService: http.StatusNotFound,
+	api.CodeServiceFailed:  http.StatusBadGateway,
 }
 
 // writeError sends err to the client. An *api.Error is passed through as is;

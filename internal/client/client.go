@@ -141,6 +141,23 @@ func (c *Client) Logs(ctx context.Context, req LogsRequest, fn func(api.LogLine)
 	}
 }
 
+// Services lists every Service.
+func (c *Client) Services(ctx context.Context) ([]api.Service, error) {
+	var list api.ServiceList
+	if err := c.do(ctx, http.MethodGet, "/v1/services", nil, &list); err != nil {
+		return nil, err
+	}
+	return list.Services, nil
+}
+
+// ControlServices starts (action "up") or stops ("down") the Service
+// req.Name names, or every Service, and returns them.
+func (c *Client) ControlServices(ctx context.Context, action string, req api.ServiceRequest) ([]api.Service, error) {
+	var list api.ServiceList
+	err := c.do(ctx, http.MethodPost, "/v1/services/"+url.PathEscape(action), req, &list)
+	return list.Services, err
+}
+
 // do sends one request and decodes the response into out.
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
 	resp, err := c.send(ctx, method, path, body)
