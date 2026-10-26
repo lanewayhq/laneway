@@ -364,7 +364,8 @@ func TestEveryFileTheDashboardLoadsIsBuiltIn(t *testing.T) {
 			queue = append(queue, path.Clean(ref))
 		}
 	}
-	for _, want := range []string{"/app.js", "/style.css", "/panels/index.js", "/panels/worktrees.js", "/panels/logs.js"} {
+	for _, want := range []string{"/app.js", "/style.css", "/panels/index.js", "/panels/worktrees.js", "/panels/logs.js",
+		"/panels/services.js", "/panels/orphans.js", "/confirm.js", "/time.js"} {
 		if !seen[want] {
 			t.Errorf("the Dashboard never loads %s (loaded: %v)", want, slices.Sorted(maps.Keys(seen)))
 		}

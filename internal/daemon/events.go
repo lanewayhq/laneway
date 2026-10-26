@@ -48,35 +48,52 @@ func declaredProcesses(dir string) []api.DeclaredProcess {
 }
 
 // handleEvents is GET /v1/events, a stream of server-sent events: a
-// `projects` event (data = the api.ProjectList GET /v1/projects returns)
-// at once, then another whenever that changes. It ends when the client goes
-// away or the daemon shuts down.
+// `projects` event (data = the api.ProjectList GET /v1/projects returns),
+// a `services` event (data = the api.ServiceList of GET /v1/services) and
+// an `orphans` event (data = the api.OrphanList of GET /v1/orphans) at
+// once, then another of each whenever it changes. It ends when the client
+// goes away or the daemon shuts down.
 //
-// Changes are found by comparing the list every eventsInterval, so
-// anything GET /v1/projects reports shows up here without its code having
-// to announce it.
+// Changes are found by comparing each list every eventsInterval, so
+// anything those routes report shows up here without its code having to
+// announce it.
 func (d *Daemon) handleEvents(w http.ResponseWriter, r *http.Request) {
+	feeds := []struct {
+		event string
+		read  func() any
+	}{
+		{"projects", func() any { return d.projectList() }},
+		{"services", func() any { return d.listServices() }},
+		{"orphans", func() any { return d.listOrphans() }},
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 	rc := http.NewResponseController(w)
 	tick := time.NewTicker(eventsInterval)
 	defer tick.Stop()
-	var last []byte
+	last := make([][]byte, len(feeds))
 	for {
-		b, err := json.Marshal(d.projectList())
-		if err != nil {
-			d.log.Error("encoding projects event", "err", err)
-			return
-		}
-		if !bytes.Equal(b, last) {
-			if _, err := fmt.Fprintf(w, "event: projects\ndata: %s\n\n", b); err != nil {
+		sent := false
+		for i, f := range feeds {
+			b, err := json.Marshal(f.read())
+			if err != nil {
+				d.log.Error("encoding event", "event", f.event, "err", err)
 				return
 			}
+			if bytes.Equal(b, last[i]) {
+				continue
+			}
+			if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", f.event, b); err != nil {
+				return
+			}
+			last[i] = b
+			sent = true
+		}
+		if sent {
 			if err := rc.Flush(); err != nil {
 				return
 			}
-			last = b
 		}
 		select {
 		case <-tick.C:

@@ -66,3 +66,13 @@ button:disabled { cursor: progress; opacity: 0.6; }
   .process[data-color="4"] { color: #ff7b72; }
   .process[data-color="5"] { color: #39c5cf; }
 }
+.panel-header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.75rem; margin-bottom: 0.5rem; }
+.panel-header .note { margin: 0; color: var(--muted); flex: 1 1 30rem; }
+.panel-header .status { color: var(--muted); }
+.error { color: var(--bad); font-size: 0.85em; }
+.actions > .inbox { margin-left: 0.5rem; }
+button.danger { color: var(--bad); border-color: currentColor; }
+dialog.confirm { max-width: 32rem; padding: 1rem 1.25rem; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--fg); }
+dialog.confirm::backdrop { background: rgb(0 0 0 / 0.4); }
+dialog.confirm .buttons { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
+dialog.confirm .drops { max-height: 14rem; overflow: auto; padding-left: 1.25rem; }
