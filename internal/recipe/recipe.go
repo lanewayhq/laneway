@@ -9,6 +9,7 @@ import (
 	"slices"
 
 	"github.com/mrsafalpiya/portby.dev/internal/config"
+	"github.com/mrsafalpiya/portby.dev/internal/runtimes"
 )
 
 // Input is what Resolve works from.
@@ -21,6 +22,10 @@ type Input struct {
 	// Recipes are the candidates; the first one to detect the Project
 	// supplies the defaults.
 	Recipes []Recipe
+	// Runtimes are the Runtimes resolved for Dir (see package runtimes).
+	// If set, they are checked against the Project's declared constraints
+	// into Resolved.RuntimeWarnings; nil skips the check.
+	Runtimes []runtimes.Runtime
 }
 
 // Recipe is a stack definition: how to recognise a kind of Project and what
@@ -48,6 +53,10 @@ type Resolved struct {
 	// Warnings are problems that didn't stop resolution, such as unknown
 	// keys. Each names the file it comes from.
 	Warnings []string
+	// RuntimeWarnings are mismatches between Input.Runtimes and the
+	// Runtime constraints the Project declares, and needed Runtimes that
+	// are missing.
+	RuntimeWarnings []runtimes.Warning
 }
 
 // Process is one resolved Process.
@@ -88,14 +97,15 @@ func (r Resolved) Layer() config.Layer {
 var Builtin []Recipe
 
 // ResolveDir resolves the Project in dir from its portby.toml and
-// portby.local.toml with the Builtin Recipes. It is how the daemon reads
-// config, every time it is about to start a Worktree's Processes.
-func ResolveDir(dir string) (Resolved, error) {
+// portby.local.toml with the Builtin Recipes, checking the Runtimes found
+// for dir if any are given. It is how the daemon reads config, every time it
+// is about to start a Worktree's Processes.
+func ResolveDir(dir string, found ...runtimes.Runtime) (Resolved, error) {
 	layers, err := config.LoadLayers(dir)
 	if err != nil {
 		return Resolved{}, err
 	}
-	return Resolve(Input{Dir: dir, Layers: layers, Recipes: Builtin})
+	return Resolve(Input{Dir: dir, Layers: layers, Recipes: Builtin, Runtimes: found})
 }
 
 // Resolve merges the detected Recipe's defaults with in.Layers.
@@ -164,6 +174,9 @@ func Resolve(in Input) (Resolved, error) {
 	}
 	if len(res.Processes) == 1 {
 		res.Processes[0].Primary = true
+	}
+	if in.Runtimes != nil {
+		res.RuntimeWarnings = runtimes.Check(in.Dir, in.Runtimes)
 	}
 	return res, nil
 }

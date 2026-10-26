@@ -9,7 +9,6 @@ import (
 
 	"github.com/mrsafalpiya/portby.dev/internal/config"
 	"github.com/mrsafalpiya/portby.dev/internal/proxy"
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
 	"github.com/mrsafalpiya/portby.dev/internal/supervisor"
 )
@@ -37,7 +36,7 @@ func domainOf(p registry.Project) string {
 // can report them, rather than failing the caller.
 func (d *Daemon) startProject(ctx context.Context, p registry.Project) {
 	s := served{project: p.Name, group: p.Path}
-	cfg, err := recipe.ResolveDir(p.Path)
+	cfg, err := d.resolveWorktree(ctx, p.Path)
 	if err == nil {
 		for _, w := range cfg.Warnings {
 			d.log.Warn("config", "project", p.Name, "warning", w)
@@ -54,6 +53,7 @@ func (d *Daemon) startProject(ctx context.Context, p registry.Project) {
 				LogFile: filepath.Join(d.cfg.Paths.Logs(), domainOf(p), proc.Name+".log"),
 			})
 		}
+		cfg.apply(specs, s.primary)
 		err = d.supervisor.StartGroup(ctx, s.group, specs)
 	}
 	if err != nil {
