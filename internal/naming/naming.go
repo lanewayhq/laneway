@@ -1,5 +1,5 @@
 // Package naming turns Project and Worktree names into identifiers that are
-// safe to use in Domains (and, later, database names). The rule is the
+// safe to use in Domains and database names. The rule is the
 // spec's "Database naming" rule: lowercase, every character other than a
 // letter or digit becomes a separator, and names longer than the limit are
 // cut short with a hash suffix so they stay unique.
@@ -28,6 +28,25 @@ func DomainLabel(name string) string {
 // whose plain label is already in use. Different seeds give different labels.
 func DomainLabelWithHash(name, seed string) string {
 	return withHash(DomainLabel(name), seed, '-', MaxLabel)
+}
+
+// DatabaseName is the name of a Worktree's database in a database Service
+// whose identifiers may be max characters long (Postgres 63, MySQL 64):
+// <project> for the main Worktree (worktree ""), else
+// <project>__<worktree>. Each part is lowercased with every character other
+// than a letter or digit replaced by '_', and a name longer than max is cut
+// short with a hash of the Project and Worktree names as its suffix, so it
+// stays unique.
+func DatabaseName(project, worktree string, max int) string {
+	name := normalize(project, '_', max)
+	if worktree == "" {
+		return name
+	}
+	name += "__" + normalize(worktree, '_', max)
+	if len(name) > max {
+		return withHash(name, project+"\x00"+worktree, '_', max)
+	}
+	return name
 }
 
 // normalize lowercases name, replaces every character other than an ASCII

@@ -3,6 +3,7 @@ package recipe_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -48,6 +49,40 @@ func TestDatabaseConfigMergesKeyByKeyOverTheRecipesDefaults(t *testing.T) {
 	}
 }
 
+func TestAPostgresDatabaseUsesThePostgresServiceAtItsDefaultVersion(t *testing.T) {
+	res := mustResolveFixture(t, "database-postgres")
+
+	want := recipe.Database{Engine: "postgres", Mode: "clone"}
+	if res.Database != want {
+		t.Errorf("Database = %+v, want %+v", res.Database, want)
+	}
+	if !slices.Equal(res.Services, []recipe.Service{{Engine: "postgres", Version: "18"}}) {
+		t.Errorf("Services = %+v, want postgres 18", res.Services)
+	}
+	if svc, ok := res.DatabaseService(); !ok || svc != (recipe.Service{Engine: "postgres", Version: "18"}) {
+		t.Errorf("DatabaseService() = %+v, %t, want postgres 18", svc, ok)
+	}
+}
+
+func TestAPostgresDatabaseUsesThePinnedPostgresVersion(t *testing.T) {
+	res := mustResolveFixture(t, "database-postgres-pinned")
+
+	if !slices.Equal(res.Services, []recipe.Service{{Engine: "postgres", Version: "16"}}) {
+		t.Errorf("Services = %+v, want postgres 16", res.Services)
+	}
+}
+
+func TestASQLiteDatabaseUsesNoService(t *testing.T) {
+	res := mustResolveFixture(t, "database-default")
+
+	if len(res.Services) != 0 {
+		t.Errorf("Services = %+v, want none", res.Services)
+	}
+	if svc, ok := res.DatabaseService(); ok {
+		t.Errorf("DatabaseService() = %+v, want none", svc)
+	}
+}
+
 func TestAProjectWithoutADatabaseEngineHasNoDatabase(t *testing.T) {
 	if res := mustResolveFixture(t, "committed-only"); res.Database != (recipe.Database{}) {
 		t.Errorf("Database = %+v, want none", res.Database)
@@ -64,6 +99,7 @@ func TestInvalidDatabaseConfigNamesTheFileAndTheKey(t *testing.T) {
 		{"invalid-database-path", []string{"database.path", "inside the Worktree"}},
 		{"invalid-database-no-path", []string{"database.path", "isn't set"}},
 		{"invalid-database-not-table", []string{"database", "table"}},
+		{"invalid-database-postgres-path", []string{"database.path", "only for SQLite", "postgres"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.fixture, func(t *testing.T) {
@@ -82,7 +118,7 @@ func TestInvalidDatabaseConfigNamesTheFileAndTheKey(t *testing.T) {
 }
 
 func TestDatabaseConfigWrittenAsALayerResolvesToItself(t *testing.T) {
-	for _, fixture := range []string{"database-default", "database-layers"} {
+	for _, fixture := range []string{"database-default", "database-layers", "database-postgres", "database-postgres-pinned"} {
 		t.Run(fixture, func(t *testing.T) {
 			res := mustResolveFixture(t, fixture, databaseStack{})
 
@@ -98,8 +134,9 @@ func TestDatabaseConfigWrittenAsALayerResolvesToItself(t *testing.T) {
 			if err != nil {
 				t.Fatalf("resolving what was written:\n%s\n%v", buf.String(), err)
 			}
-			if again.Database != res.Database {
-				t.Errorf("written as:\n%s\nresolves to %+v, want %+v", buf.String(), again.Database, res.Database)
+			if again.Database != res.Database || !slices.Equal(again.Services, res.Services) {
+				t.Errorf("written as:\n%s\nresolves to %+v %+v, want %+v %+v", buf.String(),
+					again.Database, again.Services, res.Database, res.Services)
 			}
 		})
 	}

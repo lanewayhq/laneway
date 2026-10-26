@@ -13,6 +13,7 @@ import (
 
 	"github.com/mrsafalpiya/portby.dev/internal/config"
 	"github.com/mrsafalpiya/portby.dev/internal/runtimes"
+	"github.com/mrsafalpiya/portby.dev/internal/service"
 )
 
 // Input is what Resolve works from.
@@ -141,6 +142,18 @@ type Database struct {
 	// Mode is how a Worktree other than the main one gets its database,
 	// one of config.DatabaseModes; DefaultDatabaseMode unless configured.
 	Mode string
+}
+
+// DatabaseService is the Service the Project's database lives in: the
+// Service of the database engine (postgres), which Resolve adds to Services
+// if no layer declares it. False for SQLite and for no database.
+func (r Resolved) DatabaseService() (Service, bool) {
+	for _, s := range r.Services {
+		if s.Engine == r.Database.Engine {
+			return s, true
+		}
+	}
+	return Service{}, false
 }
 
 // DefaultDatabaseMode is how a Worktree gets its database unless
@@ -284,8 +297,8 @@ func Resolve(in Input) (Resolved, error) {
 		commandSource, httpSource, startModeSource string
 	}
 	procs := map[string]*merged{}
-	var engineSource string         // the layer that last set database.engine
-	services := map[string]string{} // engine → version, later layers winning
+	var engineSource, pathSource string // the layers that last set database.engine and .path
+	services := map[string]string{}     // engine → version, later layers winning
 	for i, l := range layers {
 		res.Warnings = append(res.Warnings, l.Warnings...)
 		if l.Name != nil {
@@ -314,7 +327,7 @@ func Resolve(in Input) (Resolved, error) {
 				res.Database.Engine, engineSource = *db.Engine, l.Source
 			}
 			if db.Path != nil {
-				res.Database.Path = *db.Path
+				res.Database.Path, pathSource = *db.Path, l.Source
 			}
 			if db.Worktree != nil {
 				res.Database.Mode = *db.Worktree
@@ -366,6 +379,15 @@ func Resolve(in Input) (Resolved, error) {
 	if res.Database.Engine == "sqlite" && res.Database.Path == "" {
 		return Resolved{}, fmt.Errorf("%s: database.engine is sqlite, but database.path isn't set; "+
 			"set it to the SQLite file, relative to the Worktree, such as \"database/database.sqlite\"", engineSource)
+	}
+	if e := res.Database.Engine; e != "" && e != "sqlite" && res.Database.Path != "" {
+		return Resolved{}, fmt.Errorf("%s: database.path is only for SQLite databases, but database.engine is %s; "+
+			"remove database.path", pathSource, e)
+	}
+	// A database in a Service needs the Service: at the version
+	// [services] pins, else the engine's default.
+	if e, ok := service.Lookup(res.Database.Engine); ok && services[e.Name] == "" {
+		services[e.Name] = e.DefaultVersion
 	}
 	if inherit {
 		res.OnCreate = append(slices.Clone(recipeCreate), res.OnCreate...)

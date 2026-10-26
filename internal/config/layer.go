@@ -73,10 +73,12 @@ type Layer struct {
 // DatabaseLayer is the [database] table: the database each Worktree gets.
 type DatabaseLayer struct {
 	// Engine is the database engine, one of DatabaseEngines, such as
-	// "sqlite". A Project with no engine has no database.
+	// "sqlite" or "postgres". A Project with no engine has no database. A
+	// Service engine (postgres) runs as the Service of that engine, at
+	// the version in [services], else the engine's default.
 	Engine *string `toml:"engine"`
 	// Path is the SQLite database file, relative to the Worktree, such as
-	// "database/database.sqlite".
+	// "database/database.sqlite". Only SQLite has one.
 	Path *string `toml:"path"`
 	// Worktree is how a Worktree other than the main one gets its
 	// database, one of DatabaseModes: a copy of the main Worktree's
@@ -86,7 +88,7 @@ type DatabaseLayer struct {
 }
 
 // DatabaseEngines are the values database.engine accepts.
-var DatabaseEngines = []string{"sqlite"}
+var DatabaseEngines = []string{"sqlite", "postgres"}
 
 // DatabaseModes are the values database.worktree accepts.
 var DatabaseModes = []string{"clone", "fresh", "shared"}

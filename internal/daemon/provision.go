@@ -39,7 +39,7 @@ func (d *Daemon) setupPlan(p registry.Project, w envWorktree) provision.Plan {
 			return nil, err
 		}
 		var steps []provision.Step
-		if step, ok := databaseStep(p, w, cfg.Database); ok {
+		if step, ok := d.databaseStep(p, w, cfg); ok {
 			steps = append(steps, step)
 		}
 		steps = append(steps, provision.Step{Name: "env", Run: func(context.Context, io.Writer) error {

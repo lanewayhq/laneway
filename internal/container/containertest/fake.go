@@ -64,10 +64,11 @@ type fakeContainer struct {
 	conns  *connSet
 }
 
-// New returns a Fake that can run Redis images.
+// New returns a Fake that can run Redis and Postgres images.
 func New() *Fake {
 	f := &Fake{servers: map[string]Server{}, containers: map[string]*fakeContainer{}}
 	f.Serve("docker.io/library/redis", Redis)
+	f.Serve("docker.io/library/postgres", Postgres)
 	return f
 }
 

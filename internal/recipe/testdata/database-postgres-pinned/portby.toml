@@ -1,0 +1,6 @@
+[database]
+engine = "postgres"
+worktree = "fresh"
+
+[services]
+postgres = "16"

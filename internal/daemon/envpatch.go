@@ -56,7 +56,9 @@ func (d *Daemon) planEnvPatch(p registry.Project, w envWorktree) (envpatch.Plan,
 		return envpatch.Plan{}, err
 	}
 	vars := envVars(p, w, cfg.Database)
-	maps.Copy(vars, d.serviceVars(cfg.Services))
+	services := d.serviceVars(cfg.Services)
+	maps.Copy(vars, services)
+	maps.Copy(vars, databaseVars(cfg, services))
 	values, err := envpatch.RenderAll(cfg.Env, vars)
 	if err != nil {
 		return envpatch.Plan{}, err

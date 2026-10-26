@@ -220,6 +220,17 @@ func (m *Manager) Up(ctx context.Context, name string) error {
 	return err
 }
 
+// Pull makes sure the image of the Service called name is available,
+// downloading it if it isn't, within ctx rather than Up's start timeout:
+// call it before Up when a first download mustn't count against that.
+func (m *Manager) Pull(ctx context.Context, name string) error {
+	s, ok := m.lookup(name)
+	if !ok {
+		return fmt.Errorf("no Service %s", name)
+	}
+	return m.opts.Engine.Pull(ctx, s.spec.Image)
+}
+
 // Down stops the Service called name and closes its connections. The next
 // connection starts it again.
 func (m *Manager) Down(ctx context.Context, name string) error {
