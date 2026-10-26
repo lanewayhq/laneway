@@ -68,6 +68,8 @@ var statusFor = map[string]int{
 	api.CodeNotGitRepo:     http.StatusUnprocessableEntity,
 	api.CodeNotLinked:      http.StatusNotFound,
 	api.CodeUnknownProcess: http.StatusNotFound,
+
+	api.CodeInvalidConfig: http.StatusUnprocessableEntity,
 }
 
 // writeError sends err to the client. An *api.Error is passed through as is;

@@ -83,6 +83,10 @@ const (
 	CodeNotLinked      = "not_linked"
 	CodeUnknownProcess = "unknown_process"
 	CodeInternal       = "internal"
+
+	// CodeInvalidConfig: portby.toml or portby.local.toml can't be used.
+	// The message names the file and the key.
+	CodeInvalidConfig = "invalid_config"
 )
 
 // ErrorResponse is the body of every non-2xx response.

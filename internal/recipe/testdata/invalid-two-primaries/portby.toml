@@ -1,0 +1,7 @@
+[processes.web]
+command = "serve"
+primary = true
+
+[processes.api]
+command = "api"
+primary = true

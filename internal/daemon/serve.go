@@ -3,14 +3,13 @@ package daemon
 import (
 	"context"
 	"fmt"
-	"maps"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
 	"github.com/mrsafalpiya/portby.dev/internal/config"
 	"github.com/mrsafalpiya/portby.dev/internal/proxy"
+	"github.com/mrsafalpiya/portby.dev/internal/recipe"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
 	"github.com/mrsafalpiya/portby.dev/internal/supervisor"
 )
@@ -32,21 +31,27 @@ func domainOf(p registry.Project) string {
 	return strings.ToLower(p.Name) + ".localhost"
 }
 
-// startProject reads the Project's config and starts the main Worktree's
-// Processes. Failures are kept so requests to the Domain can report them,
-// rather than failing the caller.
+// startProject resolves the Project's config and starts the main Worktree's
+// Processes. Config is resolved on every start, so changes take effect the
+// next time the Processes start. Failures are kept so requests to the Domain
+// can report them, rather than failing the caller.
 func (d *Daemon) startProject(ctx context.Context, p registry.Project) {
 	s := served{project: p.Name, group: p.Path}
-	cfg, err := config.Load(p.Path)
+	cfg, err := recipe.ResolveDir(p.Path)
 	if err == nil {
-		s.primary, _ = cfg.PrimaryProcess()
+		for _, w := range cfg.Warnings {
+			d.log.Warn("config", "project", p.Name, "warning", w)
+		}
 		var specs []supervisor.Spec
-		for _, name := range slices.Sorted(maps.Keys(cfg.Processes)) {
+		for _, proc := range cfg.Processes {
+			if proc.Primary {
+				s.primary = proc.Name
+			}
 			specs = append(specs, supervisor.Spec{
-				Name:    name,
-				Command: cfg.Processes[name].Command,
+				Name:    proc.Name,
+				Command: proc.Command,
 				Dir:     p.Path,
-				LogFile: filepath.Join(d.cfg.Paths.Logs(), domainOf(p), name+".log"),
+				LogFile: filepath.Join(d.cfg.Paths.Logs(), domainOf(p), proc.Name+".log"),
 			})
 		}
 		err = d.supervisor.StartGroup(ctx, s.group, specs)

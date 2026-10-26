@@ -43,6 +43,7 @@ type command struct {
 
 var commands = map[string]command{
 	"daemon": {"Run the Portby daemon in the foreground", runDaemon},
+	"init":   {"Write the resolved config to portby.toml", runInit},
 	"link":   {"Link the current git repository as a Project", runLink},
 	"logs":   {"Show (or follow with -f) Process output", runLogs},
 	"status": {"List Linked Projects and their Processes", runStatus},
