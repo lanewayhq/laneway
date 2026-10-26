@@ -418,22 +418,25 @@ func logStream(t *testing.T, d *testkit.Daemon, url string) <-chan api.LogLine {
 	return lines
 }
 
-// waitForLogLine reads lines until one from process with text arrives,
-// failing the test if none does within a few seconds.
-func waitForLogLine(t *testing.T, lines <-chan api.LogLine, process, text string) {
+// waitForLogLines reads lines until every one of want ("<process> | <text>")
+// has arrived, in any order (the output of several Processes is in the order
+// Portby read it), failing the test if they don't within a few seconds.
+func waitForLogLines(t *testing.T, lines <-chan api.LogLine, want ...string) {
 	t.Helper()
+	missing := map[string]bool{}
+	for _, w := range want {
+		missing[w] = true
+	}
 	timeout := time.After(discoveryTimeout)
-	for {
+	for len(missing) > 0 {
 		select {
 		case l, ok := <-lines:
 			if !ok {
-				t.Fatalf("the stream ended while waiting for %s: %q", process, text)
+				t.Fatalf("the stream ended while waiting for %q", slices.Sorted(maps.Keys(missing)))
 			}
-			if l.Process == process && l.Text == text {
-				return
-			}
+			delete(missing, l.Process+" | "+l.Text)
 		case <-timeout:
-			t.Fatalf("timed out after %s waiting for %s: %q", discoveryTimeout, process, text)
+			t.Fatalf("timed out after %s waiting for %q", discoveryTimeout, slices.Sorted(maps.Keys(missing)))
 		}
 	}
 }
@@ -470,12 +473,11 @@ func TestTheDashboardFollowsAllOfAWorktreesProcessesLabelledByName(t *testing.T)
 	d.MustRunCLI(repo.Dir, "up")
 
 	lines := logStream(t, d, logsURL(dash, repo.Dir, "", true))
-	waitForLogLine(t, lines, "web", "web started")
-	waitForLogLine(t, lines, "worker", "worker ready")
+	waitForLogLines(t, lines, "web | web started", "worker | worker ready")
 
 	// New output arrives on the open stream, without asking again.
 	repo.WriteFile("go", "")
-	waitForLogLine(t, lines, "worker", "worker went")
+	waitForLogLines(t, lines, "worker | worker went")
 
 	// The stream ends when the daemon stops, rather than holding it up.
 	d.Stop()
@@ -490,9 +492,9 @@ func TestTheDashboardShowsOneProcesssRecentOutputEvenAfterItStopped(t *testing.T
 	d.MustRunCLI(repo.Dir, "link")
 	d.MustRunCLI(repo.Dir, "up")
 	lines := logStream(t, d, logsURL(dash, repo.Dir, "worker", true))
-	waitForLogLine(t, lines, "worker", "worker ready")
+	waitForLogLines(t, lines, "worker | worker ready")
 	repo.WriteFile("go", "")
-	waitForLogLine(t, lines, "worker", "worker went")
+	waitForLogLines(t, lines, "worker | worker went")
 
 	d.MustRunCLI(repo.Dir, "down")
 
