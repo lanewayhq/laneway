@@ -151,7 +151,10 @@ func TestProcessThatKeepsCrashingIsMarkedFailed(t *testing.T) {
 	assertContains(t, page.Body, "failed")
 	assertContains(t, page.Body, "portby logs web")
 
-	// `portby up` starts it again.
+	// Once the bug is fixed, `portby up` starts it again.
+	if err := os.Remove(crash); err != nil {
+		t.Fatal(err)
+	}
 	d.MustRunCLI(repo.Dir, "up")
 	waitForBoots(t, d, repo.Dir, 6)
 }
