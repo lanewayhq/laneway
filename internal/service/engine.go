@@ -62,7 +62,7 @@ type Engine struct {
 }
 
 // Engines are the Service engines Portby can run.
-var Engines = []*Engine{Redis, Mailpit, Postgres}
+var Engines = []*Engine{Redis, Mailpit, Postgres, MySQL}
 
 // Lookup returns the Engine called name.
 func Lookup(name string) (*Engine, bool) {
