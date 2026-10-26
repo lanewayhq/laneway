@@ -55,6 +55,9 @@ func runWorktreeReady(ctx context.Context, env Env, args []string) error {
 	if err != nil {
 		return readyError(ctx, *timeout, err)
 	}
+	for _, w := range info.Worktree.Setup.Warnings {
+		fmt.Fprintf(env.Stderr, "portby worktree: warning: %s\n", w)
+	}
 	if setup := info.Worktree.Setup; setup.State == api.SetupFailed {
 		var b strings.Builder
 		fmt.Fprintf(&b, "setup of %s of %q failed at step %q: %s\n",
