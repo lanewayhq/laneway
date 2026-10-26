@@ -51,7 +51,15 @@ type Daemon struct {
 	supervisor *supervisor.Supervisor
 	proxy      *proxy.Proxy
 	servedMu   sync.Mutex
-	served     map[string]served // Domain → what is served there
+	served     map[string]*served // Domain → what is served there
+
+	// Worktree starts run in the background. Shutdown cancels stopping and
+	// waits for them, so none starts Processes after StopAll.
+	stopping     context.Context
+	stop         context.CancelFunc
+	startsMu     sync.Mutex
+	starts       sync.WaitGroup
+	shuttingDown bool
 
 	done     chan struct{} // closed once the server stops
 	serveErr error         // why it stopped; read only after done is closed
@@ -84,9 +92,10 @@ func Start(cfg Config) (*Daemon, error) {
 		registry:   reg,
 		listener:   ln,
 		supervisor: supervisor.New(log),
-		served:     map[string]served{},
+		served:     map[string]*served{},
 		done:       make(chan struct{}),
 	}
+	d.stopping, d.stop = context.WithCancel(context.Background())
 	d.proxy, err = proxy.Start(proxy.Config{
 		Addr:       cfg.ProxyAddr,
 		StorageDir: cfg.Paths.CertStorage(),
@@ -98,7 +107,7 @@ func Start(cfg Config) (*Daemon, error) {
 		return nil, err
 	}
 	for _, p := range reg.Projects() {
-		d.startProject(context.Background(), p)
+		d.serveProject(p)
 	}
 	d.server = &http.Server{
 		Handler:           d.routes(),
@@ -136,6 +145,11 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 	if perr := d.proxy.Stop(); err == nil {
 		err = perr
 	}
+	d.startsMu.Lock()
+	d.shuttingDown = true
+	d.startsMu.Unlock()
+	d.stop()
+	d.starts.Wait()
 	d.supervisor.StopAll(ctx)
 	return err
 }

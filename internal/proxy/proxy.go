@@ -42,14 +42,40 @@ import (
 // Router decides where a request for a Domain goes.
 type Router interface {
 	// Upstream returns the loopback address ("127.0.0.1:<port>") of the
-	// Process serving domain, waiting for it to accept connections if
-	// needed. It returns an error wrapping ErrUnknownDomain if domain is not
-	// one of Portby's Domains; any other error is shown to the user.
-	Upstream(ctx context.Context, domain string) (string, error)
+	// Process serving domain, starting it if needed. While it is starting,
+	// Upstream waits for it to accept connections if wait is true, and
+	// otherwise returns ErrStarting at once. It returns an error wrapping
+	// ErrUnknownDomain if domain is not one of Portby's Domains; any other
+	// error is shown to the user.
+	Upstream(ctx context.Context, domain string, wait bool) (string, error)
 }
 
-// ErrUnknownDomain is returned by a Router for a Domain nothing is served at.
-var ErrUnknownDomain = errors.New("unknown Domain")
+var (
+	// ErrUnknownDomain is returned by a Router for a Domain nothing is
+	// served at.
+	ErrUnknownDomain = errors.New("unknown Domain")
+	// ErrStarting is returned by a Router, when asked not to wait, for a
+	// Domain whose Process is still starting.
+	ErrStarting = errors.New("starting")
+)
+
+// StartError is returned by a Router when a Domain's Primary Process failed
+// to start. The proxy shows it as Portby's error page.
+type StartError struct {
+	// Process is the Primary Process's name.
+	Process string
+	// Command is the command it was started with, and Output its last
+	// lines of output.
+	Command string
+	Output  []string
+	// TimedOut is set when the Process was still running but hadn't
+	// accepted a connection by the start timeout.
+	TimedOut bool
+	Err      error
+}
+
+func (e *StartError) Error() string { return e.Err.Error() }
+func (e *StartError) Unwrap() error { return e.Err }
 
 // Config configures a Proxy.
 type Config struct {

@@ -3,7 +3,9 @@
 // Process on every start and passing it through `{port}` in the command and
 // the PORT env var.
 //
-// Crash restarts, Start Modes and output capture come in later tickets.
+// Each Process's last RecentLines lines of output (stdout and stderr) are
+// kept in memory. Crash restarts, Start Modes and log files come in later
+// tickets.
 package supervisor
 
 import (
@@ -110,10 +112,12 @@ func stopAll(ctx context.Context, procs map[string]*Process) {
 
 // Process is one started Process.
 type Process struct {
-	spec Spec
-	port int
-	cmd  *exec.Cmd
-	log  *slog.Logger
+	spec    Spec
+	port    int
+	command string // spec.Command with {port} replaced
+	cmd     *exec.Cmd
+	log     *slog.Logger
+	output  *recent
 
 	exited  chan struct{} // closed once the process has exited
 	exitErr error         // why it exited; read only after exited is closed
@@ -128,15 +132,19 @@ func start(spec Spec, log *slog.Logger) (*Process, error) {
 	cmd := exec.Command("/bin/sh", "-c", command)
 	cmd.Dir = spec.Dir
 	cmd.Env = append(os.Environ(), "PORT="+strconv.Itoa(port))
-	// Output goes to /dev/null until Process logs arrive. (No pipe, so Wait
-	// doesn't depend on grandchildren closing it.)
+	output := &recent{}
+	cmd.Stdout = output
+	cmd.Stderr = output
+	// Output reaches us through a pipe, which a grandchild can hold open
+	// after the Process itself exits. Don't let that hold up Wait for long.
+	cmd.WaitDelay = time.Second
 	// Its own process group, so stopping it also stops whatever the shell
 	// started.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("starting Process %q: %w", spec.Name, err)
 	}
-	p := &Process{spec: spec, port: port, cmd: cmd, log: log, exited: make(chan struct{})}
+	p := &Process{spec: spec, port: port, command: command, cmd: cmd, log: log, output: output, exited: make(chan struct{})}
 	go func() {
 		p.exitErr = cmd.Wait()
 		close(p.exited)
@@ -161,6 +169,16 @@ func freePort() (int, error) {
 // Addr is the loopback address the Process was told to listen on.
 func (p *Process) Addr() string {
 	return net.JoinHostPort("127.0.0.1", strconv.Itoa(p.port))
+}
+
+// Command is the command the Process was started with, as run.
+func (p *Process) Command() string {
+	return p.command
+}
+
+// Output returns the Process's last RecentLines lines of output.
+func (p *Process) Output() []string {
+	return p.output.snapshot()
 }
 
 // WaitUp waits until the Process accepts TCP connections on its port. It

@@ -1,11 +1,14 @@
 package daemon
 
 import (
+	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mrsafalpiya/portby.dev/internal/config"
@@ -14,16 +17,31 @@ import (
 	"github.com/mrsafalpiya/portby.dev/internal/supervisor"
 )
 
-// StartTimeout is how long a request waits for the Primary Process to accept
-// connections.
+// StartTimeout is how long the Primary Process gets to accept connections
+// when its Worktree starts, unless the Project configures start_timeout.
 const StartTimeout = 60 * time.Second
 
-// served is what the proxy needs to know about one Domain.
+// served is one Domain and the Worktree behind it. Its Processes are lazy:
+// nothing runs until the first request for the Domain starts them.
 type served struct {
 	project string
+	dir     string // the Worktree's directory
 	group   string // the Supervisor group running the Worktree's Processes
-	primary string // the Primary Process's name; "" if there is none
-	err     error  // why the Processes couldn't be started, if they couldn't
+
+	mu    sync.Mutex
+	start *start // the running or last start; nil until the first request
+}
+
+// start is one attempt to start a Worktree's Processes.
+type start struct {
+	done chan struct{} // closed once the Primary Process is up or has failed
+	addr string        // the Primary Process's address, once up
+	err  error         // why it failed
+	// retry is set (under served.mu) once a browser has been shown the
+	// failure. Until then every request gets the failure, so the starting
+	// page's refreshes end on the error page instead of starting again; the
+	// next request after that (a reload) starts the Worktree again.
+	retry bool
 }
 
 // domainOf is the main Worktree's Domain.
@@ -31,54 +49,107 @@ func domainOf(p registry.Project) string {
 	return strings.ToLower(p.Name) + ".localhost"
 }
 
-// startProject reads the Project's config and starts the main Worktree's
-// Processes. Failures are kept so requests to the Domain can report them,
-// rather than failing the caller.
-func (d *Daemon) startProject(ctx context.Context, p registry.Project) {
-	s := served{project: p.Name, group: p.Path}
-	cfg, err := config.Load(p.Path)
-	if err == nil {
-		s.primary, _ = cfg.PrimaryProcess()
-		var specs []supervisor.Spec
-		for _, name := range slices.Sorted(maps.Keys(cfg.Processes)) {
-			specs = append(specs, supervisor.Spec{Name: name, Command: cfg.Processes[name].Command, Dir: p.Path})
-		}
-		err = d.supervisor.StartGroup(ctx, s.group, specs)
-	}
-	if err != nil {
-		d.log.Error("starting Project", "project", p.Name, "err", err)
-		s.err = err
-	}
+// serveProject makes the main Worktree's Domain known to the proxy, without
+// starting anything.
+func (d *Daemon) serveProject(p registry.Project) {
 	d.servedMu.Lock()
-	d.served[domainOf(p)] = s
+	d.served[domainOf(p)] = &served{project: p.Name, dir: p.Path, group: p.Path}
 	d.servedMu.Unlock()
+}
+
+// starting returns the Worktree's current start, beginning one if there is
+// none, so simultaneous first requests share a single start.
+func (d *Daemon) starting(s *served) *start {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.start == nil || s.start.retry {
+		st := &start{done: make(chan struct{})}
+		s.start = st
+		d.startsMu.Lock()
+		defer d.startsMu.Unlock()
+		if d.shuttingDown {
+			st.err = errors.New("the Portby daemon is shutting down")
+			close(st.done)
+			return st
+		}
+		d.starts.Go(func() {
+			defer close(st.done)
+			st.addr, st.err = d.startWorktree(s)
+			if st.err != nil {
+				d.log.Error("starting Worktree", "project", s.project, "dir", s.dir, "err", st.err)
+			}
+		})
+	}
+	return s.start
+}
+
+// startWorktree reads the Project's config, starts the Worktree's Processes
+// and waits for the Primary Process to accept connections.
+func (d *Daemon) startWorktree(s *served) (string, error) {
+	cfg, err := config.Load(s.dir)
+	if err != nil {
+		return "", fmt.Errorf("Project %q could not be started: %w", s.project, err)
+	}
+	primary, ok := cfg.PrimaryProcess()
+	if !ok {
+		return "", fmt.Errorf("Project %q has no Primary Process: declare one in %s, "+
+			"for example [processes.web] with command = \"…\" and primary = true", s.project, config.FileName)
+	}
+	var specs []supervisor.Spec
+	for _, name := range slices.Sorted(maps.Keys(cfg.Processes)) {
+		specs = append(specs, supervisor.Spec{Name: name, Command: cfg.Processes[name].Command, Dir: s.dir})
+	}
+	timeout := cmp.Or(cfg.StartTimeout, StartTimeout)
+	ctx, cancel := context.WithTimeout(d.stopping, timeout)
+	defer cancel()
+	if err := d.supervisor.StartGroup(ctx, s.group, specs); err != nil {
+		return "", fmt.Errorf("Project %q could not be started: %w", s.project, err)
+	}
+	proc, _ := d.supervisor.Process(s.group, primary)
+	err = proc.WaitUp(ctx)
+	if err == nil {
+		return proc.Addr(), nil
+	}
+	// The start failed: stop what did start, so a later start begins afresh.
+	d.supervisor.StopGroup(context.Background(), s.group)
+	se := &proxy.StartError{Process: primary, Command: proc.Command(), Output: proc.Output(), Err: err}
+	if errors.Is(err, context.DeadlineExceeded) {
+		se.TimedOut = true
+		se.Err = fmt.Errorf("Process %q did not accept connections within %s; "+
+			"if it needs longer, raise start_timeout in %s", primary, timeout, config.FileName)
+	}
+	return "", se
 }
 
 // router is the daemon's proxy.Router.
 type router struct{ d *Daemon }
 
-func (r router) Upstream(ctx context.Context, domain string) (string, error) {
+func (r router) Upstream(ctx context.Context, domain string, wait bool) (string, error) {
 	d := r.d
 	d.servedMu.Lock()
 	s, ok := d.served[domain]
 	d.servedMu.Unlock()
-	switch {
-	case !ok:
-		return "", fmt.Errorf("%s: %w", domain, proxy.ErrUnknownDomain)
-	case s.err != nil:
-		return "", fmt.Errorf("Project %q could not be started: %w", s.project, s.err)
-	case s.primary == "":
-		return "", fmt.Errorf("Project %q has no Primary Process: declare one in %s, "+
-			"for example [processes.web] with command = \"…\" and primary = true", s.project, config.FileName)
-	}
-	proc, ok := d.supervisor.Process(s.group, s.primary)
 	if !ok {
-		return "", fmt.Errorf("Process %q of Project %q is not running", s.primary, s.project)
+		return "", fmt.Errorf("%s: %w", domain, proxy.ErrUnknownDomain)
 	}
-	ctx, cancel := context.WithTimeout(ctx, StartTimeout)
-	defer cancel()
-	if err := proc.WaitUp(ctx); err != nil {
-		return "", err
+	st := d.starting(s)
+	if !wait {
+		select {
+		case <-st.done:
+		default:
+			return "", proxy.ErrStarting
+		}
+		if st.err != nil {
+			s.mu.Lock()
+			st.retry = true
+			s.mu.Unlock()
+		}
+		return st.addr, st.err
 	}
-	return proc.Addr(), nil
+	select {
+	case <-st.done:
+		return st.addr, st.err
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
 }

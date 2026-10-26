@@ -45,8 +45,17 @@ func (h *routeHandler) Provision(caddy.Context) error {
 
 func (h *routeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	domain := requestDomain(r)
-	addr, err := h.router.Upstream(r.Context(), domain)
+	// Browsers are shown the starting page rather than left hanging; every
+	// other client is held until the Process is up.
+	addr, err := h.router.Upstream(r.Context(), domain, !isNavigation(r))
+	if se, ok := errors.AsType[*StartError](err); ok {
+		writeStartErrorPage(w, domain, se)
+		return nil
+	}
 	switch {
+	case errors.Is(err, ErrStarting):
+		writeStartingPage(w, domain)
+		return nil
 	case errors.Is(err, ErrUnknownDomain):
 		writePage(w, http.StatusNotFound, "Nothing is served here",
 			fmt.Sprintf("Portby doesn't serve anything at <code>%s</code>.", html.EscapeString(domain)),

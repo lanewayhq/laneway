@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -24,6 +25,10 @@ type File struct {
 	Name string `toml:"name"`
 	// Processes are keyed by Process name ([processes.<name>] tables).
 	Processes map[string]Process `toml:"processes"`
+	// StartTimeout is how long the Primary Process gets to accept
+	// connections when the Worktree starts, such as "90s". Zero means the
+	// daemon's default.
+	StartTimeout time.Duration `toml:"start_timeout"`
 }
 
 // Process is one [processes.<name>] table.
@@ -67,6 +72,9 @@ func Load(dir string) (File, error) {
 }
 
 func (f File) validate() error {
+	if f.StartTimeout < 0 {
+		return fmt.Errorf("start_timeout must not be negative, but is %s", f.StartTimeout)
+	}
 	var primaries []string
 	for name, p := range f.Processes {
 		if strings.TrimSpace(p.Command) == "" {
