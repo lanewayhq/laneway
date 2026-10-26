@@ -20,11 +20,19 @@ func main() {
 		os.Exit(1)
 	}
 	os.Exit(cli.Run(ctx, cli.Env{
-		Args:   os.Args[1:],
-		Dir:    dir,
-		Getenv: os.Getenv,
-		Stdin:  os.Stdin,
-		Stdout: os.Stdout,
-		Stderr: os.Stderr,
+		Args:     os.Args[1:],
+		Dir:      dir,
+		Getenv:   os.Getenv,
+		Stdin:    os.Stdin,
+		Terminal: isTerminal(os.Stdin),
+		Stdout:   os.Stdout,
+		Stderr:   os.Stderr,
 	}))
+}
+
+// isTerminal reports whether f is a terminal (a character device), so a
+// person may be there to answer questions.
+func isTerminal(f *os.File) bool {
+	fi, err := f.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }

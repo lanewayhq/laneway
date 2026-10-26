@@ -13,7 +13,9 @@ import (
 )
 
 // runGC is `portby gc [--yes]`: drop Orphans and leftover parallel test
-// copies now, after showing them and asking.
+// copies now. On a terminal it shows them and asks first (unless --yes);
+// otherwise (a script, an agent) it drops them at once and says what it
+// dropped.
 func runGC(ctx context.Context, env Env, args []string) error {
 	fs := newFlags(env, "gc")
 	yes := fs.Bool("yes", false, "drop the databases without asking")
@@ -35,10 +37,12 @@ func runGC(ctx context.Context, env Env, args []string) error {
 		fmt.Fprintln(env.Stdout, "Nothing to drop: there are no Orphans or leftover parallel test copies.")
 		return nil
 	}
-	fmt.Fprintln(env.Stdout, "These databases will be dropped, and their data lost:")
-	printOrphans(env.Stdout, preview.Orphans)
-	if !*yes && !confirm(env, fmt.Sprintf("Drop these %d databases? [y/N] ", len(preview.Orphans))) {
-		return errors.New("nothing was dropped; run `portby gc --yes` to drop them without asking")
+	if !*yes && env.Terminal {
+		fmt.Fprintln(env.Stdout, "These databases will be dropped, and their data lost:")
+		printOrphans(env.Stdout, preview.Orphans)
+		if !confirm(env, fmt.Sprintf("Drop these %d databases? [y/N] ", len(preview.Orphans))) {
+			return errors.New("nothing was dropped; run `portby gc --yes` to drop them without asking")
+		}
 	}
 	req := api.GCRequest{}
 	for _, o := range preview.Orphans {

@@ -214,6 +214,18 @@ func (d *Daemon) RunCLI(dir string, args ...string) CLIResult {
 // "y\n" to answer a confirmation.
 func (d *Daemon) RunCLIWithInput(dir, input string, args ...string) CLIResult {
 	d.t.Helper()
+	return d.runCLI(dir, input, false, args)
+}
+
+// RunCLIInTerminal is RunCLIWithInput as if stdin were a terminal, where a
+// person may answer questions (cli.Env.Terminal).
+func (d *Daemon) RunCLIInTerminal(dir, input string, args ...string) CLIResult {
+	d.t.Helper()
+	return d.runCLI(dir, input, true, args)
+}
+
+func (d *Daemon) runCLI(dir, input string, terminal bool, args []string) CLIResult {
+	d.t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), cliTimeout)
 	defer cancel()
 	var stdout, stderr bytes.Buffer
@@ -223,6 +235,7 @@ func (d *Daemon) RunCLIWithInput(dir, input string, args ...string) CLIResult {
 		Getenv:   d.Getenv,
 		Environ:  d.Environ,
 		Stdin:    strings.NewReader(input),
+		Terminal: terminal,
 		Stdout:   &stdout,
 		Stderr:   &stderr,
 		Platform: d.Platform,

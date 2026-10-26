@@ -31,9 +31,13 @@ type Env struct {
 	Environ func() []string
 	// Stdin is where commands read answers to questions, and what `portby
 	// exec` passes to its command; nil reads as empty, which answers no.
-	Stdin  io.Reader
-	Stdout io.Writer
-	Stderr io.Writer
+	Stdin io.Reader
+	// Terminal reports that Stdin is a terminal, so a person may be there to
+	// answer questions. Commands that only ask to be safe (`portby gc`)
+	// don't ask when it is false: a script or agent runs them.
+	Terminal bool
+	Stdout   io.Writer
+	Stderr   io.Writer
 	// Platform does everything OS-specific (install, doctor, open). If nil,
 	// the real one for this machine is detected.
 	Platform platform.Platform

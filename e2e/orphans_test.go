@@ -245,7 +245,7 @@ func TestOrphansOutliveADaemonRestartAndAreStillDroppedOnTime(t *testing.T) {
 	}
 }
 
-func TestGcAsksBeforeDroppingOrphansAndLeftoverParallelTestCopies(t *testing.T) {
+func TestGcAsksOnATerminalAndOtherwiseDropsOrphansAndLeftoverParallelTestCopies(t *testing.T) {
 	t.Parallel()
 	d, _ := orphanDaemon(t)
 	repo := postgresProject(t, "orphan-gc", `test = "on"`)
@@ -268,11 +268,13 @@ func TestGcAsksBeforeDroppingOrphansAndLeftoverParallelTestCopies(t *testing.T) 
 		"orphan_gc_test_test_1", "orphan_gc__kept_test_test_1", "orphan_gc__old_test_test_x", "elsewhere_test_test_1"}
 	dropped := []string{"orphan_gc__gone", "orphan_gc__gone_test", "orphan_gc__old_test_test_1", "orphan_gc__old_test_test_2"}
 
-	res := d.RunCLI(repo.Dir, "gc")
+	// On a terminal it lists them and asks; no answer is no.
+	res := d.RunCLIInTerminal(repo.Dir, "", "gc")
 
 	if res.ExitCode == 0 {
 		t.Fatalf("gc without an answer exited 0:\n%s", res.Output())
 	}
+	assertContains(t, res.Stdout, "Drop these 4 databases? [y/N]")
 	for _, db := range dropped {
 		assertContains(t, res.Stdout, db)
 	}
@@ -284,17 +286,20 @@ func TestGcAsksBeforeDroppingOrphansAndLeftoverParallelTestCopies(t *testing.T) 
 		t.Fatalf("gc dropped databases without being told to; left %v", got)
 	}
 
-	res = d.MustRunCLI(repo.Dir, "gc", "--yes")
+	// With no terminal (a script, an agent) it drops them at once and
+	// says what it dropped.
+	res = d.MustRunCLI(repo.Dir, "gc")
 
+	assertNotContains(t, res.Stdout, "[y/N]")
 	got := postgresDatabases(t, d, 5432)
 	for _, db := range dropped {
-		assertContains(t, res.Stdout, db)
+		assertContains(t, res.Stdout, "Dropped "+db+" ")
 		if slices.Contains(got, db) {
-			t.Errorf("gc --yes left %s", db)
+			t.Errorf("gc left %s", db)
 		}
 	}
 	if !containsAll(got, untouched) {
-		t.Errorf("gc --yes dropped more than it should; left %v, want at least %v", got, untouched)
+		t.Errorf("gc dropped more than it should; left %v, want at least %v", got, untouched)
 	}
 	waitForOrphans(t, d)
 	res = d.MustRunCLI(repo.Dir, "gc", "--yes")
