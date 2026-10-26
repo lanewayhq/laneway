@@ -47,7 +47,13 @@ func (d *Daemon) testDatabaseStep(p registry.Project, w envWorktree, cfg recipe.
 			return err
 		}
 		defer release()
-		return database.EnsureTest(ctx, databaseEngine(cfg.Database, server), name, out)
+		if err := database.EnsureTest(ctx, databaseEngine(cfg.Database, server), name, out); err != nil {
+			return err
+		}
+		for _, w := range cfg.TestDatabaseWarnings {
+			provision.Warn(ctx, w)
+		}
+		return nil
 	}}, true
 }
 

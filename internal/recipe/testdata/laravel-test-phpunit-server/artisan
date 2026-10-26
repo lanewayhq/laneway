@@ -1,0 +1,3 @@
+#!/usr/bin/env php
+<?php
+// A Laravel-shaped fixture: only its files matter to the Recipe.

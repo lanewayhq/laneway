@@ -8,13 +8,15 @@
 //   2. Add it to the list in panels/index.js, in display order.
 //
 // What a panel gets in `dash`:
-//   dash.api.get(path) / dash.api.post(path, body)  JSON API under /api (same
-//       routes as the CLI, see package api). post throws an Error carrying the
-//       API's message.
+//   dash.api.get(path) / dash.api.post(path, body) / dash.api.del(path)  JSON
+//       API under /api (same routes as the CLI, see package api). They throw
+//       an Error carrying the API's message.
 //   dash.api.stream(path, onLine, signal)  NDJSON streaming routes such as
 //       /v1/logs?follow=true, one parsed object per call.
 //   dash.onProjects(fn)  fn(list) with every ProjectList from GET /v1/events:
 //       the latest one at once if there is one, then each change.
+//   dash.onServices(fn) / dash.onOrphans(fn)  the same for the ServiceList and
+//       OrphanList (the `services` and `orphans` events).
 //   dash.control(action, worktree, process)  POST /v1/worktree/{up|down|restart}.
 //   dash.worktreeActions / dash.processActions  extra buttons the Worktrees
 //       panel shows: push fn(worktree, project[, process]) returning
@@ -22,11 +24,17 @@
 //   dash.on(name, fn) / dash.emit(name, detail)  events between panels, e.g. a
 //       Process action asking the logs panel to show that Process.
 //   dash.report(message)  shows a message (an error) at the top of the page.
+//   dash.confirm({ title, body, action })  asks in a modal dialog before a
+//       destructive action; resolves true only if `action` was chosen.
 import panels from "./panels/index.js";
+import { confirm } from "./confirm.js";
 
 const api = {
   async get(path) {
     return parse(await fetch("/api" + path, { headers: { Accept: "application/json" } }));
+  },
+  async del(path) {
+    return parse(await fetch("/api" + path, { method: "DELETE", headers: { Accept: "application/json" } }));
   },
   async post(path, body) {
     return parse(await fetch("/api" + path, {
@@ -71,6 +79,7 @@ async function parse(res) {
 
 const listeners = new Map();
 let projects = null;
+const latest = new Map(); // event name -> its latest data, for live events but projects
 
 const dash = {
   api,
@@ -80,6 +89,13 @@ const dash = {
       fn(projects);
     }
   },
+  onServices(fn) {
+    onLive("services", fn);
+  },
+  onOrphans(fn) {
+    onLive("orphans", fn);
+  },
+  confirm,
   control(action, worktree, process) {
     return api.post(`/v1/worktree/${action}`, { dir: worktree.path, process: process ?? "" });
   },
@@ -121,6 +137,22 @@ events.addEventListener("projects", (e) => {
   projects = JSON.parse(e.data);
   dash.emit("projects", projects);
 });
+
+for (const name of ["services", "orphans"]) {
+  events.addEventListener(name, (e) => {
+    latest.set(name, JSON.parse(e.data));
+    dash.emit(name, latest.get(name));
+  });
+}
+
+// onLive calls fn with the latest data of the live event name, if any, then
+// with each change.
+function onLive(name, fn) {
+  dash.on(name, fn);
+  if (latest.has(name)) {
+    fn(latest.get(name));
+  }
+}
 
 const main = document.getElementById("panels");
 for (const panel of panels) {

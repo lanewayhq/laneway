@@ -16,7 +16,7 @@ func TestATestDatabaseIsMadeOnlyWhenDatabaseTestIsOn(t *testing.T) {
 	}{
 		{"database-test-on", true},
 		{"database-test-off", false},
-		// Until the Laravel Recipe decides it (#26), auto is off.
+		// Without a Recipe that decides it (the Laravel Recipe does), auto is off.
 		{"database-test-auto", false},
 		{"database-postgres", false},
 	}

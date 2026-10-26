@@ -154,10 +154,6 @@ func sqlitePath(dir string, env laravelEnv) string {
 	return filepath.ToSlash(rel)
 }
 
-// AutoTestDatabase decides database.test = auto for a Laravel Project. It is
-// always off for now: #26 detects it from .env.testing and phpunit.xml.
-func (Laravel) AutoTestDatabase(dir string) bool { return false }
-
 // laravelEnv is the settings the Recipe reads from the Project's env file.
 type laravelEnv struct{ f *dotenv.File }
 

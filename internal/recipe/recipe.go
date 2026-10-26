@@ -53,6 +53,15 @@ type TestDatabaseRecipe interface {
 	AutoTestDatabase(dir string) bool
 }
 
+// TestDatabaseWarner is a Recipe that can tell when the tests of a Project it
+// detected bypass the Project's Test Database.
+type TestDatabaseWarner interface {
+	Recipe
+	// TestDatabaseWarnings are the reasons the tests of the Project in dir
+	// may not use its Test Database, each naming the file at fault.
+	TestDatabaseWarnings(dir string) []string
+}
+
 // Resolved is the Project's resolved config.
 type Resolved struct {
 	// Recipe is the name of the Recipe that detected the Project; "" if
@@ -100,6 +109,11 @@ type Resolved struct {
 	// (DatabaseService) and database.test is on, or auto and the Recipe
 	// decides so (TestDatabaseRecipe).
 	TestDatabase bool
+	// TestDatabaseWarnings are why the Project's tests may not use the
+	// Test Database although there is one, such as a phpunit.xml that
+	// hard-codes DB_DATABASE (TestDatabaseWarner). Each names the file it
+	// comes from. Empty when TestDatabase is false.
+	TestDatabaseWarnings []string
 	// Warnings are problems that didn't stop resolution, such as unknown
 	// keys. Each names the file it comes from.
 	Warnings []string
@@ -458,6 +472,9 @@ func Resolve(in Input) (Resolved, error) {
 	case "", "auto":
 		r, ok := detected.(TestDatabaseRecipe)
 		res.TestDatabase = inService && ok && r.AutoTestDatabase(in.Dir)
+	}
+	if w, ok := detected.(TestDatabaseWarner); ok && res.TestDatabase {
+		res.TestDatabaseWarnings = w.TestDatabaseWarnings(in.Dir)
 	}
 	if inherit {
 		res.OnCreate = append(slices.Clone(recipeCreate), res.OnCreate...)
