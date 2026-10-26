@@ -108,6 +108,7 @@ func domainOf(p registry.Project) string {
 func (d *Daemon) serveProject(p registry.Project) {
 	d.applyEnvPatch(p, mainEnvWorktree(p))
 	d.serveWorktree(p, domainOf(p), p.Path)
+	d.reclaimOrphans(p, mainEnvWorktree(p))
 	d.provision(p, mainEnvWorktree(p), false)
 }
 

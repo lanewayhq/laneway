@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 )
 
 // Mode is how a Worktree other than the main one gets its database
@@ -127,4 +128,44 @@ func EnsureTest(ctx context.Context, e Engine, db string, out io.Writer) error {
 	}
 	fmt.Fprintf(out, "created the empty Test Database %s\n", db)
 	return nil
+}
+
+// Dropper is an Engine whose databases Portby can drop once they are
+// Orphans: the Engines of databases in a Service (Postgres, MySQL). SQLite
+// isn't one: its database is a file in the Worktree's directory, which goes
+// with the Worktree, and the main Worktree's file is the developer's.
+type Dropper interface {
+	Engine
+	// Drop drops db, closing any connections to it first. Dropping a
+	// database that doesn't exist is not an error.
+	Drop(ctx context.Context, db string) error
+	// Databases lists every database in the Service, so Portby can find
+	// the parallel test copies of a Test Database (ParallelCopy).
+	Databases(ctx context.Context) ([]string, error)
+}
+
+// ParallelCopy reports whether db is a copy of the Test Database test made
+// by a parallel test run: <test>_test_<n>, as Laravel's parallel testing
+// names them (one per test process, numbered from 1).
+func ParallelCopy(test, db string) bool {
+	n, ok := strings.CutPrefix(db, test+"_test_")
+	if !ok || n == "" {
+		return false
+	}
+	for _, r := range n {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// ParallelCopyOf is the Test Database db is a parallel test copy of
+// (ParallelCopy), if it looks like one.
+func ParallelCopyOf(db string) (test string, ok bool) {
+	i := strings.LastIndex(db, "_test_")
+	if i <= 0 || !ParallelCopy(db[:i], db) {
+		return "", false
+	}
+	return db[:i], true
 }

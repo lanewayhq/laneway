@@ -23,7 +23,9 @@ import (
 // and the tests send, matched by pattern rather than parsed:
 //
 //	SELECT 1 FROM pg_database WHERE datname = '<db>'
+//	SELECT datname FROM pg_database WHERE NOT datistemplate
 //	CREATE DATABASE "<db>" [TEMPLATE "<db>"]
+//	DROP DATABASE IF EXISTS "<db>" WITH (FORCE)
 //	SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '<db>' AND pid <> pg_backend_pid()
 //	SELECT tablename FROM pg_tables WHERE schemaname = 'public'
 //	CREATE TABLE <table> (…)
@@ -230,6 +232,8 @@ func readPG(r *bufio.Reader) (byte, []byte, error) {
 
 var (
 	pgExistsQuery    = regexp.MustCompile(`^SELECT 1 FROM pg_database WHERE datname = '((?:[^']|'')*)'$`)
+	pgListDatabases  = regexp.MustCompile(`^SELECT datname FROM pg_database WHERE NOT datistemplate$`)
+	pgDropDatabase   = regexp.MustCompile(`^DROP DATABASE IF EXISTS "((?:[^"]|"")+)" WITH \(FORCE\)$`)
 	pgCreateDatabase = regexp.MustCompile(`^CREATE DATABASE "((?:[^"]|"")+)"(?: TEMPLATE "((?:[^"]|"")+)")?$`)
 	pgTerminate      = regexp.MustCompile(`^SELECT pg_terminate_backend\(pid\) FROM pg_stat_activity WHERE datname = '((?:[^']|'')*)' AND pid <> pg_backend_pid\(\)$`)
 	pgListTables     = regexp.MustCompile(`^SELECT tablename FROM pg_tables WHERE schemaname = 'public'$`)
@@ -271,6 +275,23 @@ func (pg *pgServer) query(s *pgSession, sql string) {
 		rows("?column?", found)
 		return
 	}
+	if pgListDatabases.MatchString(sql) {
+		rows("datname", slices.DeleteFunc(pg.databases(), func(db string) bool {
+			return db == "template0" || db == "template1"
+		}))
+		return
+	}
+	if m := pgDropDatabase.FindStringSubmatch(sql); m != nil {
+		name := unquote(m[1], `"`)
+		if name == s.database {
+			fail("55006", "cannot drop the currently open database")
+			return
+		}
+		pg.terminate(name, s)
+		pg.removeDatabase(name)
+		done("DROP DATABASE")
+		return
+	}
 	if m := pgCreateDatabase.FindStringSubmatch(sql); m != nil {
 		name, template := unquote(m[1], `"`), cmp.Or(unquote(m[2], `"`), "template1")
 		if _, ok := pg.database(name); ok {
@@ -291,15 +312,9 @@ func (pg *pgServer) query(s *pgSession, sql string) {
 		return
 	}
 	if m := pgTerminate.FindStringSubmatch(sql); m != nil {
-		db := unquote(m[1], "'")
 		var closed []string
-		for other := range pg.sessions {
-			if other != s && other.database == db {
-				other.send('E', pgError("FATAL", "57P01", "terminating connection due to administrator command"))
-				other.conn.Close()
-				delete(pg.sessions, other)
-				closed = append(closed, "t")
-			}
+		for range pg.terminate(unquote(m[1], "'"), s) {
+			closed = append(closed, "t")
 		}
 		rows("pg_terminate_backend", closed)
 		return
@@ -342,6 +357,27 @@ func (pg *pgServer) query(s *pgSession, sql string) {
 	default:
 		fail("42601", fmt.Sprintf("the fake Postgres doesn't understand %q", sql))
 	}
+}
+
+// terminate closes the sessions other than s connected to db with 57P01,
+// and returns them.
+func (pg *pgServer) terminate(db string, s *pgSession) []*pgSession {
+	var closed []*pgSession
+	for other := range pg.sessions {
+		if other != s && other.database == db {
+			other.send('E', pgError("FATAL", "57P01", "terminating connection due to administrator command"))
+			other.conn.Close()
+			delete(pg.sessions, other)
+			closed = append(closed, other)
+		}
+	}
+	return closed
+}
+
+// removeDatabase forgets the database name, if it exists.
+func (pg *pgServer) removeDatabase(name string) {
+	pg.data.Set(pgDatabasesKey, strings.Join(slices.DeleteFunc(pg.databases(), func(db string) bool { return db == name }), " "))
+	pg.data.Delete("postgres:db:" + name)
 }
 
 // connectedTo counts the sessions other than s connected to db.

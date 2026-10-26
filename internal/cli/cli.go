@@ -57,6 +57,7 @@ var commands = map[string]command{
 	"doctor":   {"Check that Portby is set up and working", runDoctor},
 	"down":     {"Stop the current Worktree's Processes (or one Process)", control("down")},
 	"exec":     {"Run a command in the current Worktree with its Runtimes", runExec},
+	"gc":       {"Drop Orphans (databases of removed Worktrees) now", runGC},
 	"harness":  {"Add Portby config for a Harness (add <claude|t3>)", runHarness},
 	"init":     {"Write the resolved config to portby.toml", runInit},
 	"install":  {"Set up Portby on this machine (service, ports 80/443, CA trust)", runInstall},
@@ -66,6 +67,7 @@ var commands = map[string]command{
 	"restart":  {"Restart the current Worktree's Processes (or one Process)", control("restart")},
 	"services": {"List shared Services, or start/stop them (services [ls|up|down] [name])", runServices},
 	"status":   {"List Linked Projects and their Processes", runStatus},
+	"unlink":   {"Unlink the current Project (its databases become Orphans)", runUnlink},
 	"up":       {"Start the current Worktree's Processes (or one Process)", control("up")},
 	"worktree": {"Manage Worktrees (add <name> [--branch], ready [--retry], alias <name> [--remove])", runWorktree},
 }

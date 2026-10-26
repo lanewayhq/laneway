@@ -90,6 +90,28 @@ func (p Postgres) Clone(ctx context.Context, from, to string) error {
 	})
 }
 
+// Drop drops db with DROP DATABASE … WITH (FORCE) (Postgres 13 and later),
+// which closes every connection to it first. One that doesn't exist is
+// fine.
+func (p Postgres) Drop(ctx context.Context, db string) error {
+	return p.admin(ctx, func(c *pgwire.Conn) error {
+		return c.Exec(ctx, "DROP DATABASE IF EXISTS "+pgwire.Ident(db)+" WITH (FORCE)")
+	})
+}
+
+// Databases lists the server's databases, except the templates.
+func (p Postgres) Databases(ctx context.Context) ([]string, error) {
+	var names []string
+	err := p.admin(ctx, func(c *pgwire.Conn) error {
+		rows, err := c.Query(ctx, "SELECT datname FROM pg_database WHERE NOT datistemplate")
+		for _, row := range rows {
+			names = append(names, row[0])
+		}
+		return err
+	})
+	return names, err
+}
+
 // admin runs f on a connection to the server's maintenance database.
 func (p Postgres) admin(ctx context.Context, f func(*pgwire.Conn) error) error {
 	c, err := pgwire.Connect(ctx, pgwire.Config{

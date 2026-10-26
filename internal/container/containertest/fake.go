@@ -47,6 +47,13 @@ func (v *Volume) Set(key, value string) {
 	v.data[key] = value
 }
 
+// Delete removes the value stored under key.
+func (v *Volume) Delete(key string) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	delete(v.data, key)
+}
+
 // Append adds value at the end of the list called key.
 func (v *Volume) Append(key, value string) {
 	v.mu.Lock()

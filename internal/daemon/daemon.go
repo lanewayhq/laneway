@@ -111,6 +111,11 @@ type Daemon struct {
 	provisioner *provision.Provisioner // Worktree setup, see provision.go
 	services    *service.Manager       // shared Services, see services.go
 
+	orphanMu      sync.Mutex // serialises changes to Orphans, see orphans.go
+	orphanTimer   clock.Timer
+	orphanRetryAt time.Time // after a failed drop, when to try again
+	orphansClosed bool
+
 	// closing is closed (under syncMu) when Shutdown begins. It ends
 	// streaming responses, and Worktree syncs that start afterwards don't
 	// change anything.
@@ -216,6 +221,7 @@ func Start(cfg Config) (*Daemon, error) {
 		d.syncWorktrees(ctx, p)
 		d.serveKnownWorktrees(p)
 	}
+	d.serveOrphans()
 	d.server = &http.Server{
 		Handler:           d.routes(),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -261,6 +267,7 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 	if perr := d.proxy.Stop(); err == nil {
 		err = perr
 	}
+	d.closeOrphans()
 	d.startsMu.Lock()
 	d.shuttingDown = true
 	d.startsMu.Unlock()

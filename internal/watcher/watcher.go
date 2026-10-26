@@ -134,6 +134,25 @@ func (w *Watcher) Watch(main string, worktrees []string) {
 
 // add watches path for the Project at main. Missing paths are fine: the
 // event that creates them, or the next rescan, adds them later.
+// Unwatch stops watching the Project whose main Worktree is at main.
+func (w *Watcher) Unwatch(main string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	p, ok := w.projects[main]
+	if !ok {
+		return
+	}
+	if p.timer != nil {
+		p.timer.Stop()
+	}
+	for path, m := range w.paths {
+		if m == main {
+			w.remove(path)
+		}
+	}
+	delete(w.projects, main)
+}
+
 func (w *Watcher) add(main, path string) {
 	if err := w.fs.Add(path); err != nil {
 		return

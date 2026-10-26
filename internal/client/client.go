@@ -158,6 +158,31 @@ func (c *Client) ControlServices(ctx context.Context, action string, req api.Ser
 	return list.Services, err
 }
 
+// Orphans lists the databases waiting out their grace period before they
+// are dropped.
+func (c *Client) Orphans(ctx context.Context) ([]api.Orphan, error) {
+	var list api.OrphanList
+	if err := c.do(ctx, http.MethodGet, "/v1/orphans", nil, &list); err != nil {
+		return nil, err
+	}
+	return list.Orphans, nil
+}
+
+// Unlink Unlinks the Project containing dir, which must be absolute.
+func (c *Client) Unlink(ctx context.Context, dir string) (api.UnlinkResponse, error) {
+	var res api.UnlinkResponse
+	err := c.do(ctx, http.MethodDelete, "/v1/projects?dir="+url.QueryEscape(dir), nil, &res)
+	return res, err
+}
+
+// GC drops Orphans and leftover parallel test copies now (with
+// req.Preview, only lists them).
+func (c *Client) GC(ctx context.Context, req api.GCRequest) (api.GCResponse, error) {
+	var res api.GCResponse
+	err := c.do(ctx, http.MethodPost, "/v1/gc", req, &res)
+	return res, err
+}
+
 // do sends one request and decodes the response into out.
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
 	resp, err := c.send(ctx, method, path, body)
