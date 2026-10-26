@@ -1,0 +1,2 @@
+[linked_env]
+REDIS_PREFIX = "{project}_{wroktree}_"

@@ -1,0 +1,4 @@
+[processes.web]
+command = "serve --port={port}"
+primary = true
+static_dir = "../public"

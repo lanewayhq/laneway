@@ -139,8 +139,12 @@ func (d *Daemon) linkEnvPatch(ctx context.Context, p registry.Project, apply boo
 			continue
 		}
 		if apply {
-			if err := fp.plan.Apply(); err != nil {
+			if err := d.applyPlan(p, fp.plan); err != nil {
 				return nil, fmt.Errorf("applying the Env Patch to %s: %w", fp.plan.Path, err)
+			}
+			if filepath.Base(fp.plan.Path) == envFileName {
+				// Its running Processes read .env when they started.
+				d.restartServedForEnv(fp.w.dir)
 			}
 		}
 		res = append(res, envPatchFor(fp.w, fp.plan))

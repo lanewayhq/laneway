@@ -55,6 +55,19 @@ type Router interface {
 	Begin(domain string) (end func())
 }
 
+// StaticRouter is a Router whose Processes may have a static directory:
+// files Portby serves itself rather than sending the request to the Process
+// (spike #4: php artisan serve blocks on its log pipe when it serves every
+// asset). A GET or HEAD for a path that is an existing regular file there,
+// other than a .php script, is served from disk once Upstream has found the
+// Process; anything else goes to the Process.
+type StaticRouter interface {
+	Router
+	// StaticDir is the static directory of the Process Upstream last
+	// returned for domain, or "" if it has none.
+	StaticDir(domain string) string
+}
+
 var (
 	// ErrUnknownDomain is returned by a Router for a Domain nothing is
 	// served at.

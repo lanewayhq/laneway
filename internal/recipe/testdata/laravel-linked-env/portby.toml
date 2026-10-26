@@ -1,0 +1,4 @@
+# Horizon reads its own prefix; keep it apart per Worktree too.
+[linked_env]
+HORIZON_PREFIX = "{project}_{worktree}_horizon:"
+CACHE_PREFIX = "{worktree}_cache_"

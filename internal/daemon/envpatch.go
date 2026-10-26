@@ -8,6 +8,7 @@ import (
 
 	"github.com/mrsafalpiya/portby.dev/internal/api"
 	"github.com/mrsafalpiya/portby.dev/internal/envpatch"
+	"github.com/mrsafalpiya/portby.dev/internal/gitrepo"
 	"github.com/mrsafalpiya/portby.dev/internal/recipe"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
 )
@@ -58,10 +59,11 @@ func envVars(p registry.Project, w envWorktree, db recipe.Database) map[string]s
 // templates gets no Env Patch: its env files are never touched.
 func (d *Daemon) planEnvPatch(p registry.Project, w envWorktree) (envpatch.Plan, error) {
 	cfg, err := recipe.ResolveDir(w.dir)
-	if err != nil || len(cfg.Env) == 0 {
+	templates := cfg.EnvFor(w.main)
+	if err != nil || len(templates) == 0 {
 		return envpatch.Plan{}, err
 	}
-	values, err := envpatch.RenderAll(cfg.Env, d.envPatchVars(p, w, cfg))
+	values, err := envpatch.RenderAll(templates, d.envPatchVars(p, w, cfg))
 	if err != nil {
 		return envpatch.Plan{}, err
 	}
@@ -97,7 +99,8 @@ func (d *Daemon) envPatchVars(p registry.Project, w envWorktree, cfg recipe.Reso
 // tests won't use, for a warning.
 func (d *Daemon) planTestEnvPatch(p registry.Project, w envWorktree) (plan envpatch.Plan, missing string, err error) {
 	cfg, err := recipe.ResolveDir(w.dir)
-	if err != nil || len(cfg.Env) == 0 {
+	templates := cfg.EnvFor(w.main)
+	if err != nil || len(templates) == 0 {
 		return envpatch.Plan{}, "", err
 	}
 	testDB, ok := worktreeTestDatabase(p, w, cfg)
@@ -106,7 +109,7 @@ func (d *Daemon) planTestEnvPatch(p registry.Project, w envWorktree) (plan envpa
 	}
 	vars := d.envPatchVars(p, w, cfg)
 	vars["db"] = testDB
-	values, err := envpatch.RenderAll(cfg.Env, vars)
+	values, err := envpatch.RenderAll(templates, vars)
 	if err != nil {
 		return envpatch.Plan{}, "", err
 	}
@@ -136,46 +139,65 @@ func testEnvWarning(p registry.Project, testDB string) string {
 // logging failures. It runs whenever the daemon starts serving a Worktree
 // (at daemon start, on Link and on discovery) and whenever a Worktree's
 // Processes start, so template changes apply then. Re-applying a patch that
-// is in place changes nothing.
-func (d *Daemon) applyEnvPatch(p registry.Project, w envWorktree) {
+// is in place changes nothing. It reports whether it changed .env.
+func (d *Daemon) applyEnvPatch(p registry.Project, w envWorktree) (changed bool) {
 	plan, err := d.planEnvPatch(p, w)
 	if err == nil {
-		err = plan.Apply()
+		err = d.applyPlan(p, plan)
 	}
 	if err != nil {
 		d.log.Error("applying the Env Patch", "project", p.Name, "worktree", w.dir, "err", err)
 	} else if !plan.Empty() {
 		d.log.Info("applied the Env Patch", "project", p.Name, "path", plan.Path)
+		changed = true
 	}
 	testPlan, _, err := d.planTestEnvPatch(p, w)
 	if err == nil {
-		err = testPlan.Apply()
+		err = d.applyPlan(p, testPlan)
 	}
 	if err != nil {
 		d.log.Error("applying the Env Patch to .env.testing", "project", p.Name, "worktree", w.dir, "err", err)
 	} else if !testPlan.Empty() {
 		d.log.Info("applied the Env Patch", "project", p.Name, "path", testPlan.Path)
 	}
+	return changed
+}
+
+// applyPlan applies an Env Patch plan of one of p's Worktrees. The backup
+// of the original that the first patch makes holds the developer's secrets,
+// and Laravel's .gitignore doesn't cover it, so its name goes into the
+// repository's .git/info/exclude (not .gitignore, which is committed).
+func (d *Daemon) applyPlan(p registry.Project, plan envpatch.Plan) error {
+	if err := plan.Apply(); err != nil {
+		return err
+	}
+	if plan.Backup != "" {
+		err := gitrepo.Exclude(p.Path, "*"+envpatch.BackupSuffix, "Portby's backups of the env files it patches (they hold secrets)")
+		if err != nil {
+			d.log.Warn("excluding Env Patch backups from git", "project", p.Name, "err", err)
+		}
+	}
+	return nil
 }
 
 // applyServedEnvPatch re-applies the Env Patch of the Worktree served as s,
-// before its Processes start, so template changes apply at every start.
-func (d *Daemon) applyServedEnvPatch(s *served) {
+// before its Processes start, so template changes apply at every start. It
+// reports whether it changed .env.
+func (d *Daemon) applyServedEnvPatch(s *served) bool {
 	for _, p := range d.registry.Projects() {
 		if p.Name != s.project {
 			continue
 		}
 		if s.dir == p.Path {
-			d.applyEnvPatch(p, mainEnvWorktree(p))
-			return
+			return d.applyEnvPatch(p, mainEnvWorktree(p))
 		}
 		for _, w := range d.registry.Worktrees(p.Path) {
 			if w.Path == s.dir {
-				d.applyEnvPatch(p, linkedEnvWorktree(p, w))
-				return
+				return d.applyEnvPatch(p, linkedEnvWorktree(p, w))
 			}
 		}
 	}
+	return false
 }
 
 // projectEnvWorktrees are the Project's Worktrees as they will be once

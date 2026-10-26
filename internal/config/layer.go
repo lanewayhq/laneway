@@ -49,6 +49,12 @@ type Layer struct {
 	// keyed by env key ([env] table). Values are templates such as
 	// "{url}"; see envpatch.Variables.
 	Env map[string]string `toml:"env"`
+	// LinkedEnv is more of the Env Patch, only for the Worktrees other than
+	// the main one ([linked_env] table): the main Worktree's .env keeps its
+	// own values of these keys. A key in both tables takes this one there.
+	// Laravel's REDIS_PREFIX is one: each other Worktree needs its own, but
+	// the main Worktree keeps Laravel's default.
+	LinkedEnv map[string]string `toml:"linked_env"`
 	// Services are the Services the Project uses, keyed by engine
 	// ([services] table), each with its version: redis = "7". Every
 	// Project using redis:7 shares one container.
@@ -122,6 +128,11 @@ type ProcessLayer struct {
 	// Primary Process, which always does, it is served at
 	// <process>.<domain>. Processes that aren't HTTP get no port.
 	HTTP *bool `toml:"http"`
+	// StaticDir is a directory, relative to the Worktree, whose files
+	// Portby serves itself for requests to this HTTP Process, such as
+	// Laravel's "public": a GET or HEAD for a path that is an existing file
+	// there (not a directory, not a .php script) never reaches the Process.
+	StaticDir *string `toml:"static_dir"`
 }
 
 // StartModes are the valid values of processes.<name>.start_mode.
@@ -164,7 +175,7 @@ func ParseLayer(source string, data []byte) (Layer, error) {
 		return Layer{}, decodeError(source, err)
 	}
 	// The decoder silently skips a non-table value for a map field.
-	for _, key := range append([]toml.Key{{"processes"}, {"env"}, {"database"}, {"services"}}, processKeys(l)...) {
+	for _, key := range append([]toml.Key{{"processes"}, {"env"}, {"linked_env"}, {"database"}, {"services"}}, processKeys(l)...) {
 		if t := md.Type(key...); t != "" && t != "Hash" {
 			return Layer{}, fmt.Errorf("%s: %s must be a table, not a %s", source, key, strings.ToLower(t))
 		}
@@ -222,12 +233,17 @@ func (l Layer) validate() error {
 			return fmt.Errorf("on_remove[%d] is empty", i)
 		}
 	}
-	for _, k := range slices.Sorted(maps.Keys(l.Env)) {
-		if !envKey.MatchString(k) {
-			return fmt.Errorf("env.%s: an env key must be letters, digits and _ and not start with a digit", key(k))
-		}
-		if err := envpatch.CheckTemplate(l.Env[k]); err != nil {
-			return fmt.Errorf("env.%s: %w", key(k), err)
+	for _, env := range []struct {
+		table     string
+		templates map[string]string
+	}{{"env", l.Env}, {"linked_env", l.LinkedEnv}} {
+		for _, k := range slices.Sorted(maps.Keys(env.templates)) {
+			if !envKey.MatchString(k) {
+				return fmt.Errorf("%s.%s: an env key must be letters, digits and _ and not start with a digit", env.table, key(k))
+			}
+			if err := envpatch.CheckTemplate(env.templates[k]); err != nil {
+				return fmt.Errorf("%s.%s: %w", env.table, key(k), err)
+			}
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(l.Services)) {
@@ -247,6 +263,11 @@ func (l Layer) validate() error {
 		}
 		if p.StartMode != nil && !slices.Contains(StartModes, *p.StartMode) {
 			return fmt.Errorf("processes.%s.start_mode must be lazy, always or manual, not %q", name, *p.StartMode)
+		}
+		if p.StaticDir != nil {
+			if err := insideWorktree("processes."+name+".static_dir", *p.StaticDir, "public"); err != nil {
+				return err
+			}
 		}
 		if p.Primary != nil && *p.Primary {
 			primaries = append(primaries, "processes."+name+".primary")
@@ -276,12 +297,19 @@ func (db *DatabaseLayer) validate() error {
 		return fmt.Errorf("database.test must be %s, not %q", oneOf(DatabaseTests), *db.Test)
 	}
 	if db.Path != nil {
-		switch path := filepath.Clean(*db.Path); {
-		case strings.TrimSpace(*db.Path) == "":
-			return errors.New("database.path is empty")
-		case filepath.IsAbs(path) || path == ".." || strings.HasPrefix(path, "../"):
-			return fmt.Errorf("database.path must be inside the Worktree, relative to it, such as \"database/database.sqlite\", not %q", *db.Path)
-		}
+		return insideWorktree("database.path", *db.Path, "database/database.sqlite")
+	}
+	return nil
+}
+
+// insideWorktree checks that the value of key is a path inside the Worktree,
+// relative to it, such as example.
+func insideWorktree(key, value, example string) error {
+	switch path := filepath.Clean(value); {
+	case strings.TrimSpace(value) == "":
+		return fmt.Errorf("%s is empty", key)
+	case filepath.IsAbs(path) || path == ".." || strings.HasPrefix(path, "../"):
+		return fmt.Errorf("%s must be inside the Worktree, relative to it, such as %q, not %q", key, example, value)
 	}
 	return nil
 }
