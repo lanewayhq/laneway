@@ -5,12 +5,17 @@
 // Requests to /ws are upgraded to a WebSocket that echoes back every byte it
 // receives.
 //
-// With --exit-after it exits with status 1 that long after it starts
-// listening, like an app that crashes once it is up.
+// With --exit-when it exits with status 1 once the given file exists
+// (checked from when it starts listening), like an app that crashes once it
+// is up. The test decides when, so the crash can't race the test's requests.
 //
 // With --bind-only it stands in for an app that never finishes booting: it
 // binds the port, so nothing else can take it, but never listens, so
 // connections are refused.
+//
+// It exits when the process that started it (the daemon) is gone, so a test
+// binary that is killed (a timeout, Ctrl-C) doesn't leave it running. Start
+// it with `exec` for that to work.
 package main
 
 import (
@@ -45,8 +50,9 @@ func main() {
 	name := flag.String("name", "testserver", "name to report in responses")
 	delay := flag.Duration("delay", 0, "how long to wait before listening")
 	bindOnly := flag.Bool("bind-only", false, "bind the port but never listen")
-	exitAfter := flag.Duration("exit-after", 0, "exit with status 1 this long after listening")
+	exitWhen := flag.String("exit-when", "", "once listening, exit with status 1 as soon as this file exists")
 	flag.Parse()
+	go exitWhenOrphaned()
 	if *port == "" {
 		fmt.Fprintln(os.Stderr, "testserver: no --port and no $PORT")
 		os.Exit(2)
@@ -65,11 +71,16 @@ func main() {
 		os.Exit(1)
 	}
 	_, listenPort, _ := net.SplitHostPort(ln.Addr().String())
-	if *exitAfter > 0 {
-		time.AfterFunc(*exitAfter, func() {
-			fmt.Fprintln(os.Stderr, "testserver: exiting as asked")
-			os.Exit(1)
-		})
+	if *exitWhen != "" {
+		go func() {
+			for {
+				if _, err := os.Stat(*exitWhen); err == nil {
+					fmt.Fprintln(os.Stderr, "testserver: exiting as asked")
+					os.Exit(1)
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		}()
 	}
 	err = http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/ws" {
@@ -88,6 +99,19 @@ func main() {
 	}))
 	fmt.Fprintln(os.Stderr, "testserver:", err)
 	os.Exit(1)
+}
+
+// exitWhenOrphaned exits once the process that started testserver has
+// exited, which shows as testserver getting a new parent.
+func exitWhenOrphaned() {
+	parent := os.Getppid()
+	for {
+		time.Sleep(100 * time.Millisecond)
+		if os.Getppid() != parent {
+			fmt.Fprintln(os.Stderr, "testserver: whatever started me has exited")
+			os.Exit(1)
+		}
+	}
 }
 
 // bind binds a TCP socket to 127.0.0.1:port without listening on it.

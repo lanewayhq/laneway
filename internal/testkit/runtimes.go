@@ -17,7 +17,7 @@ var systemTools = []string{
 	"sh", "awk", "basename", "cat", "chmod", "cp", "cut", "date", "dirname", "echo",
 	"env", "expr", "false", "find", "git", "grep", "head", "id", "kill", "ln", "ls",
 	"mkdir", "mktemp", "mv", "printf", "pwd", "readlink", "realpath", "rm", "sed",
-	"seq", "sleep", "sort", "stat", "tail", "tee", "test", "touch", "tr", "true",
+	"seq", "setsid", "sleep", "sort", "stat", "tail", "tee", "test", "touch", "tr", "true",
 	"uniq", "wc", "xargs",
 }
 

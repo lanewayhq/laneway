@@ -59,20 +59,29 @@ func assertLines(t *testing.T, out string, want ...string) {
 func TestLogsWithoutAProcessInterleaveAllOfThemWithNamePrefixes(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
-	// Two Processes take turns writing, handing over through files so the
-	// order they wrote in is known.
+	// Two Processes take turns writing. Each line waits for a file the test
+	// creates once Portby shows the line before it: Portby orders lines as
+	// it reads them from each Process's pipe, which can't tell which of two
+	// Processes wrote first when they write within moments of each other.
 	waitFor := func(file string) string { return "while [ ! -e " + file + " ]; do sleep 0.01; done; " }
 	repo := gitfixture.New(t, "logs-interleave").
 		WriteFile("portby.toml", "[processes.web]\nprimary = true\ncommand = \""+
-			"echo first; touch a; "+waitFor("b")+"echo third; touch c; exec sleep 600\"\n"+
+			"echo first; "+waitFor("3")+"echo third; exec sleep 600\"\n"+
 			"[processes.worker]\ncommand = \""+
-			waitFor("a")+"echo second; touch b; "+waitFor("c")+"echo fourth; exec sleep 600\"\n").
+			waitFor("2")+"echo second; "+waitFor("4")+"echo fourth; exec sleep 600\"\n").
 		Commit("declare two Processes")
 
 	d.MustRunCLI(repo.Dir, "link")
 	startByBrowsing(t, d, "logs-interleave.localhost")
 
-	out := waitForLogs(t, d, repo.Dir, []string{"logs"}, "fourth")
+	waitForLogs(t, d, repo.Dir, []string{"logs"}, "web | first")
+	for _, next := range []struct{ file, line string }{
+		{"2", "worker | second"}, {"3", "web | third"}, {"4", "worker | fourth"},
+	} {
+		repo.WriteFile(next.file, "")
+		waitForLogs(t, d, repo.Dir, []string{"logs"}, next.line)
+	}
+	out := d.MustRunCLI(repo.Dir, "logs").Stdout
 	assertLines(t, out, "web | first", "worker | second", "web | third", "worker | fourth")
 }
 

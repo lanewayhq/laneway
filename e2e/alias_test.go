@@ -192,9 +192,12 @@ func TestAVisitToAnAliasOrAProcessStartsTheWorktree(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := routedProject(t, "alias-lazy")
-	repo.AddWorktree("other")
+	other := repo.AddWorktree("other")
 	d.MustRunCLI(repo.Dir, "link")
 	d.MustRunCLI(repo.Dir, "worktree", "alias", "demo")
+	// Until then a visit gets the setup page, not the starting page.
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	d.MustRunCLI(other.Dir, "worktree", "ready")
 
 	for url, want := range map[string]string{
 		"https://demo.alias-lazy.localhost/":       "web@alias-lazy",

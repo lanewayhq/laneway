@@ -63,6 +63,20 @@ func Encode(w io.Writer, l Layer) error {
 			fmt.Fprintf(&b, "disabled = %t\n", *p.Disabled)
 		}
 	}
+	if db := l.Database; db != nil {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString("[database]\n")
+		for _, kv := range []struct {
+			key   string
+			value *string
+		}{{"engine", db.Engine}, {"path", db.Path}, {"worktree", db.Worktree}} {
+			if kv.value != nil {
+				fmt.Fprintf(&b, "%s = %s\n", kv.key, quote(*kv.value))
+			}
+		}
+	}
 	if len(l.Env) > 0 {
 		if b.Len() > 0 {
 			b.WriteString("\n")

@@ -21,6 +21,7 @@ import (
 
 	"github.com/mrsafalpiya/portby.dev/internal/clock"
 	"github.com/mrsafalpiya/portby.dev/internal/container"
+	"github.com/mrsafalpiya/portby.dev/internal/dashboard"
 	"github.com/mrsafalpiya/portby.dev/internal/paths"
 	"github.com/mrsafalpiya/portby.dev/internal/platform"
 	"github.com/mrsafalpiya/portby.dev/internal/provision"
@@ -68,6 +69,10 @@ type Config struct {
 	// ContainerPrefix starts the names of Services' containers and
 	// volumes; "portby" if empty.
 	ContainerPrefix string
+	// DashboardDomain is where the Dashboard is served,
+	// dashboard.DefaultDomain if empty. Tests running several daemons at
+	// once give each its own, since Caddy's certificate cache is shared.
+	DashboardDomain string
 }
 
 // DefaultServiceHosts are where Services listen: loopback only, IPv4 and
@@ -84,6 +89,8 @@ type Daemon struct {
 	registry *registry.Registry
 	server   *http.Server
 	listener net.Listener
+
+	dashboard *http.Server // see dashboard.go
 
 	supervisor *supervisor.Supervisor
 	proxy      *proxy.Proxy
@@ -122,6 +129,9 @@ func Start(cfg Config) (*Daemon, error) {
 	}
 	if cfg.ProxyAddr == "" {
 		cfg.ProxyAddr = DefaultProxyAddr
+	}
+	if cfg.DashboardDomain == "" {
+		cfg.DashboardDomain = dashboard.DefaultDomain
 	}
 	if cfg.Clock == nil {
 		cfg.Clock = clock.Real()
@@ -183,12 +193,18 @@ func Start(cfg Config) (*Daemon, error) {
 		ln.Close()
 		return nil, err
 	}
+	if err := d.startDashboard(); err != nil {
+		d.proxy.Stop()
+		ln.Close()
+		return nil, err
+	}
 	d.watcher, err = watcher.New(watcher.Config{
 		Log:            log,
 		Changed:        d.worktreesChanged,
 		RescanInterval: cfg.WorktreeRescanInterval,
 	})
 	if err != nil {
+		d.dashboard.Close()
 		d.proxy.Stop()
 		d.services.Close(context.Background())
 		ln.Close()
@@ -237,6 +253,10 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 	if werr := d.Wait(); err == nil {
 		err = werr
 	}
+	if derr := d.dashboard.Shutdown(ctx); err == nil {
+		err = derr
+	}
+	os.Remove(d.dashboardSocket())
 	d.watcher.Close()
 	if perr := d.proxy.Stop(); err == nil {
 		err = perr

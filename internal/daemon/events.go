@@ -1,0 +1,89 @@
+package daemon
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"time"
+
+	"github.com/mrsafalpiya/portby.dev/internal/api"
+	"github.com/mrsafalpiya/portby.dev/internal/recipe"
+)
+
+// eventsInterval is how often GET /v1/events looks for changes. It is
+// polling, so it uses real time, not the clock.
+const eventsInterval = 500 * time.Millisecond
+
+// projectList is every Project with its Worktrees' states: the body of
+// GET /v1/projects and of each `projects` event.
+func (d *Daemon) projectList() api.ProjectList {
+	list := api.ProjectList{Projects: []api.Project{}}
+	for _, p := range d.registry.Projects() {
+		ap := d.apiProject(p)
+		for i, w := range ap.Worktrees {
+			w = d.withState(w)
+			w.Declared = declaredProcesses(w.Path)
+			ap.Worktrees[i] = w
+		}
+		list.Projects = append(list.Projects, ap)
+	}
+	return list
+}
+
+// declaredProcesses are the Processes the config of the Worktree at dir
+// declares; nil if it can't be read.
+func declaredProcesses(dir string) []api.DeclaredProcess {
+	cfg, err := recipe.ResolveDir(dir)
+	if err != nil {
+		return nil
+	}
+	var procs []api.DeclaredProcess
+	for _, p := range cfg.Processes {
+		procs = append(procs, api.DeclaredProcess{
+			Name: p.Name, StartMode: p.StartMode.String(), Primary: p.Primary, HTTP: p.HTTP,
+		})
+	}
+	return procs
+}
+
+// handleEvents is GET /v1/events, a stream of server-sent events: a
+// `projects` event (data = the api.ProjectList GET /v1/projects returns)
+// at once, then another whenever that changes. It ends when the client goes
+// away or the daemon shuts down.
+//
+// Changes are found by comparing the list every eventsInterval, so
+// anything GET /v1/projects reports shows up here without its code having
+// to announce it.
+func (d *Daemon) handleEvents(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	rc := http.NewResponseController(w)
+	tick := time.NewTicker(eventsInterval)
+	defer tick.Stop()
+	var last []byte
+	for {
+		b, err := json.Marshal(d.projectList())
+		if err != nil {
+			d.log.Error("encoding projects event", "err", err)
+			return
+		}
+		if !bytes.Equal(b, last) {
+			if _, err := fmt.Fprintf(w, "event: projects\ndata: %s\n\n", b); err != nil {
+				return
+			}
+			if err := rc.Flush(); err != nil {
+				return
+			}
+			last = b
+		}
+		select {
+		case <-tick.C:
+		case <-r.Context().Done():
+			return
+		case <-d.closing:
+			return
+		}
+	}
+}
