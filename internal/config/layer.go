@@ -14,6 +14,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/mrsafalpiya/portby.dev/internal/database"
 	"github.com/mrsafalpiya/portby.dev/internal/envpatch"
 	"github.com/mrsafalpiya/portby.dev/internal/service"
 )
@@ -99,7 +100,7 @@ type DatabaseLayer struct {
 }
 
 // DatabaseEngines are the values database.engine accepts.
-var DatabaseEngines = []string{"sqlite", "postgres", "mysql"}
+var DatabaseEngines = database.EngineNames()
 
 // DatabaseModes are the values database.worktree accepts.
 var DatabaseModes = []string{"clone", "fresh", "shared"}

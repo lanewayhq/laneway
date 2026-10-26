@@ -2,8 +2,10 @@ package recipe
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/mrsafalpiya/portby.dev/internal/config"
@@ -112,30 +114,34 @@ func laravelServices(l *config.Layer, env laravelEnv) {
 	l.Env["MAIL_PORT"] = "{mailpit_port}"
 }
 
+// laravelConnections maps the Laravel DB_CONNECTION values Portby has a
+// database engine (database.Engines) for to that engine.
+var laravelConnections = map[string]string{"sqlite": "sqlite", "pgsql": "postgres", "mysql": "mysql"}
+
 // laravelDatabase gives the Project the database its DB_CONNECTION names: a
-// database in the Postgres or MySQL Service, or a SQLite file per Worktree.
+// database in a database Service (Postgres, MySQL), or a SQLite file per
+// Worktree.
 func laravelDatabase(l *config.Layer, dir string, env laravelEnv) {
 	connection := env.setting("DB_CONNECTION", "sqlite")
-	switch connection {
-	case "sqlite":
-		l.Database = &config.DatabaseLayer{Engine: ptr("sqlite"), Path: ptr(sqlitePath(dir, env))}
-		l.Env["DB_CONNECTION"] = connection
-		l.Env["DB_DATABASE"] = "{db}"
-		return
-	case "pgsql":
-		l.Database = &config.DatabaseLayer{Engine: ptr("postgres")}
-	case "mysql":
-		l.Database = &config.DatabaseLayer{Engine: ptr("mysql")}
-	default:
+	engine, ok := laravelConnections[connection]
+	if !ok {
+		known := slices.Sorted(maps.Keys(laravelConnections))
 		l.Warnings = append(l.Warnings, fmt.Sprintf("%s: DB_CONNECTION is %q, which Portby has no database for "+
-			"(it knows sqlite, pgsql and mysql), so the Project's DB_ settings are left alone; "+
-			"set [database] in %s to use one of Portby's", l.Source, connection, config.FileName))
+			"(it knows %s and %s), so the Project's DB_ settings are left alone; "+
+			"set [database] in %s to use one of Portby's", l.Source, connection,
+			strings.Join(known[:len(known)-1], ", "), known[len(known)-1], config.FileName))
 		return
 	}
 	l.Env["DB_CONNECTION"] = connection
+	l.Env["DB_DATABASE"] = "{db}"
+	if _, inService := service.Lookup(engine); !inService {
+		// A file in each Worktree.
+		l.Database = &config.DatabaseLayer{Engine: ptr(engine), Path: ptr(sqlitePath(dir, env))}
+		return
+	}
+	l.Database = &config.DatabaseLayer{Engine: ptr(engine)}
 	l.Env["DB_HOST"] = "{db_host}"
 	l.Env["DB_PORT"] = "{db_port}"
-	l.Env["DB_DATABASE"] = "{db}"
 	l.Env["DB_USERNAME"] = "{db_username}"
 	l.Env["DB_PASSWORD"] = "{db_password}"
 }

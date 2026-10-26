@@ -15,20 +15,11 @@ import (
 )
 
 // databaseEngine is the Engine of the database config describes, or nil if
-// the Project has no database. Each engine adds a case here.
+// the Project has no database (engines are listed in database.Engines).
 // server is how to reach the Service a Service engine's databases live in;
 // naming databases doesn't need it, so the zero Server will do for that.
 func databaseEngine(db recipe.Database, server database.Server) database.Engine {
-	switch db.Engine {
-	case "sqlite":
-		return database.SQLite{Path: db.Path}
-	case "postgres":
-		return database.Postgres{Server: server}
-	case "mysql":
-		return database.MySQL{Server: server}
-	default:
-		return nil
-	}
+	return database.New(db.Engine, db.Path, server)
 }
 
 // worktreeDatabase is the database the Worktree w uses, which the Env Patch's
