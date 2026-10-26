@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -36,6 +37,9 @@ type Layer struct {
 	Name *string `toml:"name"`
 	// Processes are keyed by Process name ([processes.<name>] tables).
 	Processes map[string]ProcessLayer `toml:"processes"`
+	// StartTimeout is how long the Primary Process gets to accept
+	// connections when its Worktree starts, such as "90s".
+	StartTimeout *time.Duration `toml:"start_timeout"`
 	// Env is the Env Patch: the keys Portby owns in each Worktree's .env,
 	// keyed by env key ([env] table). Values are templates such as
 	// "{url}"; see envpatch.Variables.
@@ -129,6 +133,9 @@ func (l Layer) validate() error {
 	if l.Name != nil && strings.TrimSpace(*l.Name) == "" {
 		return errors.New("name is empty")
 	}
+	if l.StartTimeout != nil && *l.StartTimeout <= 0 {
+		return fmt.Errorf("start_timeout must be positive, such as \"90s\", not %s", *l.StartTimeout)
+	}
 	for _, k := range slices.Sorted(maps.Keys(l.Env)) {
 		if !envKey.MatchString(k) {
 			return fmt.Errorf("env.%s: an env key must be letters, digits and _ and not start with a digit", key(k))
@@ -163,6 +170,9 @@ var typeError = regexp.MustCompile(`^toml: line (\d+) \(last key "([^"]+)"\): (.
 // decodeError rewrites a TOML error as "<source>: line N: <key>: <problem>".
 func decodeError(source string, err error) error {
 	var pe toml.ParseError
+	if errors.As(err, &pe) && pe.LastKey != "" {
+		return fmt.Errorf("%s: line %d: %s: %s", source, pe.Position.Line, pe.LastKey, pe.Message)
+	}
 	if errors.As(err, &pe) {
 		return fmt.Errorf("%s: line %d: %s", source, pe.Position.Line, pe.Message)
 	}

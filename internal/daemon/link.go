@@ -72,7 +72,7 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 	case err != nil:
 		return api.LinkResponse{}, err
 	default:
-		d.startProject(ctx, project)
+		d.serveProject(project)
 		d.syncWorktrees(ctx, project)
 	}
 	res.Project = d.apiProject(project)

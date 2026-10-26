@@ -20,8 +20,9 @@ func (d *Daemon) worktreesChanged(main string) {
 }
 
 // syncWorktrees reconciles the Project's Worktrees with git's worktree
-// registry: Worktrees that appeared are recorded and their Processes started,
-// and Worktrees that are gone are forgotten and their Processes stopped. It
+// registry: Worktrees that appeared are recorded and served (their Processes
+// start on the first request), and Worktrees that are gone are forgotten and
+// their Processes stopped. It
 // runs at daemon start, on Link and whenever the Worktree Watcher reports a
 // possible change.
 func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
@@ -48,7 +49,7 @@ func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
 	for _, w := range changes.Added {
 		d.log.Info("Worktree discovered", "project", p.Name, "worktree", w.Name, "path", w.Path)
 		d.applyEnvPatch(p, linkedEnvWorktree(p, w))
-		d.startWorktree(ctx, p, worktreeDomain(p, w), w.Path)
+		d.serveWorktree(p, worktreeDomain(p, w), w.Path)
 	}
 	if err := d.registry.ApplyWorktrees(changes); err != nil {
 		d.log.Error("recording Worktrees", "project", p.Name, "err", err)
@@ -95,10 +96,10 @@ func (d *Daemon) foundWorktrees(ctx context.Context, p registry.Project) (found 
 	return found, pending, nil
 }
 
-// startKnownWorktrees starts the Processes of the Project's linked Worktrees
-// that the Registry already knew about, at daemon start. (syncWorktrees only
-// starts the ones it discovers.)
-func (d *Daemon) startKnownWorktrees(ctx context.Context, p registry.Project) {
+// serveKnownWorktrees serves the Project's linked Worktrees that the Registry
+// already knew about, at daemon start. (syncWorktrees only serves the ones it
+// discovers.)
+func (d *Daemon) serveKnownWorktrees(p registry.Project) {
 	d.syncMu.Lock()
 	defer d.syncMu.Unlock()
 	for _, w := range d.registry.Worktrees(p.Path) {
@@ -108,7 +109,7 @@ func (d *Daemon) startKnownWorktrees(ctx context.Context, p registry.Project) {
 		d.servedMu.Unlock()
 		if !ok {
 			d.applyEnvPatch(p, linkedEnvWorktree(p, w))
-			d.startWorktree(ctx, p, domain, w.Path)
+			d.serveWorktree(p, domain, w.Path)
 		}
 	}
 }

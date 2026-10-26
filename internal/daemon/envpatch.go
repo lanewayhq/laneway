@@ -63,9 +63,9 @@ func (d *Daemon) planEnvPatch(p registry.Project, w envWorktree) (envpatch.Plan,
 }
 
 // applyEnvPatch brings the Worktree's .env up to date with its Env Patch,
-// logging failures. It runs whenever the daemon is about to start a
-// Worktree (at daemon start, on Link and on discovery), so template changes
-// apply then. Re-applying a patch that is in place changes nothing.
+// logging failures. It runs whenever the daemon starts serving a Worktree
+// (at daemon start, on Link and on discovery), so template changes apply
+// then. Re-applying a patch that is in place changes nothing.
 func (d *Daemon) applyEnvPatch(p registry.Project, w envWorktree) {
 	plan, err := d.planEnvPatch(p, w)
 	if err == nil {

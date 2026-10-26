@@ -238,6 +238,8 @@ func TestEachWorktreeHasItsOwnProcessStatesAndLogs(t *testing.T) {
 	d.MustRunCLI(repo.Dir, "link")
 	wt := repo.AddWorktree("feature-y")
 	waitForWorktree(t, d, "wt-logs", "feature-y")
+	startByBrowsing(t, d, "feature-y.wt-logs.localhost")
+	startByBrowsing(t, d, "wt-logs.localhost")
 
 	assertLines(t, waitForLogs(t, d, wt.Dir, []string{"logs", "web"}, "boot"), "boot feature-y")
 	assertLines(t, waitForLogs(t, d, repo.Dir, []string{"logs", "web"}, "boot"), "boot wt-logs")

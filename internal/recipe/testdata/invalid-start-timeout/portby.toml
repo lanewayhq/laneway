@@ -1,0 +1,4 @@
+start_timeout = "soon"
+
+[processes.web]
+command = "serve"
