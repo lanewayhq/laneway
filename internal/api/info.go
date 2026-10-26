@@ -31,10 +31,8 @@ type Info struct {
 	Aliases []InfoAlias `json:"aliases"`
 	// Setup is where the Worktree is in setup; null with Domain.
 	Setup *InfoSetup `json:"setup"`
-	// State is whether the Worktree's Processes run: "stopped" (nothing
-	// has started it, or `portby down` stopped it), "starting", "running"
-	// or "idle" (it had no traffic for its idle timeout, so its lazy
-	// Processes were stopped; the next request starts them). "" with
+	// State is whether the Worktree's Processes run, one of the Worktree*
+	// run states: "stopped", "starting", "running" or "idle". "" with
 	// Domain.
 	State string `json:"state"`
 	// Processes are the Processes the Worktree's config declares, sorted

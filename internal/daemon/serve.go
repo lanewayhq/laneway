@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/mrsafalpiya/portby.dev/internal/activity"
+	"github.com/mrsafalpiya/portby.dev/internal/api"
 	"github.com/mrsafalpiya/portby.dev/internal/config"
 	"github.com/mrsafalpiya/portby.dev/internal/naming"
 	"github.com/mrsafalpiya/portby.dev/internal/prepare"
@@ -65,16 +66,16 @@ func (s *served) state() string {
 		select {
 		case <-s.start.done:
 			if s.start.err != nil {
-				return "stopped"
+				return api.WorktreeStopped
 			}
-			return "running"
+			return api.WorktreeRunning
 		default:
-			return "starting"
+			return api.WorktreeStarting
 		}
 	case s.idle:
-		return "idle"
+		return api.WorktreeIdle
 	default:
-		return "stopped"
+		return api.WorktreeStopped
 	}
 }
 

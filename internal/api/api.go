@@ -69,10 +69,8 @@ type Worktree struct {
 	Main bool   `json:"main"`
 	// Domain is the hostname the Worktree is served at.
 	Domain string `json:"domain,omitempty"`
-	// State is "stopped" (nothing has started it, or `portby down`
-	// stopped it), "starting", "running" or "idle" (it had no traffic
-	// for its idle timeout, so its lazy Processes were stopped). Only
-	// GET /v1/projects and the up/down/restart routes fill it in.
+	// State is one of the Worktree* run states. Only GET /v1/projects
+	// and the up/down/restart routes fill it in.
 	State string `json:"state,omitempty"`
 	// Aliases are the Worktree's extra Domains, sorted.
 	Aliases []string `json:"aliases,omitempty"`
@@ -100,6 +98,18 @@ type DeclaredProcess struct {
 	// <name>.<domain>.
 	HTTP bool `json:"http,omitempty"`
 }
+
+// Worktree run states: whether a Worktree's Processes run.
+const (
+	// WorktreeStopped: nothing has started it, its last start failed, or
+	// `portby down` stopped it.
+	WorktreeStopped  = "stopped"
+	WorktreeStarting = "starting"
+	WorktreeRunning  = "running"
+	// WorktreeIdle: it had no traffic for its idle timeout, so its lazy
+	// Processes were stopped; the next request starts them.
+	WorktreeIdle = "idle"
+)
 
 // Setup states.
 const (
