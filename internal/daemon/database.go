@@ -97,11 +97,11 @@ func (d *Daemon) databaseServer(ctx context.Context, svc recipe.Service, out io.
 		return database.Server{}, nil, fmt.Errorf("Portby has no Service %q", svc.Engine)
 	}
 	d.serveServices([]recipe.Service{svc})
-	rs, err := d.registry.PlanService(svc.Engine, svc.Version, e.Ports(svc.Version))
+	rs, err := d.registry.PlanService(svc, e.Ports(svc.Version))
 	if err != nil {
 		return database.Server{}, nil, err
 	}
-	name := svc.Engine + ":" + svc.Version
+	name := svc.Name()
 	release := d.services.Use(name)
 	fmt.Fprintf(out, "starting the Service %s\n", name)
 	if err := d.services.Pull(ctx, name); err != nil {

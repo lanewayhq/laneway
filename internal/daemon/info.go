@@ -44,7 +44,7 @@ func (d *Daemon) info(ctx context.Context, dir string) (api.Info, error) {
 		info.Database = &api.InfoDatabase{Engine: wt.Database.Engine, Name: wt.Database.Name, Test: wt.Database.Test}
 		if cfgErr == nil {
 			if s, ok := cfg.DatabaseService(); ok {
-				info.Database.Service = s.Engine + ":" + s.Version
+				info.Database.Service = s.Name()
 			}
 		}
 	}
@@ -95,9 +95,9 @@ func (d *Daemon) infoServices(services []recipe.Service) []api.InfoService {
 		if !ok {
 			continue
 		}
-		st, ok := d.services.Status(s.Engine + ":" + s.Version)
+		st, ok := d.services.Status(s.Name())
 		if !ok {
-			rs, err := d.registry.PlanService(s.Engine, s.Version, e.Ports(s.Version))
+			rs, err := d.registry.PlanService(s, e.Ports(s.Version))
 			if err != nil {
 				continue
 			}

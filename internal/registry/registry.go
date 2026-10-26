@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/mrsafalpiya/portby.dev/internal/naming"
+	"github.com/mrsafalpiya/portby.dev/internal/service"
 )
 
 // Project is a Linked git repository.
@@ -381,10 +382,8 @@ func (r *Registry) RemoveAlias(a Alias) error {
 // Service is a Service and the port Portby listens on for it. Once a
 // Service has a port it keeps it, so connection settings never change.
 type Service struct {
-	// Engine and Version name the Service, such as redis and "7".
-	Engine  string `json:"engine"`
-	Version string `json:"version"`
-	Port    int    `json:"port"`
+	service.Ref
+	Port int `json:"port"`
 }
 
 // ErrNoServicePort means every candidate port is taken by other Services.
@@ -397,25 +396,25 @@ func (r *Registry) Services() []Service {
 	defer r.mu.Unlock()
 	out := slices.Clone(r.state.Services)
 	slices.SortFunc(out, func(a, b Service) int {
-		return strings.Compare(a.Engine+":"+a.Version, b.Engine+":"+b.Version)
+		return strings.Compare(a.Name(), b.Name())
 	})
 	return out
 }
 
 // PlanService returns the Service with the port it has, or else the first of
 // candidates no other Service has. It changes nothing.
-func (r *Registry) PlanService(engine, version string, candidates []int) (Service, error) {
+func (r *Registry) PlanService(ref service.Ref, candidates []int) (Service, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	svc, _, err := r.planServiceLocked(engine, version, candidates)
+	svc, _, err := r.planServiceLocked(ref, candidates)
 	return svc, err
 }
 
 // AddService is PlanService, recording the port the first time.
-func (r *Registry) AddService(engine, version string, candidates []int) (Service, error) {
+func (r *Registry) AddService(ref service.Ref, candidates []int) (Service, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	svc, known, err := r.planServiceLocked(engine, version, candidates)
+	svc, known, err := r.planServiceLocked(ref, candidates)
 	if err != nil || known {
 		return svc, err
 	}
@@ -428,29 +427,28 @@ func (r *Registry) AddService(engine, version string, candidates []int) (Service
 	return svc, nil
 }
 
-func (r *Registry) planServiceLocked(engine, version string, candidates []int) (Service, bool, error) {
+func (r *Registry) planServiceLocked(ref service.Ref, candidates []int) (Service, bool, error) {
 	taken := map[int]bool{}
 	for _, s := range r.state.Services {
-		if s.Engine == engine && s.Version == version {
+		if s.Ref == ref {
 			return s, true, nil
 		}
 		taken[s.Port] = true
 	}
 	for _, port := range candidates {
 		if !taken[port] {
-			return Service{Engine: engine, Version: version, Port: port}, false, nil
+			return Service{Ref: ref, Port: port}, false, nil
 		}
 	}
-	return Service{}, false, fmt.Errorf("%s:%s: %w", engine, version, ErrNoServicePort)
+	return Service{}, false, fmt.Errorf("%s: %w", ref.Name(), ErrNoServicePort)
 }
 
 // Orphan is a database left behind by a removed Worktree or an unlinked
 // Project, recorded so it can be dropped once its grace period is over.
 type Orphan struct {
-	// Engine and Version name the database Service it lives in, such as
-	// postgres and "18".
-	Engine   string `json:"engine"`
-	Version  string `json:"version"`
+	// Ref is the database Service it lives in, such as postgres:18 (stored
+	// as its engine and version).
+	service.Ref
 	Database string `json:"database"`
 	// ProjectName is the name of the Project it belonged to, and Worktree
 	// git's name for its Worktree ("" for the main Worktree).
@@ -464,7 +462,7 @@ type Orphan struct {
 
 // Same reports whether o and other are the same database.
 func (o Orphan) Same(other Orphan) bool {
-	return o.Engine == other.Engine && o.Version == other.Version && o.Database == other.Database
+	return o.Ref == other.Ref && o.Database == other.Database
 }
 
 // Orphans returns every Orphan, oldest first.

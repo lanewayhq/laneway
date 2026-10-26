@@ -39,9 +39,9 @@ func (d *Daemon) serveServices(services []recipe.Service) {
 		if !ok {
 			continue // config rejects unknown engines
 		}
-		rs, err := d.registry.AddService(s.Engine, s.Version, e.Ports(s.Version))
+		rs, err := d.registry.AddService(s, e.Ports(s.Version))
 		if err != nil {
-			d.log.Error("recording Service", "service", s.Engine+":"+s.Version, "err", err)
+			d.log.Error("recording Service", "service", s.Name(), "err", err)
 			continue
 		}
 		d.services.Serve(service.Service{Engine: e, Version: rs.Version, Port: rs.Port})
@@ -66,7 +66,7 @@ func (d *Daemon) serviceVars(services []recipe.Service) map[string]string {
 		if !ok {
 			continue
 		}
-		rs, err := d.registry.PlanService(s.Engine, s.Version, e.Ports(s.Version))
+		rs, err := d.registry.PlanService(s, e.Ports(s.Version))
 		if err != nil {
 			continue
 		}
@@ -87,7 +87,7 @@ func (d *Daemon) serviceHost() string {
 func (d *Daemon) useServices(services []recipe.Service) func() {
 	var releases []func()
 	for _, s := range services {
-		releases = append(releases, d.services.Use(s.Engine+":"+s.Version))
+		releases = append(releases, d.services.Use(s.Name()))
 	}
 	return sync.OnceFunc(func() {
 		for _, release := range releases {

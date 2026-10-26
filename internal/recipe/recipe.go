@@ -144,10 +144,7 @@ type Process struct {
 
 // Service is a Service the Project uses: an engine at a version, such as
 // redis at "7".
-type Service struct {
-	Engine  string
-	Version string
-}
+type Service = service.Ref
 
 // StartMode is when a Process runs. The zero value is Lazy.
 type StartMode string

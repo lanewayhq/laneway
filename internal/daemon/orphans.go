@@ -45,7 +45,7 @@ func worktreeOrphans(p registry.Project, w envWorktree, cfg recipe.Resolved, sin
 	if !ok {
 		return nil
 	}
-	o := registry.Orphan{Engine: svc.Engine, Version: svc.Version, ProjectName: p.Name, Worktree: w.name, Since: since}
+	o := registry.Orphan{Ref: svc, ProjectName: p.Name, Worktree: w.name, Since: since}
 	var out []registry.Orphan
 	main, own := e.Database(p.Name, "", p.Path), e.Database(p.Name, w.label, w.dir)
 	if database.Mode(cfg.Database.Mode).Use(main, own) == own {
@@ -123,15 +123,15 @@ func (d *Daemon) addOrphans(orphans []registry.Orphan) {
 // leftover copies.
 func (d *Daemon) checkOrphans(ctx context.Context, orphans []registry.Orphan) {
 	for _, batch := range byService(orphans) {
-		e, release, err := d.dropper(ctx, batch[0].Engine, batch[0].Version)
+		e, release, err := d.dropper(ctx, batch[0].Ref)
 		if err != nil {
-			d.log.Error("checking Orphans", "service", batch[0].Engine+":"+batch[0].Version, "err", err)
+			d.log.Error("checking Orphans", "service", batch[0].Ref.Name(), "err", err)
 			continue
 		}
 		names, err := e.Databases(ctx)
 		release()
 		if err != nil {
-			d.log.Error("checking Orphans", "service", batch[0].Engine+":"+batch[0].Version, "err", err)
+			d.log.Error("checking Orphans", "service", batch[0].Ref.Name(), "err", err)
 			continue
 		}
 		d.orphanMu.Lock()
@@ -242,8 +242,8 @@ func (d *Daemon) dropOrphans(ctx context.Context, orphans []registry.Orphan) (dr
 	d.orphanDropMu.Lock()
 	defer d.orphanDropMu.Unlock()
 	for _, batch := range byService(orphans) {
-		service := batch[0].Engine + ":" + batch[0].Version
-		e, release, err := d.dropper(ctx, batch[0].Engine, batch[0].Version)
+		service := batch[0].Ref.Name()
+		e, release, err := d.dropper(ctx, batch[0].Ref)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("dropping Orphans in %s: %w", service, err))
 			continue
@@ -306,18 +306,17 @@ func byService(orphans []registry.Orphan) [][]registry.Orphan {
 	return groups
 }
 
-// dropper starts the database Service engine:version and returns the
-// Engine of its databases. Call release once done with it, so the Service
-// can go Idle.
-func (d *Daemon) dropper(ctx context.Context, engine, version string) (e database.Dropper, release func(), err error) {
-	server, release, err := d.databaseServer(ctx, recipe.Service{Engine: engine, Version: version}, io.Discard)
+// dropper starts the database Service svc and returns the Engine of its
+// databases. Call release once done with it, so the Service can go Idle.
+func (d *Daemon) dropper(ctx context.Context, svc recipe.Service) (e database.Dropper, release func(), err error) {
+	server, release, err := d.databaseServer(ctx, svc, io.Discard)
 	if err != nil {
 		return nil, nil, err
 	}
-	e, ok := databaseEngine(recipe.Database{Engine: engine}, server).(database.Dropper)
+	e, ok := databaseEngine(recipe.Database{Engine: svc.Engine}, server).(database.Dropper)
 	if !ok {
 		release()
-		return nil, nil, fmt.Errorf("Portby can't drop %s databases", engine)
+		return nil, nil, fmt.Errorf("Portby can't drop %s databases", svc.Engine)
 	}
 	return e, release, nil
 }
@@ -336,7 +335,7 @@ func (d *Daemon) gc(ctx context.Context, req api.GCRequest) api.GCResponse {
 		var chosen []registry.Orphan
 		for _, ref := range req.Databases {
 			i := slices.IndexFunc(candidates, func(o registry.Orphan) bool {
-				return o.Engine+":"+o.Version == ref.Service && o.Database == ref.Database
+				return o.Ref.Name() == ref.Service && o.Database == ref.Database
 			})
 			if i < 0 {
 				errs = append(errs, fmt.Errorf("%s in %s is not an Orphan (any more)", ref.Database, ref.Service))
@@ -406,15 +405,15 @@ func (d *Daemon) leftoverCopies(ctx context.Context) ([]registry.Orphan, []error
 	var leftovers []registry.Orphan
 	var errs []error
 	for _, s := range services {
-		e, release, err := d.dropper(ctx, s.svc.Engine, s.svc.Version)
+		e, release, err := d.dropper(ctx, s.svc)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("looking for parallel test copies in %s:%s: %w", s.svc.Engine, s.svc.Version, err))
+			errs = append(errs, fmt.Errorf("looking for parallel test copies in %s: %w", s.svc.Name(), err))
 			continue
 		}
 		names, err := e.Databases(ctx)
 		release()
 		if err != nil {
-			errs = append(errs, fmt.Errorf("looking for parallel test copies in %s:%s: %w", s.svc.Engine, s.svc.Version, err))
+			errs = append(errs, fmt.Errorf("looking for parallel test copies in %s: %w", s.svc.Name(), err))
 			continue
 		}
 		for _, name := range names {
@@ -422,7 +421,7 @@ func (d *Daemon) leftoverCopies(ctx context.Context) ([]registry.Orphan, []error
 			if !ok || s.tests[test] {
 				continue
 			}
-			o := registry.Orphan{Engine: s.svc.Engine, Version: s.svc.Version, Database: name, Kind: orphanParallelCopy}
+			o := registry.Orphan{Ref: s.svc, Database: name, Kind: orphanParallelCopy}
 			if slices.ContainsFunc(recorded, o.Same) {
 				continue
 			}
@@ -453,7 +452,7 @@ func (d *Daemon) listOrphans() api.OrphanList {
 func apiOrphan(o registry.Orphan) api.Orphan {
 	res := api.Orphan{
 		Database: o.Database,
-		Service:  o.Engine + ":" + o.Version,
+		Service:  o.Ref.Name(),
 		Project:  o.ProjectName,
 		Worktree: o.Worktree,
 		Kind:     o.Kind,

@@ -20,6 +20,16 @@ import (
 	"github.com/mrsafalpiya/portby.dev/internal/container"
 )
 
+// Ref names a Service: an engine (by name) at a version, such as redis at
+// "7". Config, the Registry and the API all name Services this way.
+type Ref struct {
+	Engine  string `json:"engine"`
+	Version string `json:"version"`
+}
+
+// Name is how the CLI and API name the Service, such as "redis:7".
+func (r Ref) Name() string { return r.Engine + ":" + r.Version }
+
 // Service is an Engine at a version, listening on Port.
 type Service struct {
 	Engine  *Engine
@@ -27,8 +37,11 @@ type Service struct {
 	Port    int
 }
 
+// Ref names s.
+func (s Service) Ref() Ref { return Ref{Engine: s.Engine.Name, Version: s.Version} }
+
 // Name is how the CLI and API name the Service, such as "redis:7".
-func (s Service) Name() string { return s.Engine.Name + ":" + s.Version }
+func (s Service) Name() string { return s.Ref().Name() }
 
 // States a Service can be in.
 const (
