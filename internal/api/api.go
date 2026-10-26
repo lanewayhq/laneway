@@ -5,7 +5,8 @@
 // Routes (all JSON, served over the daemon's Unix socket):
 //
 //	GET  /v1/projects   -> ProjectList
-//	POST /v1/projects   LinkRequest -> LinkResponse   (Link a repository)
+//	POST /v1/projects   LinkRequest -> LinkResponse   (Link a repository and apply
+//	                    its Env Patch; with preview, only report the Env Patch)
 //	GET  /v1/worktree?dir=<abs path> -> WorktreeInfo  (the Worktree containing dir)
 //	GET  /v1/daemon     -> DaemonInfo
 //	GET  /v1/logs?dir=&process=&follow=  -> stream of LogLine, one JSON object per line
@@ -67,6 +68,10 @@ type LinkRequest struct {
 	Dir string `json:"dir"`
 	// Name overrides the Project name from portby.toml or the directory name.
 	Name string `json:"name,omitempty"`
+	// Preview asks what Linking would do to the Worktrees' env files
+	// (LinkResponse.EnvPatch) without Linking or changing anything, so it
+	// can be confirmed.
+	Preview bool `json:"preview,omitempty"`
 }
 
 // LinkResponse is the body returned after Linking.
@@ -76,6 +81,35 @@ type LinkResponse struct {
 	Worktree Worktree `json:"worktree"`
 	// AlreadyLinked is true when the repository was already a Project.
 	AlreadyLinked bool `json:"alreadyLinked"`
+	// EnvPatch lists the env files that were (or, with Preview, would be)
+	// changed, one per Worktree whose Env Patch wasn't already in place.
+	EnvPatch []EnvFilePatch `json:"envPatch,omitempty"`
+}
+
+// EnvFilePatch is how the Env Patch changes one Worktree's env file. Only the
+// keys Portby owns ever change.
+type EnvFilePatch struct {
+	Worktree Worktree `json:"worktree"`
+	// Path is the env file, such as <worktree>/.env.
+	Path string `json:"path"`
+	// Create is true when the file doesn't exist yet. It is created as a
+	// copy of CopyFrom (the main Worktree's .env, or .env.example), or with
+	// only Portby's keys when CopyFrom is empty.
+	Create   bool   `json:"create,omitempty"`
+	CopyFrom string `json:"copyFrom,omitempty"`
+	// Backup is where the original is copied before its first patch.
+	Backup  string      `json:"backup,omitempty"`
+	Changes []EnvChange `json:"changes"`
+}
+
+// EnvChange is one key Portby owns changing value.
+type EnvChange struct {
+	Key string `json:"key"`
+	// Old is "" when Added.
+	Old string `json:"old,omitempty"`
+	New string `json:"new"`
+	// Added is true when the key wasn't in the file.
+	Added bool `json:"added,omitempty"`
 }
 
 // WorktreeInfo is the body of GET /v1/worktree: the Worktree containing a

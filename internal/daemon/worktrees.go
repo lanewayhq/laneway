@@ -20,8 +20,9 @@ func (d *Daemon) worktreesChanged(main string) {
 }
 
 // syncWorktrees reconciles the Project's Worktrees with git's worktree
-// registry: Worktrees that appeared are recorded and their Processes started,
-// and Worktrees that are gone are forgotten and their Processes stopped. It
+// registry: Worktrees that appeared are recorded and served (their Processes
+// start on the first request), and Worktrees that are gone are forgotten and
+// their Processes stopped. It
 // runs at daemon start, on Link and whenever the Worktree Watcher reports a
 // possible change.
 func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
@@ -32,29 +33,10 @@ func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
 		return
 	default:
 	}
-	list, err := gitrepo.Worktrees(ctx, p.Path)
+	found, pending, err := d.foundWorktrees(ctx, p)
 	if err != nil {
 		d.log.Error("listing Worktrees", "project", p.Name, "err", err)
 		return
-	}
-	knownAt := map[string]registry.Worktree{}
-	for _, w := range d.registry.Worktrees(p.Path) {
-		knownAt[w.Path] = w
-	}
-	var found []registry.Found
-	pending := false
-	for _, w := range list {
-		switch {
-		case w.Main || w.Gone:
-		case w.Initializing:
-			// Not ready to be read yet: keep what we know and look again.
-			pending = true
-			if k, ok := knownAt[w.Dir]; ok {
-				found = append(found, registry.Found{Name: k.Name, Path: k.Path})
-			}
-		default:
-			found = append(found, registry.Found{Name: w.Name, Path: w.Dir})
-		}
 	}
 	// Removed Worktrees stop first, so a moved one can start again at the
 	// same Domain. Added ones are served before the Registry (and so the
@@ -66,7 +48,8 @@ func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
 	}
 	for _, w := range changes.Added {
 		d.log.Info("Worktree discovered", "project", p.Name, "worktree", w.Name, "path", w.Path)
-		d.startWorktree(ctx, p, worktreeDomain(p, w), w.Path)
+		d.applyEnvPatch(p, linkedEnvWorktree(p, w))
+		d.serveWorktree(p, worktreeDomain(p, w), w.Path)
 	}
 	if err := d.registry.ApplyWorktrees(changes); err != nil {
 		d.log.Error("recording Worktrees", "project", p.Name, "err", err)
@@ -85,10 +68,38 @@ func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
 	}
 }
 
-// startKnownWorktrees starts the Processes of the Project's linked Worktrees
-// that the Registry already knew about, at daemon start. (syncWorktrees only
-// starts the ones it discovers.)
-func (d *Daemon) startKnownWorktrees(ctx context.Context, p registry.Project) {
+// foundWorktrees lists the Project's linked worktrees in git's worktree
+// registry, for PlanWorktrees. pending reports a worktree that git is still
+// creating, so the list should be read again soon. The caller holds syncMu.
+func (d *Daemon) foundWorktrees(ctx context.Context, p registry.Project) (found []registry.Found, pending bool, err error) {
+	list, err := gitrepo.Worktrees(ctx, p.Path)
+	if err != nil {
+		return nil, false, err
+	}
+	knownAt := map[string]registry.Worktree{}
+	for _, w := range d.registry.Worktrees(p.Path) {
+		knownAt[w.Path] = w
+	}
+	for _, w := range list {
+		switch {
+		case w.Main || w.Gone:
+		case w.Initializing:
+			// Not ready to be read yet: keep what we know and look again.
+			pending = true
+			if k, ok := knownAt[w.Dir]; ok {
+				found = append(found, registry.Found{Name: k.Name, Path: k.Path})
+			}
+		default:
+			found = append(found, registry.Found{Name: w.Name, Path: w.Dir})
+		}
+	}
+	return found, pending, nil
+}
+
+// serveKnownWorktrees serves the Project's linked Worktrees that the Registry
+// already knew about, at daemon start. (syncWorktrees only serves the ones it
+// discovers.)
+func (d *Daemon) serveKnownWorktrees(p registry.Project) {
 	d.syncMu.Lock()
 	defer d.syncMu.Unlock()
 	for _, w := range d.registry.Worktrees(p.Path) {
@@ -97,7 +108,8 @@ func (d *Daemon) startKnownWorktrees(ctx context.Context, p registry.Project) {
 		_, ok := d.served[domain]
 		d.servedMu.Unlock()
 		if !ok {
-			d.startWorktree(ctx, p, domain, w.Path)
+			d.applyEnvPatch(p, linkedEnvWorktree(p, w))
+			d.serveWorktree(p, domain, w.Path)
 		}
 	}
 }

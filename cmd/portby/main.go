@@ -23,6 +23,7 @@ func main() {
 		Args:   os.Args[1:],
 		Dir:    dir,
 		Getenv: os.Getenv,
+		Stdin:  os.Stdin,
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
 	}))

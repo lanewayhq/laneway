@@ -1,0 +1,4 @@
+start_timeout = "90s"
+
+[processes.web]
+command = "serve"

@@ -25,6 +25,9 @@ type Env struct {
 	// Dir is the working directory commands act on.
 	Dir    string
 	Getenv func(string) string
+	// Stdin is where commands read answers to questions; nil reads as
+	// empty, which answers no.
+	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
 	// Platform does everything OS-specific (install, doctor, open). If nil,

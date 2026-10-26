@@ -1,7 +1,10 @@
 package e2e
 
 import (
+	"encoding/json"
+	"net/http"
 	"testing"
+	"time"
 
 	"github.com/mrsafalpiya/portby.dev/internal/testkit"
 )
@@ -182,5 +185,65 @@ func TestRemovingAnAliasTheWorktreeDoesNotHaveFails(t *testing.T) {
 	assertContains(t, res.Stderr, "the main Worktree has no Alias demo.alias-unknown.localhost")
 	if got := d.GetServer("https://demo.alias-unknown.localhost/"); got.Name != "web@feature" {
 		t.Fatalf("demo.alias-unknown.localhost reached %q, want Worktree feature", got.Name)
+	}
+}
+
+func TestAVisitToAnAliasOrAProcessStartsTheWorktree(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	repo := routedProject(t, "alias-lazy")
+	repo.AddWorktree("other")
+	d.MustRunCLI(repo.Dir, "link")
+	d.MustRunCLI(repo.Dir, "worktree", "alias", "demo")
+
+	for url, want := range map[string]string{
+		"https://demo.alias-lazy.localhost/":       "web@alias-lazy",
+		"https://vite.other.alias-lazy.localhost/": "vite@other",
+	} {
+		page := d.Navigate(url)
+		if page.StatusCode != http.StatusServiceUnavailable {
+			t.Fatalf("first visit to %s: status %d, want the starting page:\n%s", url, page.StatusCode, page.Body)
+		}
+		assertContains(t, page.Body, "Starting")
+		got := navigateUntilUp(t, d, url)
+		if got.Name != want {
+			t.Fatalf("%s reached %q, want %s", url, got.Name, want)
+		}
+	}
+}
+
+func TestAMistypedNameUnderADomainStartsNothing(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	repo := routedProject(t, "alias-typo")
+	d.MustRunCLI(repo.Dir, "link")
+
+	assertNotServed(t, d, "https://vtie.alias-typo.localhost/")
+	assertNotServed(t, d, "https://queue.alias-typo.localhost/")
+
+	projects, err := d.Client().Projects(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if procs := projects[0].Worktrees[0].Processes; len(procs) != 0 {
+		t.Fatalf("the main Worktree's Processes started: %+v", procs)
+	}
+}
+
+// navigateUntilUp keeps visiting url like a browser on the starting page
+// does, until the test server answers.
+func navigateUntilUp(t *testing.T, d *testkit.Daemon, url string) testkit.ServerResponse {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		page := d.Navigate(url)
+		var res testkit.ServerResponse
+		if page.StatusCode == http.StatusOK && json.Unmarshal([]byte(page.Body), &res) == nil {
+			return res
+		}
+		if page.StatusCode != http.StatusServiceUnavailable || time.Now().After(deadline) {
+			t.Fatalf("visiting %s: status %d, want the app:\n%s", url, page.StatusCode, page.Body)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
