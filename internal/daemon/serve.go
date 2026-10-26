@@ -13,6 +13,7 @@ import (
 	"github.com/mrsafalpiya/portby.dev/internal/activity"
 	"github.com/mrsafalpiya/portby.dev/internal/config"
 	"github.com/mrsafalpiya/portby.dev/internal/naming"
+	"github.com/mrsafalpiya/portby.dev/internal/provision"
 	"github.com/mrsafalpiya/portby.dev/internal/proxy"
 	"github.com/mrsafalpiya/portby.dev/internal/recipe"
 	"github.com/mrsafalpiya/portby.dev/internal/registry"
@@ -99,16 +100,17 @@ func domainOf(p registry.Project) string {
 	return naming.DomainLabel(p.Name) + ".localhost"
 }
 
-// serveProject applies the main Worktree's Env Patch and serves it at its
-// Domain.
+// serveProject applies the main Worktree's Env Patch, serves it at its
+// Domain and begins its setup if it hasn't been set up.
 func (d *Daemon) serveProject(p registry.Project) {
 	d.applyEnvPatch(p, mainEnvWorktree(p))
 	d.serveWorktree(p, domainOf(p), p.Path)
+	d.provision(p, mainEnvWorktree(p), false)
 }
 
 // serveWorktree makes the Worktree at dir known to the proxy at domain and
-// starts its always Processes. Its lazy Processes start on the first request
-// for the Domain.
+// starts its always Processes once it is Ready. Its lazy Processes start on
+// the first request for the Domain.
 func (d *Daemon) serveWorktree(p registry.Project, domain, dir string) {
 	s := &served{project: p.Name, domain: domain, dir: dir, group: dir}
 	s.ctx, s.cancel = context.WithCancel(d.stopping)
@@ -119,25 +121,48 @@ func (d *Daemon) serveWorktree(p registry.Project, domain, dir string) {
 	d.startAlways(s)
 }
 
-// startAlways starts the Worktree's always Processes that aren't running.
+// startAlways starts the Worktree's always Processes that aren't running,
+// in the background once the Worktree is Ready. If its setup fails they
+// don't start; worktreeReady starts them after a successful --retry.
 func (d *Daemon) startAlways(s *served) {
-	s.lifecycle.Lock()
-	defer s.lifecycle.Unlock()
-	cfg, err := d.resolveWorktree(s.ctx, s.dir)
-	if err != nil {
-		d.log.Error("starting always Processes", "project", s.project, "dir", s.dir, "err", err)
-		return
-	}
-	var always []recipe.Process
-	for _, proc := range cfg.Processes {
-		if proc.StartMode == recipe.Always {
-			always = append(always, proc)
+	d.background(func() {
+		if err := d.waitForSetup(s); err != nil {
+			if s.ctx.Err() == nil {
+				d.log.Error("not starting always Processes", "project", s.project, "dir", s.dir, "err", err)
+			}
+			return
 		}
-	}
-	for _, spec := range d.specs(s, cfg, always) {
-		if _, err := d.startProcess(s, spec, false); err != nil {
-			d.log.Error("starting always Process", "project", s.project, "dir", s.dir, "err", err)
+		s.lifecycle.Lock()
+		defer s.lifecycle.Unlock()
+		if s.ctx.Err() != nil {
+			return // stopWorktree
 		}
+		cfg, err := d.resolveWorktree(s.ctx, s.dir)
+		if err != nil {
+			d.log.Error("starting always Processes", "project", s.project, "dir", s.dir, "err", err)
+			return
+		}
+		var always []recipe.Process
+		for _, proc := range cfg.Processes {
+			if proc.StartMode == recipe.Always {
+				always = append(always, proc)
+			}
+		}
+		for _, spec := range d.specs(s, cfg, always) {
+			if _, err := d.startProcess(s, spec, false); err != nil {
+				d.log.Error("starting always Process", "project", s.project, "dir", s.dir, "err", err)
+			}
+		}
+	})
+}
+
+// background runs fn in d.starts, like a start, unless the daemon is
+// shutting down, so it can't start Processes after StopAll.
+func (d *Daemon) background(fn func()) {
+	d.startsMu.Lock()
+	defer d.startsMu.Unlock()
+	if !d.shuttingDown {
+		d.starts.Go(fn)
 	}
 }
 
@@ -199,6 +224,10 @@ func (d *Daemon) stopWorktree(ctx context.Context, domain, dir string) {
 		if st != nil {
 			<-st.done
 		}
+		// A startAlways that got the lock first finishes before StopGroup;
+		// one that gets it later sees s.ctx cancelled.
+		s.lifecycle.Lock()
+		s.lifecycle.Unlock()
 	}
 	d.supervisor.StopGroup(ctx, dir)
 }
@@ -208,7 +237,7 @@ func (d *Daemon) stopWorktree(ctx context.Context, domain, dir string) {
 func (d *Daemon) starting(s *served) *start {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.start == nil || s.start.retry {
+	if s.start == nil || s.start.retry || d.setupRetried(s) {
 		st := &start{done: make(chan struct{})}
 		s.start = st
 		s.idle = false
@@ -230,12 +259,17 @@ func (d *Daemon) starting(s *served) *start {
 	return s.start
 }
 
-// bootWorktree applies the Worktree's Env Patch, resolves its config, starts
-// its lazy and always Processes that aren't running and waits for the
-// Primary Process to accept connections. It returns the Primary Process's
-// name, and records the other HTTP Processes and the lazy and manual ones in
-// st.
+// bootWorktree waits for the Worktree to be Ready, applies its Env Patch,
+// resolves its config, starts its lazy and always Processes that aren't
+// running and waits for the Primary Process to accept connections. It
+// returns the Primary Process's name, and records the other HTTP Processes
+// and the lazy and manual ones in st.
 func (d *Daemon) bootWorktree(s *served, st *start) (string, error) {
+	// Setup can take minutes: wait for it before taking the lifecycle
+	// lock, so `portby down` doesn't wait for it too.
+	if err := d.waitForSetup(s); err != nil {
+		return "", err
+	}
 	s.lifecycle.Lock()
 	defer s.lifecycle.Unlock()
 	s.mu.Lock()
@@ -387,6 +421,9 @@ func (r router) Upstream(ctx context.Context, domain string, wait bool) (string,
 	case <-st.done:
 	default:
 		if !wait {
+			if d.provisioner.Status(s.dir).State != provision.Ready {
+				return "", proxy.ErrSettingUp
+			}
 			return "", proxy.ErrStarting
 		}
 		select {

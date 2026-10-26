@@ -181,8 +181,10 @@ func (d *Daemon) restart(ctx context.Context, s *served, cfg recipe.Resolved, pr
 	return nil
 }
 
-// withState fills in the state of Worktree w and its running Processes.
+// withState fills in the setup and run state of Worktree w and its running
+// Processes.
 func (d *Daemon) withState(w api.Worktree) api.Worktree {
+	w.Setup = d.setupOf(w.Path)
 	w.State = d.worktreeState(w.Domain)
 	w.Processes = nil
 	for _, st := range d.supervisor.Processes(w.Path) {

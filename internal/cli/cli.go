@@ -65,7 +65,7 @@ var commands = map[string]command{
 	"restart":  {"Restart the current Worktree's Processes (or one Process)", control("restart")},
 	"status":   {"List Linked Projects and their Processes", runStatus},
 	"up":       {"Start the current Worktree's Processes (or one Process)", control("up")},
-	"worktree": {"Manage the current Worktree (alias <name> [--remove])", runWorktree},
+	"worktree": {"Manage Worktrees (add <name> [--branch], ready [--retry], alias <name> [--remove])", runWorktree},
 }
 
 // usageError makes Run print the error and exit with exitUsage.

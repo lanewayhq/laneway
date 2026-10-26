@@ -9,16 +9,18 @@ import (
 
 // worktreeCommands are the `portby worktree <name>` subcommands.
 var worktreeCommands = map[string]func(ctx context.Context, env Env, args []string) error{
+	"add":   runWorktreeAdd,
 	"alias": runWorktreeAlias,
+	"ready": runWorktreeReady,
 }
 
 func runWorktree(ctx context.Context, env Env, args []string) error {
 	if len(args) == 0 {
-		return usageError{"missing subcommand; use `portby worktree alias <name>`"}
+		return usageError{"missing subcommand; use `portby worktree add <name>`, `portby worktree ready` or `portby worktree alias <name>`"}
 	}
 	run, ok := worktreeCommands[args[0]]
 	if !ok {
-		return usageError{fmt.Sprintf("unknown subcommand %q; use `portby worktree alias <name>`", args[0])}
+		return usageError{fmt.Sprintf("unknown subcommand %q; use `portby worktree add <name>`, `portby worktree ready` or `portby worktree alias <name>`", args[0])}
 	}
 	return run(ctx, env, args[1:])
 }

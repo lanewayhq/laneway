@@ -1,0 +1,1 @@
+on_create = ["./scripts/seed-my-data"]

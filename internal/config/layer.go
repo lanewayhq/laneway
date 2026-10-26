@@ -48,6 +48,19 @@ type Layer struct {
 	// keyed by env key ([env] table). Values are templates such as
 	// "{url}"; see envpatch.Variables.
 	Env map[string]string `toml:"env"`
+	// OnCreate are setup steps: shell commands run in a Worktree's
+	// directory, in order, once its Env Patch is applied. The Worktree is
+	// Ready when they have all succeeded. They run after the Recipe's.
+	OnCreate []string `toml:"on_create"`
+	// OnRemove are shell commands run in the main Worktree's directory, in
+	// order, when a Worktree is removed. They run after the Recipe's.
+	OnRemove []string `toml:"on_remove"`
+	// InheritSetup set to false drops the Recipe's on_create and on_remove
+	// steps, leaving only the Project's.
+	InheritSetup *bool `toml:"inherit_setup"`
+	// WorktreeRoot is the directory `portby worktree add` creates worktrees
+	// in. A relative path is relative to the main Worktree's directory.
+	WorktreeRoot *string `toml:"worktree_root"`
 }
 
 // ProcessLayer is one [processes.<name>] table.
@@ -154,6 +167,19 @@ func (l Layer) validate() error {
 	}
 	if l.IdleTimeout != nil && *l.IdleTimeout <= 0 {
 		return fmt.Errorf("idle_timeout must be positive, such as \"30m\", not %s", *l.IdleTimeout)
+	}
+	if l.WorktreeRoot != nil && strings.TrimSpace(*l.WorktreeRoot) == "" {
+		return errors.New("worktree_root is empty")
+	}
+	for i, step := range l.OnCreate {
+		if strings.TrimSpace(step) == "" {
+			return fmt.Errorf("on_create[%d] is empty", i)
+		}
+	}
+	for i, step := range l.OnRemove {
+		if strings.TrimSpace(step) == "" {
+			return fmt.Errorf("on_remove[%d] is empty", i)
+		}
 	}
 	for _, k := range slices.Sorted(maps.Keys(l.Env)) {
 		if !envKey.MatchString(k) {

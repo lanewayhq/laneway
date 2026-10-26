@@ -93,7 +93,7 @@ func TestWorktreeWithNoTrafficGoesIdleAndItsProcessesStop(t *testing.T) {
 	waitForExit(t, pid)
 	waitForState(t, d, "idle-basic.localhost", "idle")
 	lines := strings.Split(strings.TrimRight(d.MustRunCLI(d.Home, "status").Stdout, "\n"), "\n")
-	if got, want := strings.Fields(lines[len(lines)-1]), []string{"idle-basic", "idle-basic.localhost", repo.Dir, "idle"}; !slices.Equal(got, want) {
+	if got, want := strings.Fields(lines[len(lines)-1]), []string{"idle-basic", "idle-basic.localhost", repo.Dir, "ready", "idle"}; !slices.Equal(got, want) {
 		t.Fatalf("status row %q, want %v", lines[len(lines)-1], want)
 	}
 }
@@ -237,4 +237,35 @@ func TestTheGlobalIdleTimeoutAppliesUnlessTheProjectSetsItsOwn(t *testing.T) {
 	if delay := waitForTimer(t, clk); delay != time.Hour {
 		t.Fatalf("Idle scheduled after %s, want the Project's 1h", delay)
 	}
+}
+
+func TestAWorktreeGoesIdleAfterTheStartThatWaitedForItsSetup(t *testing.T) {
+	t.Parallel()
+	d, clk := idleDaemon(t)
+	gate := filepath.Join(gitfixture.TempDir(t), "gate")
+	repo, pidFile := pidProject(t, "idle-setup", "idle_timeout = \"10m\"\n"+
+		"on_create = "+tomlList("until [ -e "+gate+" ]; do sleep 0.05; done")+"\n")
+	d.MustRunCLI(repo.Dir, "link")
+
+	if page := d.Navigate("https://idle-setup.localhost/"); page.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("navigation while provisioning: status %d, want the 503 setting up page:\n%s", page.StatusCode, page.Body)
+	}
+	// The idle timeout passes while setup is still running: there is
+	// nothing to stop yet.
+	clk.Advance(waitForTimer(t, clk))
+	if state := worktreeState(t, d, "idle-setup.localhost").State; state != "starting" {
+		t.Fatalf("Worktree state %q while waiting for setup, want starting", state)
+	}
+
+	writeTestFile(t, gate, "")
+	pid := waitForPID(t, pidFile)
+	waitForState(t, d, "idle-setup.localhost", "running")
+
+	// The start counts as activity, so the full idle timeout runs again.
+	if delay := waitForTimer(t, clk); delay != 10*time.Minute {
+		t.Fatalf("Idle scheduled after %s, want the 10m idle_timeout", delay)
+	}
+	clk.Advance(10 * time.Minute)
+	waitForExit(t, pid)
+	waitForState(t, d, "idle-setup.localhost", "idle")
 }

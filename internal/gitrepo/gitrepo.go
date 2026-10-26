@@ -169,3 +169,22 @@ func gitCommand(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	}
 	return cmd
 }
+
+// AddWorktree runs `git worktree add` in the repository whose main Worktree
+// is at mainDir, checking out branch at dir. The branch is created from the
+// current HEAD if it doesn't exist.
+func AddWorktree(ctx context.Context, mainDir, dir, branch string) error {
+	args := []string{"worktree", "add", "--quiet"}
+	if gitCommand(ctx, mainDir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch).Run() == nil {
+		args = append(args, dir, branch)
+	} else {
+		args = append(args, "-b", branch, dir)
+	}
+	cmd := gitCommand(ctx, mainDir, args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}

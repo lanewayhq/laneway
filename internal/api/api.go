@@ -13,6 +13,8 @@
 //	POST /v1/worktree/up       ControlRequest -> Worktree  (start it, or one Process)
 //	POST /v1/worktree/down     ControlRequest -> Worktree  (stop it, or one Process)
 //	POST /v1/worktree/restart  ControlRequest -> Worktree
+//	POST /v1/worktree/ready    ReadyRequest -> WorktreeInfo  (find the Worktree containing
+//	                    dir now, begin or retry its setup and, with wait, wait for it)
 //	POST   /v1/aliases  AliasRequest -> AliasResponse  (add an Alias to the Worktree containing dir)
 //	DELETE /v1/aliases/{name}?dir=<abs path> -> AliasResponse  (remove one)
 //
@@ -62,6 +64,44 @@ type Worktree struct {
 	// Processes are the Worktree's running Processes, sorted by name.
 	// Only GET /v1/projects and the up/down/restart routes fill them in.
 	Processes []Process `json:"processes,omitempty"`
+	// Setup is where the Worktree is in setup. GET /v1/projects,
+	// GET /v1/worktree, POST /v1/worktree/ready and the up/down/restart
+	// routes fill it in.
+	Setup *Setup `json:"setup,omitempty"`
+}
+
+// Setup states.
+const (
+	SetupDiscovered   = "discovered"
+	SetupProvisioning = "provisioning"
+	SetupReady        = "ready"
+	SetupFailed       = "failed"
+)
+
+// Setup is a Worktree's setup state: discovered → provisioning → ready or
+// failed.
+type Setup struct {
+	// State is one of the Setup* constants.
+	State string `json:"state"`
+	// Step is the step running (provisioning) or the step that failed
+	// (failed), such as "env" or "on_create: composer install".
+	Step string `json:"step,omitempty"`
+	// Error is why Step failed.
+	Error string `json:"error,omitempty"`
+	// Output is the last lines the failed step printed.
+	Output []string `json:"output,omitempty"`
+}
+
+// ReadyRequest is the body of POST /v1/worktree/ready.
+type ReadyRequest struct {
+	// Dir is an absolute path inside the Worktree. A Worktree git has but
+	// the Worktree Watcher hasn't reported yet is discovered at once.
+	Dir string `json:"dir"`
+	// Retry runs a failed setup again.
+	Retry bool `json:"retry,omitempty"`
+	// Wait holds the response until the Worktree is Ready or its setup has
+	// failed. Without it, the current state is returned at once.
+	Wait bool `json:"wait,omitempty"`
 }
 
 // ControlRequest is the body of POST /v1/worktree/up, /down and /restart.
@@ -185,8 +225,6 @@ const (
 	CodeAliasTaken     = "alias_taken"
 	CodeUnknownAlias   = "unknown_alias"
 	CodeInternal       = "internal"
-	// CodeUnknownWorktree: --worktree names none of the Project's Worktrees.
-	CodeUnknownWorktree = "unknown_worktree"
 	// CodeStartFailed: `portby up` or `restart` started the Worktree, but its
 	// Primary Process exited or never accepted connections.
 	CodeStartFailed = "start_failed"
@@ -194,6 +232,12 @@ const (
 	// CodeInvalidConfig: portby.toml or portby.local.toml can't be used.
 	// The message names the file and the key.
 	CodeInvalidConfig = "invalid_config"
+
+	// CodeUnknownWorktree: git doesn't list the directory's worktree (yet),
+	// or --worktree names none of the Project's Worktrees.
+	CodeUnknownWorktree = "unknown_worktree"
+	// CodeShuttingDown: the daemon stopped while the request was waiting.
+	CodeShuttingDown = "shutting_down"
 )
 
 // ErrorResponse is the body of every non-2xx response.

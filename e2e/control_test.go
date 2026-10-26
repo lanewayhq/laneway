@@ -1,7 +1,9 @@
 package e2e
 
 import (
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
 	"github.com/mrsafalpiya/portby.dev/internal/testkit"
@@ -97,4 +99,35 @@ func TestDownOneProcessLeavesTheOthersAndARequestStartsItAgain(t *testing.T) {
 		t.Fatalf("restart of an unknown Process succeeded:\n%s", res.Output())
 	}
 	assertContains(t, res.Stderr, `this Worktree has no Process "nope"; its Processes are other, web`)
+}
+
+func TestDownDuringSetupDoesNotWaitForIt(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	gate := filepath.Join(gitfixture.TempDir(t), "gate")
+	repo, pidFile := pidProject(t, "down-setup",
+		"on_create = "+tomlList("until [ -e "+gate+" ]; do sleep 0.05; done")+"\n")
+	d.MustRunCLI(repo.Dir, "link")
+	d.Navigate("https://down-setup.localhost/")
+	waitForState(t, d, "down-setup.localhost", "starting")
+
+	done := make(chan testkit.CLIResult, 1)
+	go func() { done <- d.RunCLI(repo.Dir, "down") }()
+	select {
+	case res := <-done:
+		if res.ExitCode != 0 {
+			t.Fatalf("down exited %d:\n%s", res.ExitCode, res.Output())
+		}
+	case <-time.After(5 * time.Second):
+		writeTestFile(t, gate, "")
+		t.Fatalf("down waited for the Worktree's setup")
+	}
+	if state := worktreeState(t, d, "down-setup.localhost").State; state != "stopped" {
+		t.Fatalf("state after down = %q, want stopped", state)
+	}
+
+	writeTestFile(t, gate, "")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	d.GetServer("https://down-setup.localhost/")
+	waitForPID(t, pidFile)
 }

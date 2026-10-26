@@ -78,3 +78,8 @@ func (p Paths) GlobalConfig() string {
 	}
 	return filepath.Join(p.ConfigDir, "config.toml")
 }
+
+// Setup is the file the Provisioner records Worktrees' setup states in.
+func (p Paths) Setup() string {
+	return filepath.Join(p.StateDir, "setup.json")
+}

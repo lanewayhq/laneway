@@ -108,3 +108,33 @@ func TestManualProcessesOnlyStartThroughUp(t *testing.T) {
 		t.Fatalf("Idle stopped the manual Process")
 	}
 }
+
+func TestAlwaysProcessesWaitForSetupAndStartOnceARetriedSetupIsReady(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	marker := filepath.Join(gitfixture.TempDir(t), "fixed")
+	repo, webPID, otherPID := modesProject(t, "mode-always-setup", "always")
+	repo.WriteFile("portby.local.toml", "on_create = "+tomlList("test -e "+marker+" || exit 4")+"\n")
+	d.MustRunCLI(repo.Dir, "link")
+
+	if res := d.RunCLI(repo.Dir, "worktree", "ready"); res.ExitCode != 1 {
+		t.Fatalf("worktree ready exited %d, want 1 (setup Failed):\n%s", res.ExitCode, res.Output())
+	}
+	res := d.RunCLI(repo.Dir, "up")
+	if res.ExitCode == 0 {
+		t.Fatalf("up in a Worktree whose setup Failed succeeded:\n%s", res.Output())
+	}
+	assertContains(t, res.Stderr, "failed at step")
+	assertNoFile(t, webPID)
+	assertNoFile(t, otherPID)
+
+	writeTestFile(t, marker, "")
+	d.MustRunCLI(repo.Dir, "worktree", "ready", "--retry")
+
+	// No request: the always Process starts because setup is now Ready.
+	waitForPID(t, otherPID)
+	assertNoFile(t, webPID)
+	if state := worktreeState(t, d, "mode-always-setup.localhost").State; state != "stopped" {
+		t.Fatalf("Worktree state %q with only its always Process running, want stopped", state)
+	}
+}
