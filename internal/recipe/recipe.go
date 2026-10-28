@@ -89,6 +89,10 @@ type Resolved struct {
 	// Services are the Services the Project uses, one per engine, sorted
 	// by engine.
 	Services []Service
+	// Copy are the paths copied from the main Worktree into each other
+	// Worktree when it is prepared: every layer's, in order, without
+	// repeats.
+	Copy []string
 	// OnCreate are the setup steps (shell commands) run in a new Worktree:
 	// the Recipe's first, then the Project's layers' in order, unless a
 	// Project layer sets inherit_setup = false.
@@ -260,6 +264,7 @@ func (r Resolved) Layer() config.Layer {
 		}
 		l.Services[svc.Engine] = svc.Version
 	}
+	l.Copy = slices.Clone(r.Copy)
 	l.OnCreate = slices.Clone(r.OnCreate)
 	l.OnRemove = slices.Clone(r.OnRemove)
 	if r.Recipe != "" && len(r.OnCreate)+len(r.OnRemove) > 0 {
@@ -369,6 +374,11 @@ func Resolve(in Input) (Resolved, error) {
 		}
 		if l.WorktreeRoot != nil {
 			res.WorktreeRoot = *l.WorktreeRoot
+		}
+		for _, path := range l.Copy {
+			if !slices.Contains(res.Copy, path) {
+				res.Copy = append(res.Copy, path)
+			}
 		}
 		if res.Recipe != "" && i == 0 {
 			recipeCreate, recipeRemove = l.OnCreate, l.OnRemove

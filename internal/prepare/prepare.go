@@ -1,7 +1,7 @@
 // Package prepare is the Preparer: it takes each Worktree from being found
 // to Ready (GLOSSARY.md),
 //
-//	Discovered → Preparing (database → Test Database → env → setup steps) → Ready | Failed
+//	Discovered → Preparing (copy → database → Test Database → env → setup steps) → Ready | Failed
 //
 // one Worktree at a time per directory, in the background. What preparing
 // does is a list of Steps the daemon builds (internal/daemon/prepare.go);

@@ -60,6 +60,13 @@ type Layer struct {
 	// ([services] table), each with its version: redis = "7". Every
 	// Project using redis:7 shares one container.
 	Services map[string]string `toml:"services"`
+	// Copy are paths, relative to the Worktree, copied from the main
+	// Worktree into each other Worktree when it is prepared, before anything
+	// else: gitignored files such as AGENTS.md, which a new worktree (only
+	// committed files) doesn't have. A directory is copied with everything
+	// in it, files the Worktree already has are kept, and a path the main
+	// Worktree doesn't have is skipped. Paths from every layer are copied.
+	Copy []string `toml:"copy"`
 	// OnCreate are setup steps: shell commands run in a Worktree's
 	// directory, in order, once its Env Patch is applied. The Worktree is
 	// Ready when they have all succeeded. They run after the Recipe's.
@@ -228,6 +235,11 @@ func (l Layer) validate() error {
 	}
 	if err := l.Database.validate(); err != nil {
 		return err
+	}
+	for i, path := range l.Copy {
+		if !filepath.IsLocal(filepath.FromSlash(path)) {
+			return fmt.Errorf("copy[%d]: %q isn't a path inside the Worktree; use one relative to it, such as \"AGENTS.md\"", i, path)
+		}
 	}
 	for i, step := range l.OnCreate {
 		if strings.TrimSpace(step) == "" {

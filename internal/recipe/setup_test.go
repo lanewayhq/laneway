@@ -53,6 +53,14 @@ func TestAProjectCanTurnOffInheritingTheRecipesSetupSteps(t *testing.T) {
 	}
 }
 
+func TestEveryLayersCopyPathsAreCopiedOnce(t *testing.T) {
+	res := mustResolveFixture(t, "setup-copy")
+
+	if want := []string{"AGENTS.md", "CLAUDE.md", ".claude/skills", "notes/todo.md"}; !reflect.DeepEqual(res.Copy, want) {
+		t.Errorf("Copy = %q, want %q", res.Copy, want)
+	}
+}
+
 func TestTheWorktreeRootIsNextToTheMainWorktreeUnlessConfigured(t *testing.T) {
 	if got := mustResolveFixture(t, "committed-only").WorktreeRootOf("/code/shop"); got != "/code/shop.worktrees" {
 		t.Errorf("default worktree root = %q, want /code/shop.worktrees", got)
@@ -68,7 +76,7 @@ func TestTheWorktreeRootIsNextToTheMainWorktreeUnlessConfigured(t *testing.T) {
 }
 
 func TestSetupConfigWrittenAsALayerResolvesToItself(t *testing.T) {
-	for _, fixture := range []string{"setup-inherited", "setup-not-inherited", "setup-worktree-root"} {
+	for _, fixture := range []string{"setup-inherited", "setup-not-inherited", "setup-worktree-root", "setup-copy"} {
 		t.Run(fixture, func(t *testing.T) {
 			res := mustResolveFixture(t, fixture, setupStack{})
 
@@ -102,6 +110,10 @@ func TestInvalidSetupConfigNamesTheFileAndTheKey(t *testing.T) {
 		{`on_create = "composer install"`, "on_create"},
 		{`inherit_setup = "no"`, "inherit_setup"},
 		{`worktree_root = ""`, "worktree_root is empty"},
+		{`copy = ["AGENTS.md", ""]`, "copy[1]"},
+		{`copy = ["../shared/.env"]`, "copy[0]"},
+		{`copy = ["/etc/hosts"]`, "copy[0]"},
+		{`copy = "AGENTS.md"`, "copy"},
 	} {
 		_, err := config.ParseLayer("/code/shop/portby.toml", []byte(tc.toml))
 		if err == nil || !strings.Contains(err.Error(), "/code/shop/portby.toml") || !strings.Contains(err.Error(), tc.want) {

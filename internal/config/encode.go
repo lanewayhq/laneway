@@ -31,7 +31,7 @@ func Encode(w io.Writer, l Layer) error {
 	for _, steps := range []struct {
 		key   string
 		steps []string
-	}{{"on_create", l.OnCreate}, {"on_remove", l.OnRemove}} {
+	}{{"copy", l.Copy}, {"on_create", l.OnCreate}, {"on_remove", l.OnRemove}} {
 		if steps.steps == nil {
 			continue
 		}

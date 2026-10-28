@@ -20,10 +20,12 @@ import (
 
 // setupPlan is what preparing the Worktree w does, in the spec's order:
 //
-//	database → Test Database → env → setup steps (on_create)
+//	copy → database → Test Database → env → setup steps (on_create)
 //
 // It runs when the Worktree's setup starts, so config is read then.
 //
+// The copy step (copy.go) copies the paths in config's copy from the main
+// Worktree, only into the other Worktrees.
 // The database step (database.go) gives a Project with a database engine
 // its database; other engines extend it there, not here. The Test Database
 // step (testdatabase.go) gives each Worktree an empty Test Database when
@@ -41,6 +43,9 @@ func (d *Daemon) setupPlan(p registry.Project, w worktreeRef) prepare.Plan {
 			return nil, err
 		}
 		var steps []prepare.Step
+		if !w.main && len(cfg.Copy) > 0 {
+			steps = append(steps, copyStep(p, w, cfg.Copy))
+		}
 		if step, ok := d.databaseStep(p, w, cfg); ok {
 			steps = append(steps, step)
 		}

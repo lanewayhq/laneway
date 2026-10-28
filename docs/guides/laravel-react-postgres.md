@@ -381,6 +381,7 @@ Portby then prepares the new Worktree:
 | `.env`         | yours                      | a copy of the main Worktree's `.env` (same `APP_KEY`), with its own URL and database |
 | Cache/Redis keys | Laravel's defaults       | `CACHE_PREFIX` / `REDIS_PREFIX` = `shop_feature-x_`, so queues and caches never cross |
 | Setup steps    | run at link                | run again: `composer install`, `npm install`, `migrate --force`                     |
+| Gitignored files | yours                    | the paths in `copy` in `portby.toml`, copied from the main Worktree (see §9.2)       |
 
 ```sh
 cd ~/code/shop.worktrees/feature-x
@@ -423,24 +424,51 @@ Commands in `on_remove` in `portby.toml` run in the main Worktree when a Worktre
 ### 9.1 Make the Harness wait for a Ready Worktree
 
 ```sh
-portby harness add claude   # SessionStart hook in .claude/settings.json + agent instructions
-portby harness add t3       # a "Portby: wait until Ready" script in t3.json that runs when T3 Code creates a worktree, + agent instructions
-php artisan boost:update    # puts the agent instructions into Boost's CLAUDE.md and AGENTS.md
+portby harness add claude   # SessionStart hook in .claude/settings.json + a section in AGENTS.md, imported from CLAUDE.md
+portby harness add t3       # a "Portby: wait until Ready" script in t3.json that runs when T3 Code creates a worktree, + the AGENTS.md section
 ```
 
-The hook runs `portby worktree ready`, so an agent's session in a new worktree starts only once its database, `.env` and `composer`/`npm install` are done. The agent instructions tell the agent to use `portby info --json` for its URL and `portby exec` for commands. It's safe for teammates without Portby: the hook does nothing if `portby` isn't installed.
+The hook runs `portby worktree ready`, so an agent's session in a new worktree starts only once its database, `.env` and `composer`/`npm install` are done. The `AGENTS.md` section tells the agent to use `portby info --json` for its URL and `portby exec` for commands. It's safe for teammates without Portby: the hook does nothing if `portby` isn't installed.
 
-The starter kit comes with Laravel Boost, which writes `CLAUDE.md` and `AGENTS.md` itself. So Portby puts its instructions where Boost [takes custom guidelines](https://laravel.com/docs/boost#adding-custom-ai-guidelines), `.ai/guidelines/portby.md`, and doesn't touch those files. Boost adds the instructions to them when you run `boost:install` or `boost:update`. In a Project without Boost, Portby adds a section to `AGENTS.md` and imports it from `CLAUDE.md`.
-
-### 9.2 Commit those files
-
-**The starter kit's `.gitignore` ignores `/.claude`, `/AGENTS.md` and `/CLAUDE.md`**, because Laravel Boost generates them. A new worktree only contains committed files, so as long as they're ignored the hook and instructions never reach the worktrees agents work in. Remove those three lines from `.gitignore`, keep only personal files ignored, and commit:
+**If you use Laravel Boost**, Boost writes `CLAUDE.md` and `AGENTS.md` itself, so Portby leaves them alone and puts its instructions in `.ai/guidelines/portby.md`, where Boost [takes custom guidelines](https://laravel.com/docs/boost#adding-custom-ai-guidelines). Boost adds them to its files when it runs, so run it after `portby harness add`:
 
 ```sh
-sed -i '\#^/\.claude$#d; \#^/AGENTS\.md$#d; \#^/CLAUDE\.md$#d' .gitignore
-echo '.claude/settings.local.json' >> .gitignore
+portby exec php artisan boost:update   # or boost:install, the first time
+```
+
+If you add Boost after `portby harness add`, run `portby harness add` again: it moves its section out of `AGENTS.md` and `CLAUDE.md` into `.ai/guidelines/portby.md`.
+
+### 9.2 Get those files into new worktrees
+
+A new worktree only contains committed files, and **the starter kit's `.gitignore` ignores `/.claude`, `/AGENTS.md` and `/CLAUDE.md`**, which Laravel Boost generates. As it is, the hook and the instructions never reach the worktrees agents work in.
+
+**Commit `.claude/settings.json`**, which holds the hook. Claude Code has to find it as soon as a session starts in a new worktree, before Portby has done anything there. Keep the rest of `.claude` (`settings.local.json`, Boost's skills) ignored:
+
+```sh
+sed -i 's#^/\.claude$#/.claude/*\n!/.claude/settings.json#' .gitignore
+```
+
+It has to be `/.claude/*`, not `/.claude`, because git can't un-ignore a file inside an ignored directory.
+
+**Keep `AGENTS.md` and `CLAUDE.md` ignored and let Portby copy them** from the main Worktree into each new one. Add to `portby.toml`:
+
+```toml
+copy = ["AGENTS.md", "CLAUDE.md"]
+```
+
+Copying is the first thing Portby does when it prepares a new Worktree, before its database. A directory is copied with everything in it, a file the new Worktree already has is kept, and a path the main Worktree doesn't have is skipped. With Laravel Boost, also copy what it generates for your agents, such as Claude Code's skills and MCP config:
+
+```toml
+copy = ["AGENTS.md", "CLAUDE.md", ".claude/skills", ".mcp.json"]
+```
+
+Then commit:
+
+```sh
 git add -A && git commit -m "chore: Portby Harness config for agents"
 ```
+
+That commits `.claude/settings.json`, `t3.json` and `portby.toml`, and with Boost, `.ai/guidelines/portby.md`. A Worktree gets its copies when it's prepared, so after `boost:update` changes the main Worktree's files, Worktrees that already exist keep their old copies.
 
 ### 9.3 What an agent sees
 

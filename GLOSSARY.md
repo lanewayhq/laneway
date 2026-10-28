@@ -25,7 +25,7 @@ A Worktree is Ready once its own database exists and its env file has been patch
 _Avoid_: Provisioned, set up, initialised
 
 **Preparing**:
-A Worktree is Preparing from when Portby finds it until it is Ready: its database is being made, its env file patched and its Project's steps run.
+A Worktree is Preparing from when Portby finds it until it is Ready: the files config says to copy are copied from the main Worktree, its database is being made, its env file patched and its Project's steps run.
 _Avoid_: Provisioning, setting up, initialising
 
 **Test Database**:
