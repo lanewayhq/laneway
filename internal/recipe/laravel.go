@@ -35,7 +35,8 @@ func (Laravel) Detect(dir string) bool {
 // Worktree's Processes when it changes .env. --no-reload is also what lets
 // PHP_INI_SCAN_DIR reach the server, adding Portby's PHP ini
 // ({php_ini_dir}: no OPcache revalidation delay, so an edited Blade view
-// shows on the next request; spike #2).
+// shows on the next request, spike #2; and $_SERVER['HTTPS'] set, so the app
+// builds https:// URLs behind Portby's proxy without trusting it).
 const webCommand = "PHP_INI_SCAN_DIR=$PHP_INI_SCAN_DIR:{php_ini_dir} PHP_CLI_SERVER_WORKERS=8 php artisan serve --host=127.0.0.1 --port={port} --no-reload"
 
 func (Laravel) Defaults(dir string) (config.Layer, error) {
