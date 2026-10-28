@@ -497,6 +497,67 @@ func TestHarnessAddLeavesClaudeMdAloneWhenItNeedsNoImport(t *testing.T) {
 	})
 }
 
+// boostComposer is the composer.json of a Project that uses Laravel Boost.
+const boostComposer = `{"require": {"laravel/framework": "^13.0"}, "require-dev": {"laravel/boost": "^2.0"}}`
+
+func TestWithLaravelBoostBothHarnessesAddACustomGuidelineInsteadOfEditingAgentsMd(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	const claudeMd = "# Project\n\n<laravel-boost-guidelines>\nBoost's rules.\n</laravel-boost-guidelines>\n"
+	repo := gitfixture.New(t, "harness-boost").
+		WriteFile("composer.json", boostComposer).
+		WriteFile("CLAUDE.md", claudeMd).
+		Commit("boost")
+	guideline := filepath.Join(repo.Dir, ".ai", "guidelines", "portby.md")
+
+	res := d.MustRunCLI(repo.Dir, "harness", "add", "claude")
+
+	// Boost includes every file in .ai/guidelines in the guideline files it
+	// writes, but only when boost:install or boost:update runs.
+	assertContains(t, res.Stdout, "Created .ai/guidelines/portby.md")
+	assertContains(t, res.Stderr, "php artisan boost:update")
+	doc := readFile(t, guideline)
+	block := portbyBlock(t, doc)
+	assertContains(t, block, "portby info --json")
+	assertContains(t, block, "portby exec")
+	assertNoFile(t, filepath.Join(repo.Dir, "AGENTS.md"))
+	assertFile(t, filepath.Join(repo.Dir, "CLAUDE.md"), claudeMd)
+
+	res = d.MustRunCLI(repo.Dir, "harness", "add", "t3")
+
+	assertContains(t, res.Stdout, ".ai/guidelines/portby.md is up to date")
+	assertNotContains(t, res.Stderr, "boost:update")
+	assertFile(t, guideline, doc)
+	assertNoFile(t, filepath.Join(repo.Dir, "AGENTS.md"))
+}
+
+func TestWithLaravelBoostHarnessAddTakesOutTheBlocksAnEarlierRunAdded(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	const mine = "# Agent notes\n\nRun the linter before committing.\n"
+	repo := gitfixture.New(t, "harness-boost-earlier").
+		WriteFile("AGENTS.md", mine).
+		WriteFile("CLAUDE.md", mine).
+		Commit("agent notes")
+	d.MustRunCLI(repo.Dir, "harness", "add", "claude")
+	portbyBlock(t, readFile(t, filepath.Join(repo.Dir, "AGENTS.md")))
+	portbyBlock(t, readFile(t, filepath.Join(repo.Dir, "CLAUDE.md")))
+	writeTestFile(t, filepath.Join(repo.Dir, "composer.json"), boostComposer)
+
+	res := d.MustRunCLI(repo.Dir, "harness", "add", "claude")
+
+	assertContains(t, res.Stdout, "Updated AGENTS.md")
+	assertContains(t, res.Stdout, "Updated CLAUDE.md")
+	assertFile(t, filepath.Join(repo.Dir, "AGENTS.md"), mine)
+	assertFile(t, filepath.Join(repo.Dir, "CLAUDE.md"), mine)
+	portbyBlock(t, readFile(t, filepath.Join(repo.Dir, ".ai", "guidelines", "portby.md")))
+
+	res = d.MustRunCLI(repo.Dir, "harness", "add", "claude")
+
+	assertNotContains(t, res.Stdout, "AGENTS.md")
+	assertNotContains(t, res.Stdout, "CLAUDE.md")
+}
+
 func TestHarnessAddNeedsAKnownHarnessAndAGitRepository(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)

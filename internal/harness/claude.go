@@ -26,20 +26,11 @@ func claude(root string) ([]edit, error) {
 	if err != nil {
 		return nil, err
 	}
-	edits := []edit{{path: claudeSettings, old: old, new: data}}
-	agents, err := agentsEdit(root)
+	instructions, err := instructionEdits(root, true)
 	if err != nil {
 		return nil, err
 	}
-	edits = append(edits, agents)
-	imp, ok, err := claudeImportEdit(root)
-	if err != nil {
-		return nil, err
-	}
-	if ok {
-		edits = append(edits, imp)
-	}
-	return edits, nil
+	return append([]edit{{path: claudeSettings, old: old, new: data}}, instructions...), nil
 }
 
 // mergeSessionStartHook makes settings.hooks.SessionStart hold Portby's hook

@@ -19,7 +19,8 @@ const t3ScriptName = "Portby: wait until Ready"
 // t3 adds a script to t3.json that T3 Code runs in every Worktree it creates
 // for a thread (runOnWorktreeCreate), holding the agent until it exits
 // (async: false). It also adds the agent instructions to AGENTS.md, which
-// the agents T3 Code runs read.
+// the agents T3 Code runs read (or, with Laravel Boost, to Boost's
+// guidelines).
 func t3(root string) ([]edit, error) {
 	old, err := readFile(root, t3File)
 	if err != nil {
@@ -44,11 +45,11 @@ func t3(root string) ([]edit, error) {
 				"run `portby worktree ready` at the end of yours instead, or turn runOnWorktreeCreate off on all but one",
 			t3File, strings.Join(others, ", "), plural(len(others), "has it", "have it")))
 	}
-	agents, err := agentsEdit(root)
+	instructions, err := instructionEdits(root, false)
 	if err != nil {
 		return nil, err
 	}
-	return []edit{e, agents}, nil
+	return append([]edit{e}, instructions...), nil
 }
 
 // mergeT3Script makes doc.scripts hold Portby's script once: updated in place

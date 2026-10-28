@@ -423,11 +423,14 @@ Commands in `on_remove` in `portby.toml` run in the main Worktree when a Worktre
 ### 9.1 Make the Harness wait for a Ready Worktree
 
 ```sh
-portby harness add claude   # SessionStart hook in .claude/settings.json + a section in AGENTS.md, imported from CLAUDE.md
-portby harness add t3       # a "Portby: wait until Ready" script in t3.json that runs when T3 Code creates a worktree
+portby harness add claude   # SessionStart hook in .claude/settings.json + agent instructions
+portby harness add t3       # a "Portby: wait until Ready" script in t3.json that runs when T3 Code creates a worktree, + agent instructions
+php artisan boost:update    # puts the agent instructions into Boost's CLAUDE.md and AGENTS.md
 ```
 
-The hook runs `portby worktree ready`, so an agent's session in a new worktree starts only once its database, `.env` and `composer`/`npm install` are done. The `AGENTS.md` section tells the agent to use `portby info --json` for its URL and `portby exec` for commands. It's safe for teammates without Portby: the hook does nothing if `portby` isn't installed.
+The hook runs `portby worktree ready`, so an agent's session in a new worktree starts only once its database, `.env` and `composer`/`npm install` are done. The agent instructions tell the agent to use `portby info --json` for its URL and `portby exec` for commands. It's safe for teammates without Portby: the hook does nothing if `portby` isn't installed.
+
+The starter kit comes with Laravel Boost, which writes `CLAUDE.md` and `AGENTS.md` itself. So Portby puts its instructions where Boost [takes custom guidelines](https://laravel.com/docs/boost#adding-custom-ai-guidelines), `.ai/guidelines/portby.md`, and doesn't touch those files. Boost adds the instructions to them when you run `boost:install` or `boost:update`. In a Project without Boost, Portby adds a section to `AGENTS.md` and imports it from `CLAUDE.md`.
 
 ### 9.2 Commit those files
 
@@ -438,8 +441,6 @@ sed -i '\#^/\.claude$#d; \#^/AGENTS\.md$#d; \#^/CLAUDE\.md$#d' .gitignore
 echo '.claude/settings.local.json' >> .gitignore
 git add -A && git commit -m "chore: Portby Harness config for agents"
 ```
-
-If you use Laravel Boost, run `php artisan boost:install` after `portby harness add`. Both merge into these files instead of overwriting them.
 
 ### 9.3 What an agent sees
 

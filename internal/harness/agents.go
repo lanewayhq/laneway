@@ -31,6 +31,35 @@ const claudeImport = "@" + agentsFile + "\n"
 // importsAgents matches an existing import of AGENTS.md in CLAUDE.md.
 var importsAgents = regexp.MustCompile(`(^|\s)@(\./)?AGENTS\.md(\s|$)`)
 
+// instructionEdits add the agent instructions where the Project's agents
+// read them: Laravel Boost's guidelines if the Project uses Boost, else
+// AGENTS.md, imported into CLAUDE.md if importIntoClaude.
+func instructionEdits(root string, importIntoClaude bool) ([]edit, error) {
+	boost, err := usesBoost(root)
+	if err != nil {
+		return nil, err
+	}
+	if boost {
+		return boostEdits(root)
+	}
+	agents, err := agentsEdit(root)
+	if err != nil {
+		return nil, err
+	}
+	edits := []edit{agents}
+	if !importIntoClaude {
+		return edits, nil
+	}
+	imp, ok, err := claudeImportEdit(root)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		edits = append(edits, imp)
+	}
+	return edits, nil
+}
+
 // agentsEdit adds Portby's block to AGENTS.md, creating the file if needed.
 func agentsEdit(root string) (edit, error) {
 	return markdownEdit(root, agentsFile, agentsBlock)
@@ -66,6 +95,20 @@ func markdownEdit(root, rel, body string) (edit, error) {
 		return edit{}, fmt.Errorf("%s: %w", rel, err)
 	}
 	return edit{path: rel, old: old, new: []byte(doc)}, nil
+}
+
+// removeBlockEdit takes Portby's block out of the file rel. It returns false
+// when there is nothing to do: no file, or no block in it.
+func removeBlockEdit(root, rel string) (edit, bool, error) {
+	old, err := readFile(root, rel)
+	if err != nil || old == nil {
+		return edit{}, false, err
+	}
+	doc, ok, err := removeBlock(string(old))
+	if err != nil {
+		return edit{}, false, fmt.Errorf("%s: %w", rel, err)
+	}
+	return edit{path: rel, old: old, new: []byte(doc)}, ok, nil
 }
 
 func sameFile(a, b string) bool {

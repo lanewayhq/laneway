@@ -43,6 +43,27 @@ func mergeBlock(doc, body string) (string, error) {
 	return doc + block + nl, nil
 }
 
+// removeBlock takes the marked block out of doc, with the blank line that
+// mergeBlock put before it. It reports false if doc has no block.
+func removeBlock(doc string) (string, bool, error) {
+	begin, end, err := findBlock(doc)
+	if err != nil || begin < 0 {
+		return doc, false, err
+	}
+	nl := "\n"
+	if strings.Contains(doc, "\r\n") {
+		nl = "\r\n"
+	}
+	before, after := doc[:begin], strings.TrimPrefix(doc[end:], nl)
+	switch {
+	case before == "":
+		after = strings.TrimPrefix(after, nl)
+	case after == "" || strings.HasPrefix(after, nl):
+		before = strings.TrimSuffix(before, nl)
+	}
+	return before + after, true, nil
+}
+
 // findBlock returns the byte offsets of the marked block in doc, from the
 // start of its begin marker to the end of its end marker, or -1, -1.
 func findBlock(doc string) (begin, end int, err error) {
