@@ -24,6 +24,7 @@ func (setupStack) Detect(dir string) bool {
 
 func (setupStack) Defaults(dir string) (config.Layer, error) {
 	return config.ParseLayer("the setup-stack Recipe", []byte(`
+[worktree]
 on_create = ["composer install", "php artisan storage:link"]
 on_remove = ["php artisan cache:clear"]
 `))
@@ -67,11 +68,11 @@ func TestTheWorktreeRootIsNextToTheMainWorktreeUnlessConfigured(t *testing.T) {
 	}
 	res := mustResolveFixture(t, "setup-worktree-root")
 	if got := res.WorktreeRootOf("/code/shop"); got != "/code/trees" {
-		t.Errorf("worktree root with worktree_root = \"../trees\" = %q, want /code/trees (relative to the main Worktree)", got)
+		t.Errorf("worktree root with worktree.root = \"../trees\" = %q, want /code/trees (relative to the main Worktree)", got)
 	}
 	res.WorktreeRoot = "/srv/trees"
 	if got := res.WorktreeRootOf("/code/shop"); got != "/srv/trees" {
-		t.Errorf("worktree root with an absolute worktree_root = %q, want /srv/trees", got)
+		t.Errorf("worktree root with an absolute worktree.root = %q, want /srv/trees", got)
 	}
 }
 
@@ -103,17 +104,33 @@ func TestSetupConfigWrittenAsALayerResolvesToItself(t *testing.T) {
 	}
 }
 
+func TestATopLevelWorktreeKeyNamesWhereItMoved(t *testing.T) {
+	for _, tc := range []struct{ toml, want string }{
+		{`on_create = ["composer install"]`, "on_create moved into the [worktree] table: write it as on_create under [worktree]"},
+		{`on_remove = ["true"]`, "write it as on_remove under [worktree]"},
+		{`inherit_setup = false`, "write it as inherit_setup under [worktree]"},
+		{`copy = ["AGENTS.md"]`, "write it as copy under [worktree]"},
+		{`worktree_root = "../trees"`, "worktree_root moved into the [worktree] table: write it as root under [worktree]"},
+	} {
+		_, err := config.ParseLayer("/code/shop/portby.toml", []byte(tc.toml))
+		if err == nil || !strings.Contains(err.Error(), "/code/shop/portby.toml") || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err = %v, want one naming the file and %q", tc.toml, err, tc.want)
+		}
+	}
+}
+
 func TestInvalidSetupConfigNamesTheFileAndTheKey(t *testing.T) {
 	for _, tc := range []struct{ toml, want string }{
-		{`on_create = ["composer install", " "]`, "on_create[1] is empty"},
-		{`on_remove = [""]`, "on_remove[0] is empty"},
-		{`on_create = "composer install"`, "on_create"},
-		{`inherit_setup = "no"`, "inherit_setup"},
-		{`worktree_root = ""`, "worktree_root is empty"},
-		{`copy = ["AGENTS.md", ""]`, "copy[1]"},
-		{`copy = ["../shared/.env"]`, "copy[0]"},
-		{`copy = ["/etc/hosts"]`, "copy[0]"},
-		{`copy = "AGENTS.md"`, "copy"},
+		{"[worktree]\non_create = [\"composer install\", \" \"]", "worktree.on_create[1] is empty"},
+		{"[worktree]\non_remove = [\"\"]", "worktree.on_remove[0] is empty"},
+		{"[worktree]\non_create = \"composer install\"", "worktree.on_create"},
+		{"[worktree]\ninherit_setup = \"no\"", "worktree.inherit_setup"},
+		{"[worktree]\nroot = \"\"", "worktree.root is empty"},
+		{"[worktree]\ncopy = [\"AGENTS.md\", \"\"]", "worktree.copy[1]"},
+		{"[worktree]\ncopy = [\"../shared/.env\"]", "worktree.copy[0]"},
+		{"[worktree]\ncopy = [\"/etc/hosts\"]", "worktree.copy[0]"},
+		{"[worktree]\ncopy = \"AGENTS.md\"", "worktree.copy"},
+		{`worktree = "../trees"`, "worktree: type mismatch"},
 	} {
 		_, err := config.ParseLayer("/code/shop/portby.toml", []byte(tc.toml))
 		if err == nil || !strings.Contains(err.Error(), "/code/shop/portby.toml") || !strings.Contains(err.Error(), tc.want) {

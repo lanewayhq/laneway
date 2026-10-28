@@ -60,6 +60,19 @@ type Layer struct {
 	// ([services] table), each with its version: redis = "7". Every
 	// Project using redis:7 shares one container.
 	Services map[string]string `toml:"services"`
+	// Worktree is how Worktrees are created, prepared and removed
+	// ([worktree] table).
+	Worktree *WorktreeLayer `toml:"worktree"`
+	// Database is the Project's database ([database] table).
+	Database *DatabaseLayer `toml:"database"`
+}
+
+// WorktreeLayer is the [worktree] table: where `portby worktree add` creates
+// worktrees and what Portby does when a Worktree is prepared and removed.
+type WorktreeLayer struct {
+	// Root is the directory `portby worktree add` creates worktrees in. A
+	// relative path is relative to the main Worktree's directory.
+	Root *string `toml:"root"`
 	// Copy are paths, relative to the Worktree, copied from the main
 	// Worktree into each other Worktree when it is prepared, before anything
 	// else: gitignored files such as AGENTS.md, which a new worktree (only
@@ -77,11 +90,16 @@ type Layer struct {
 	// InheritSetup set to false drops the Recipe's on_create and on_remove
 	// steps, leaving only the Project's.
 	InheritSetup *bool `toml:"inherit_setup"`
-	// WorktreeRoot is the directory `portby worktree add` creates worktrees
-	// in. A relative path is relative to the main Worktree's directory.
-	WorktreeRoot *string `toml:"worktree_root"`
-	// Database is the Project's database ([database] table).
-	Database *DatabaseLayer `toml:"database"`
+}
+
+// movedKeys are the top-level keys that moved into the [worktree] table, by
+// their key there.
+var movedKeys = map[string]string{
+	"worktree_root": "root",
+	"copy":          "copy",
+	"on_create":     "on_create",
+	"on_remove":     "on_remove",
+	"inherit_setup": "inherit_setup",
 }
 
 // DatabaseLayer is the [database] table: the database each Worktree gets.
@@ -193,6 +211,13 @@ func ParseLayer(source string, data []byte) (Layer, error) {
 			return Layer{}, fmt.Errorf("%s: %s must be a table, not a %s", source, key, strings.ToLower(t))
 		}
 	}
+	// A key that moved would otherwise only warn, and the Worktrees would
+	// silently go without their setup.
+	for _, key := range md.Undecoded() {
+		if moved, ok := movedKeys[key.String()]; ok {
+			return Layer{}, fmt.Errorf("%s: %s moved into the [worktree] table: write it as %s under [worktree]", source, key, moved)
+		}
+	}
 	if err := l.validate(); err != nil {
 		return Layer{}, fmt.Errorf("%s: %w", source, err)
 	}
@@ -230,26 +255,11 @@ func (l Layer) validate() error {
 	if l.IdleTimeout != nil && *l.IdleTimeout <= 0 {
 		return fmt.Errorf("idle_timeout must be positive, such as \"30m\", not %s", *l.IdleTimeout)
 	}
-	if l.WorktreeRoot != nil && strings.TrimSpace(*l.WorktreeRoot) == "" {
-		return errors.New("worktree_root is empty")
-	}
 	if err := l.Database.validate(); err != nil {
 		return err
 	}
-	for i, path := range l.Copy {
-		if !filepath.IsLocal(filepath.FromSlash(path)) {
-			return fmt.Errorf("copy[%d]: %q isn't a path inside the Worktree; use one relative to it, such as \"AGENTS.md\"", i, path)
-		}
-	}
-	for i, step := range l.OnCreate {
-		if strings.TrimSpace(step) == "" {
-			return fmt.Errorf("on_create[%d] is empty", i)
-		}
-	}
-	for i, step := range l.OnRemove {
-		if strings.TrimSpace(step) == "" {
-			return fmt.Errorf("on_remove[%d] is empty", i)
-		}
+	if err := l.Worktree.validate(); err != nil {
+		return err
 	}
 	for _, env := range []struct {
 		table     string
@@ -294,6 +304,31 @@ func (l Layer) validate() error {
 	if len(primaries) > 1 {
 		return fmt.Errorf("only one Process can be the Primary Process, but %s are all true",
 			strings.Join(primaries, " and "))
+	}
+	return nil
+}
+
+func (wt *WorktreeLayer) validate() error {
+	if wt == nil {
+		return nil
+	}
+	if wt.Root != nil && strings.TrimSpace(*wt.Root) == "" {
+		return errors.New("worktree.root is empty")
+	}
+	for i, path := range wt.Copy {
+		if !filepath.IsLocal(filepath.FromSlash(path)) {
+			return fmt.Errorf("worktree.copy[%d]: %q isn't a path inside the Worktree; use one relative to it, such as \"AGENTS.md\"", i, path)
+		}
+	}
+	for _, steps := range []struct {
+		key   string
+		steps []string
+	}{{"on_create", wt.OnCreate}, {"on_remove", wt.OnRemove}} {
+		for i, step := range steps.steps {
+			if strings.TrimSpace(step) == "" {
+				return fmt.Errorf("worktree.%s[%d] is empty", steps.key, i)
+			}
+		}
 	}
 	return nil
 }

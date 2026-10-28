@@ -1,1 +1,2 @@
+[worktree]
 copy = ["CLAUDE.md", "notes/todo.md"]

@@ -244,7 +244,7 @@ func TestAWorktreeGoesIdleAfterTheStartThatWaitedForItsSetup(t *testing.T) {
 	d, clk := idleDaemon(t)
 	gate := filepath.Join(gitfixture.TempDir(t), "gate")
 	repo, pidFile := pidProject(t, "idle-setup", "idle_timeout = \"10m\"\n"+
-		"on_create = "+tomlList("until [ -e "+gate+" ]; do sleep 0.05; done")+"\n")
+		"[worktree]\non_create = "+tomlList("until [ -e "+gate+" ]; do sleep 0.05; done")+"\n")
 	d.MustRunCLI(repo.Dir, "link")
 
 	if page := d.Navigate("https://idle-setup.localhost/"); page.StatusCode != http.StatusServiceUnavailable {

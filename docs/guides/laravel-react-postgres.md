@@ -200,18 +200,16 @@ http = true
 
 `{vite_config}` is a config Portby generates around your `vite.config.ts`. It moves Vite's live-reload socket to `wss://vite.<domain>` behind Portby's proxy, so HMR works over HTTPS without changing your project.
 
-Then add migrations to the setup steps, so each new Worktree's database is migrated for its own branch. A cloned database is already migrated, so this is a no-op until the branch adds a migration:
+Then add migrations to the setup steps (`on_create` in the `[worktree]` table `portby init` wrote), so each new Worktree's database is migrated for its own branch. A cloned database is already migrated, so this is a no-op until the branch adds a migration:
 
 ```toml
+[worktree]
 on_create = ["composer install", "grep -Eq \"^APP_KEY=[\\\"']?[^\\\"'[:space:]#]\" .env || php artisan key:generate", "npm install", "php artisan storage:link", "php artisan migrate --force"]
 ```
 
 The full file should now look like this:
 
 ```toml
-inherit_setup = false
-on_create = ["composer install", "grep -Eq \"^APP_KEY=[\\\"']?[^\\\"'[:space:]#]\" .env || php artisan key:generate", "npm install", "php artisan storage:link", "php artisan migrate --force"]
-
 [processes.queue]
 command = "php artisan queue:work"
 
@@ -223,6 +221,10 @@ http = true
 command = "PHP_INI_SCAN_DIR=$PHP_INI_SCAN_DIR:{php_ini_dir} PHP_CLI_SERVER_WORKERS=8 php artisan serve --host=127.0.0.1 --port={port} --no-reload"
 primary = true
 static_dir = "public"
+
+[worktree]
+inherit_setup = false
+on_create = ["composer install", "grep -Eq \"^APP_KEY=[\\\"']?[^\\\"'[:space:]#]\" .env || php artisan key:generate", "npm install", "php artisan storage:link", "php artisan migrate --force"]
 
 [database]
 engine = "postgres"
@@ -289,7 +291,7 @@ Portby shows each env file it will create or change, as a diff of only the keys 
 1. **database**: the first connection to port 5432 starts the shared `postgres:18` container (the image is pulled the first time, so this one is slow), and Portby creates the database `shop`
 2. **test database**: an empty `shop_test`
 3. **env**: `.env` is created from `.env.example` with the Env Patch applied (`APP_URL=https://shop.localhost`, `DB_HOST=127.0.0.1`, `DB_PORT=5432`, `DB_DATABASE=shop`, `DB_USERNAME=portby`, `DB_PASSWORD=portby`, `MAIL_MAILER=smtp`, `MAIL_HOST=127.0.0.1`, `MAIL_PORT=1025`), and `.env.testing` gets the same keys with `DB_DATABASE=shop_test`. Before Portby first changes an existing file, it saves the original as `<file>.portby.bak`.
-4. **setup steps** (`on_create`): `composer install`, `php artisan key:generate` (only if `APP_KEY` is empty), `npm install`, `storage:link`, `migrate --force`
+4. **setup steps** (`[worktree] on_create`): `composer install`, `php artisan key:generate` (only if `APP_KEY` is empty), `npm install`, `storage:link`, `migrate --force`
 
 Wait for it, then open the app:
 
@@ -369,7 +371,7 @@ portby worktree add feature-x               # new branch feature-x
 portby worktree add hotfix --branch fix/login   # or check out / create a named branch
 ```
 
-The worktree goes in `~/code/shop.worktrees/feature-x`, next to the repository rather than inside it. Change the location with `worktree_root` in `portby.toml`. A plain `git worktree add`, or a worktree an AI tool creates, works exactly the same: Portby finds worktrees by watching git's own records.
+The worktree goes in `~/code/shop.worktrees/feature-x`, next to the repository rather than inside it. Change the location with `root` in the `[worktree]` table of `portby.toml`. A plain `git worktree add`, or a worktree an AI tool creates, works exactly the same: Portby finds worktrees by watching git's own records.
 
 Portby then prepares the new Worktree:
 
@@ -381,7 +383,7 @@ Portby then prepares the new Worktree:
 | `.env`         | yours                      | a copy of the main Worktree's `.env` (same `APP_KEY`), with its own URL and database |
 | Cache/Redis keys | Laravel's defaults       | `CACHE_PREFIX` / `REDIS_PREFIX` = `shop_feature-x_`, so queues and caches never cross |
 | Setup steps    | run at link                | run again: `composer install`, `npm install`, `migrate --force`                     |
-| Gitignored files | yours                    | the paths in `copy` in `portby.toml`, copied from the main Worktree (see §9.2)       |
+| Gitignored files | yours                    | the paths in `[worktree] copy` in `portby.toml`, copied from the main Worktree (see §9.2)       |
 
 ```sh
 cd ~/code/shop.worktrees/feature-x
@@ -393,7 +395,7 @@ The Domain is named after git's name for the worktree (its directory), not its b
 **How a Worktree gets its database** (`[database] worktree` in `portby.toml`):
 
 - `clone` (default): a copy of the main Worktree's database. Experiment freely; `main` is untouched.
-- `fresh`: an empty database. Add `php artisan migrate --seed --force` to `on_create`.
+- `fresh`: an empty database. Add `php artisan migrate --seed --force` to `[worktree] on_create`.
 - `shared`: uses the main Worktree's database.
 
 **Aliases** give a Worktree an extra, nicer Domain, such as for a demo:
@@ -415,7 +417,7 @@ Its databases become **Orphans**: Portby keeps them for 24 hours in case the rem
 portby gc          # lists them and asks; --yes in scripts
 ```
 
-Commands in `on_remove` in `portby.toml` run in the main Worktree when a Worktree is removed. They get `PORTBY_WORKTREE`, `PORTBY_DB`, `PORTBY_WORKTREE_PATH` and similar variables.
+Commands in `[worktree] on_remove` in `portby.toml` run in the main Worktree when a Worktree is removed. They get `PORTBY_WORKTREE`, `PORTBY_DB`, `PORTBY_WORKTREE_PATH` and similar variables.
 
 ---
 
@@ -450,15 +452,17 @@ sed -i 's#^/\.claude$#/.claude/*\n!/.claude/settings.json#' .gitignore
 
 It has to be `/.claude/*`, not `/.claude`, because git can't un-ignore a file inside an ignored directory.
 
-**Keep `AGENTS.md` and `CLAUDE.md` ignored and let Portby copy them** from the main Worktree into each new one. Add to `portby.toml`:
+**Keep `AGENTS.md` and `CLAUDE.md` ignored and let Portby copy them** from the main Worktree into each new one. Add a `copy` line to the `[worktree]` table `portby init` wrote in `portby.toml` (a second `[worktree]` header is an error):
 
 ```toml
+[worktree]
 copy = ["AGENTS.md", "CLAUDE.md"]
 ```
 
 Copying is the first thing Portby does when it prepares a new Worktree, before its database. A directory is copied with everything in it, a file the new Worktree already has is kept, and a path the main Worktree doesn't have is skipped. With Laravel Boost, also copy what it generates for your agents, such as Claude Code's skills and MCP config:
 
 ```toml
+[worktree]
 copy = ["AGENTS.md", "CLAUDE.md", ".claude/skills", ".mcp.json"]
 ```
 

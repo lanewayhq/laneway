@@ -12,7 +12,7 @@ import (
 )
 
 // runWorktreeAdd creates a git worktree under the Project's worktree root
-// (worktree_root, by default next to the main Worktree; see
+// (worktree.root, by default next to the main Worktree; see
 // recipe.DefaultWorktreeRoot). It works on git only, so it doesn't need the
 // daemon: the Worktree Watcher finds the new worktree like any other.
 func runWorktreeAdd(ctx context.Context, env Env, args []string) error {

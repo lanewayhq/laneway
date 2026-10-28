@@ -1,1 +1,2 @@
+[worktree]
 copy = ["AGENTS.md", "CLAUDE.md", ".claude/skills"]

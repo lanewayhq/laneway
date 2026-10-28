@@ -22,25 +22,6 @@ func Encode(w io.Writer, l Layer) error {
 	if l.IdleTimeout != nil {
 		fmt.Fprintf(&b, "idle_timeout = %s\n", quote(l.IdleTimeout.String()))
 	}
-	if l.WorktreeRoot != nil {
-		fmt.Fprintf(&b, "worktree_root = %s\n", quote(*l.WorktreeRoot))
-	}
-	if l.InheritSetup != nil {
-		fmt.Fprintf(&b, "inherit_setup = %t\n", *l.InheritSetup)
-	}
-	for _, steps := range []struct {
-		key   string
-		steps []string
-	}{{"copy", l.Copy}, {"on_create", l.OnCreate}, {"on_remove", l.OnRemove}} {
-		if steps.steps == nil {
-			continue
-		}
-		quoted := make([]string, len(steps.steps))
-		for i, s := range steps.steps {
-			quoted[i] = quote(s)
-		}
-		fmt.Fprintf(&b, "%s = [%s]\n", steps.key, strings.Join(quoted, ", "))
-	}
 	for _, name := range slices.Sorted(maps.Keys(l.Processes)) {
 		p := l.Processes[name]
 		if b.Len() > 0 {
@@ -64,6 +45,31 @@ func Encode(w io.Writer, l Layer) error {
 		}
 		if p.Disabled != nil {
 			fmt.Fprintf(&b, "disabled = %t\n", *p.Disabled)
+		}
+	}
+	if wt := l.Worktree; wt != nil {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString("[worktree]\n")
+		if wt.Root != nil {
+			fmt.Fprintf(&b, "root = %s\n", quote(*wt.Root))
+		}
+		if wt.InheritSetup != nil {
+			fmt.Fprintf(&b, "inherit_setup = %t\n", *wt.InheritSetup)
+		}
+		for _, list := range []struct {
+			key    string
+			values []string
+		}{{"copy", wt.Copy}, {"on_create", wt.OnCreate}, {"on_remove", wt.OnRemove}} {
+			if list.values == nil {
+				continue
+			}
+			quoted := make([]string, len(list.values))
+			for i, s := range list.values {
+				quoted[i] = quote(s)
+			}
+			fmt.Fprintf(&b, "%s = [%s]\n", list.key, strings.Join(quoted, ", "))
 		}
 	}
 	if db := l.Database; db != nil {

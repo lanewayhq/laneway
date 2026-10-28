@@ -87,7 +87,7 @@ func TestInSharedModeANewWorktreeUsesTheMainWorktreesSQLiteFile(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	out := filepath.Join(gitfixture.TempDir(t), "ran")
 	repo := sqliteProject(t, "db-shared", `worktree = "shared"`).
-		WriteFile("portby.local.toml", "on_create = "+tomlList(`echo "$PORTBY_DB" >> `+out)+"\n").
+		WriteFile("portby.local.toml", "[worktree]\non_create = "+tomlList(`echo "$PORTBY_DB" >> `+out)+"\n").
 		Commit("record the database setup sees")
 	writeTestFile(t, sqliteFile(repo.Dir), "main-data")
 	d.MustRunCLI(repo.Dir, "link", "--yes")
@@ -126,7 +126,7 @@ func TestRetryingSetupKeepsTheWorktreesDatabase(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	marker := filepath.Join(gitfixture.TempDir(t), "fixed")
 	repo := sqliteProject(t, "db-retry", "").
-		WriteFile("portby.local.toml", "on_create = "+tomlList("test -e "+marker)+"\n").
+		WriteFile("portby.local.toml", "[worktree]\non_create = "+tomlList("test -e "+marker)+"\n").
 		Commit("a setup step that fails until fixed")
 	writeTestFile(t, sqliteFile(repo.Dir), "main-data")
 	writeTestFile(t, marker, "")

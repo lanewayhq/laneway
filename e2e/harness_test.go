@@ -122,7 +122,7 @@ func TestHarnessAddClaudeAddsASessionStartHookThatWaitsUntilTheWorktreeIsReady(t
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "harness-claude").
-		WriteFile("portby.toml", "on_create = [\"true\"]\n").
+		WriteFile("portby.toml", "[worktree]\non_create = [\"true\"]\n").
 		Commit("config")
 	d.MustRunCLI(repo.Dir, "link")
 
@@ -167,7 +167,7 @@ func TestTheGeneratedHookFailsWhenSetupFailed(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "harness-failed").
-		WriteFile("portby.toml", "on_create = [\"echo broken-step >&2; exit 5\"]\n").
+		WriteFile("portby.toml", "[worktree]\non_create = [\"echo broken-step >&2; exit 5\"]\n").
 		Commit("config")
 	d.MustRunCLI(repo.Dir, "link")
 	d.MustRunCLI(repo.Dir, "harness", "add", "claude")
@@ -286,7 +286,7 @@ func TestHarnessAddT3AddsAWorktreeCreateScriptThatHoldsTheAgentUntilReady(t *tes
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "harness-t3").
-		WriteFile("portby.toml", "on_create = [\"true\"]\n").
+		WriteFile("portby.toml", "[worktree]\non_create = [\"true\"]\n").
 		Commit("config")
 	d.MustRunCLI(repo.Dir, "link")
 

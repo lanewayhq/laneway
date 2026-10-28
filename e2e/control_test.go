@@ -106,7 +106,7 @@ func TestDownDuringSetupDoesNotWaitForIt(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	gate := filepath.Join(gitfixture.TempDir(t), "gate")
 	repo, pidFile := pidProject(t, "down-setup",
-		"on_create = "+tomlList("until [ -e "+gate+" ]; do sleep 0.05; done")+"\n")
+		"[worktree]\non_create = "+tomlList("until [ -e "+gate+" ]; do sleep 0.05; done")+"\n")
 	d.MustRunCLI(repo.Dir, "link")
 	d.Navigate("https://down-setup.localhost/")
 	waitForState(t, d, "down-setup.localhost", "starting")

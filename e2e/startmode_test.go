@@ -114,7 +114,7 @@ func TestAlwaysProcessesWaitForSetupAndStartOnceARetriedSetupIsReady(t *testing.
 	d := testkit.StartDaemon(t)
 	marker := filepath.Join(gitfixture.TempDir(t), "fixed")
 	repo, webPID, otherPID := modesProject(t, "mode-always-setup", "always")
-	repo.WriteFile("portby.local.toml", "on_create = "+tomlList("test -e "+marker+" || exit 4")+"\n")
+	repo.WriteFile("portby.local.toml", "[worktree]\non_create = "+tomlList("test -e "+marker+" || exit 4")+"\n")
 	d.MustRunCLI(repo.Dir, "link")
 
 	if res := d.RunCLI(repo.Dir, "worktree", "ready"); res.ExitCode != 1 {

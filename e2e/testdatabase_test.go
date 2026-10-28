@@ -210,7 +210,7 @@ func TestSetupStepsKnowTheWorktreesTestDatabase(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := postgresProject(t, "tdb-steps", `test = "on"`).
-		WriteFile("portby.local.toml", "on_create = [\"echo \\\"$PORTBY_TEST_DB\\\" > test-db.txt\"]\n")
+		WriteFile("portby.local.toml", "[worktree]\non_create = [\"echo \\\"$PORTBY_TEST_DB\\\" > test-db.txt\"]\n")
 	d.MustRunCLI(repo.Dir, "link", "--yes")
 
 	d.MustRunCLI(repo.Dir, "worktree", "ready")

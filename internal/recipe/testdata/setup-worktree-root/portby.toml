@@ -1,1 +1,2 @@
-worktree_root = "/srv/trees"
+[worktree]
+root = "/srv/trees"

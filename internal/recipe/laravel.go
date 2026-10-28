@@ -55,7 +55,7 @@ func (Laravel) Defaults(dir string) (config.Layer, error) {
 	l.Services = map[string]string{}
 	laravelDatabase(&l, dir, env)
 	laravelServices(&l, env)
-	l.OnCreate = laravelSetup(dir)
+	l.Worktree = &config.WorktreeLayer{OnCreate: laravelSetup(dir)}
 	// Every Worktree but the main one gets its own Redis keys and cache
 	// entries, so its queue worker never runs another Worktree's jobs. The
 	// main Worktree keeps Laravel's defaults (derived from APP_NAME).

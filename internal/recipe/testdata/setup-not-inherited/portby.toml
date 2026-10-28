@@ -1,1 +1,2 @@
+[worktree]
 on_create = ["make setup"]

@@ -95,7 +95,7 @@ type Resolved struct {
 	Copy []string
 	// OnCreate are the setup steps (shell commands) run in a new Worktree:
 	// the Recipe's first, then the Project's layers' in order, unless a
-	// Project layer sets inherit_setup = false.
+	// Project layer sets worktree.inherit_setup = false.
 	OnCreate []string
 	// OnRemove are the shell commands run in the main Worktree when a
 	// Worktree is removed, merged like OnCreate.
@@ -264,17 +264,22 @@ func (r Resolved) Layer() config.Layer {
 		}
 		l.Services[svc.Engine] = svc.Version
 	}
-	l.Copy = slices.Clone(r.Copy)
-	l.OnCreate = slices.Clone(r.OnCreate)
-	l.OnRemove = slices.Clone(r.OnRemove)
+	wt := config.WorktreeLayer{
+		Copy:     slices.Clone(r.Copy),
+		OnCreate: slices.Clone(r.OnCreate),
+		OnRemove: slices.Clone(r.OnRemove),
+	}
 	if r.Recipe != "" && len(r.OnCreate)+len(r.OnRemove) > 0 {
 		// The Recipe's steps are written out, so they mustn't be
 		// inherited again.
 		inherit := false
-		l.InheritSetup = &inherit
+		wt.InheritSetup = &inherit
 	}
 	if r.WorktreeRoot != "" {
-		l.WorktreeRoot = &r.WorktreeRoot
+		wt.Root = &r.WorktreeRoot
+	}
+	if wt.Root != nil || wt.Copy != nil || wt.OnCreate != nil || wt.OnRemove != nil {
+		l.Worktree = &wt
 	}
 	if db := r.Database; db != (Database{}) {
 		l.Database = &config.DatabaseLayer{}
@@ -291,7 +296,7 @@ func (r Resolved) Layer() config.Layer {
 }
 
 // DefaultWorktreeRoot is where `portby worktree add` creates worktrees unless
-// worktree_root says otherwise: a directory next to the main Worktree named
+// worktree.root says otherwise: a directory next to the main Worktree named
 // after it, such as ../shop.worktrees for a main Worktree at shop. Worktrees
 // stay out of the repository, so nothing needs ignoring and tools scanning the
 // repository don't see them, but they stay next to it.
@@ -372,21 +377,25 @@ func Resolve(in Input) (Resolved, error) {
 		if l.IdleTimeout != nil {
 			res.IdleTimeout = *l.IdleTimeout
 		}
-		if l.WorktreeRoot != nil {
-			res.WorktreeRoot = *l.WorktreeRoot
+		wt := config.WorktreeLayer{}
+		if l.Worktree != nil {
+			wt = *l.Worktree
 		}
-		for _, path := range l.Copy {
+		if wt.Root != nil {
+			res.WorktreeRoot = *wt.Root
+		}
+		for _, path := range wt.Copy {
 			if !slices.Contains(res.Copy, path) {
 				res.Copy = append(res.Copy, path)
 			}
 		}
 		if res.Recipe != "" && i == 0 {
-			recipeCreate, recipeRemove = l.OnCreate, l.OnRemove
+			recipeCreate, recipeRemove = wt.OnCreate, wt.OnRemove
 		} else {
-			res.OnCreate = append(res.OnCreate, l.OnCreate...)
-			res.OnRemove = append(res.OnRemove, l.OnRemove...)
-			if l.InheritSetup != nil {
-				inherit = *l.InheritSetup
+			res.OnCreate = append(res.OnCreate, wt.OnCreate...)
+			res.OnRemove = append(res.OnRemove, wt.OnRemove...)
+			if wt.InheritSetup != nil {
+				inherit = *wt.InheritSetup
 			}
 		}
 		if db := l.Database; db != nil {

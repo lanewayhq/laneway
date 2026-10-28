@@ -14,7 +14,7 @@ func TestANewWorktreeGetsTheGitignoredFilesConfigSaysToCopyFromTheMainWorktree(t
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "copy-files").
 		WriteFile(".gitignore", "/AGENTS.md\n/CLAUDE.md\n/.claude/*\n!/.claude/settings.json\n/docs/local.md\n").
-		WriteFile("portby.toml", `copy = ["AGENTS.md", "CLAUDE.md", ".claude/skills", "docs", "missing.md"]`+"\n").
+		WriteFile("portby.toml", "[worktree]\n"+`copy = ["AGENTS.md", "CLAUDE.md", ".claude/skills", "docs", "missing.md"]`+"\n").
 		WriteFile(".claude/settings.json", "{}\n").
 		WriteFile("docs/guide.md", "committed\n").
 		Commit("config").

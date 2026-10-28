@@ -153,7 +153,7 @@ func TestInfoJSONReportsSetupAndWhyItFailed(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "info-setup").
-		WriteFile("portby.toml", "on_create = "+tomlList("echo checking >&2; exit 3")+"\n").
+		WriteFile("portby.toml", "[worktree]\non_create = "+tomlList("echo checking >&2; exit 3")+"\n").
 		Commit("declare a failing setup step")
 	d.MustRunCLI(repo.Dir, "link")
 	if res := d.RunCLI(repo.Dir, "worktree", "ready"); res.ExitCode != 1 {

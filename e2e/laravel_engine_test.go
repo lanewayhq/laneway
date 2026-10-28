@@ -203,6 +203,6 @@ func realLaravelRepo(t *testing.T, name, app string) *gitfixture.Repo {
 		WriteFile("routes/web.php", laravelRoutes).
 		WriteFile("database/migrations/2026_01_01_000000_create_notes_table.php", notesMigration).
 		WriteFile("public/portby.txt", "served from public/\n").
-		WriteFile("portby.toml", "on_create = [\"php artisan migrate --force\"]\n").
+		WriteFile("portby.toml", "[worktree]\non_create = [\"php artisan migrate --force\"]\n").
 		Commit("a Laravel app")
 }
