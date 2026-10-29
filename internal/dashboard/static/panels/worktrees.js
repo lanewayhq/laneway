@@ -104,7 +104,7 @@ export default {
           d.primary ? h("span", { class: "tag" }, "primary") : "",
           d.startMode && d.startMode !== "lazy" ? h("span", { class: "tag" }, d.startMode) : "",
           badge(states.get(d.name) ?? "stopped"),
-          d.http && !d.primary && w.domain ? link(`${d.name}.${w.domain}`) : "",
+          d.http && !d.primary && w.domain ? link(`${d.name}.${w.primaryDomain || w.domain}`) : "",
           controls(key, w, d.name),
           ...extra(key, dash.processActions.flatMap((fn) => fn(w, p, d))));
       }));

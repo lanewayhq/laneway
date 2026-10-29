@@ -98,7 +98,7 @@ type DeclaredProcess struct {
 	StartMode string `json:"startMode"`
 	Primary   bool   `json:"primary,omitempty"`
 	// HTTP Processes other than the Primary one are served at
-	// <name>.<domain>.
+	// <name>.<PrimaryDomain> (and under the Worktree's other names).
 	HTTP bool `json:"http,omitempty"`
 }
 
