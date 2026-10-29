@@ -3,6 +3,7 @@ package proxy
 import (
 	"fmt"
 	"html"
+	"net"
 	"net/http"
 	"strings"
 )
@@ -19,6 +20,25 @@ func isNavigation(r *http.Request) bool {
 		return mode == "navigate"
 	}
 	return r.Method == http.MethodGet && strings.Contains(r.Header.Get("Accept"), "text/html")
+}
+
+// isPageLoad reports whether r is a browser loading a page it can be
+// redirected away from: a navigation that is a GET. A form post navigates
+// too, but redirecting it would resend its body to another origin.
+func isPageLoad(r *http.Request) bool {
+	return r.Method == http.MethodGet && isNavigation(r)
+}
+
+// redirectToPrimaryDomain sends a browser to the same path and query on
+// primary, the Primary Domain of the Worktree it asked for (ADR 0006). The
+// redirect is temporary and not cached, so removing the Alias undoes it.
+func redirectToPrimaryDomain(w http.ResponseWriter, r *http.Request, primary string) {
+	host := primary
+	if _, port, err := net.SplitHostPort(r.Host); err == nil {
+		host = net.JoinHostPort(primary, port)
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	http.Redirect(w, r, "https://"+host+r.URL.RequestURI(), http.StatusTemporaryRedirect)
 }
 
 // writeStartErrorPage explains why the Domain's Primary Process didn't start,
