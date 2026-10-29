@@ -37,12 +37,16 @@ A database (including a Test Database) left behind by a removed Worktree, kept f
 _Avoid_: Stale database, leftover
 
 **Domain**:
-The local hostname a Worktree is served at. The main Worktree uses `<project>.localhost`. Every other Worktree uses `<worktree>.<project>.localhost`, named after git's name for the Worktree, not its branch.
+The local hostname a Worktree is served at, or, once it has a different Primary Domain, redirects browsers from. The main Worktree uses `<project>.localhost`. Every other Worktree uses `<worktree>.<project>.localhost`, named after git's name for the Worktree, not its branch.
 _Avoid_: URL, host, site
 
 **Alias**:
 An extra, human-chosen Domain for a Worktree, alongside its own Domain.
 _Avoid_: Nickname, vanity domain
+
+**Primary Domain**:
+The Domain Portby gives out for a Worktree: its newest Alias if it has one, otherwise its own Domain.
+_Avoid_: Preferred alias, main URL, canonical domain
 
 ## Running things
 
