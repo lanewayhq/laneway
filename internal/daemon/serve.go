@@ -44,8 +44,10 @@ type served struct {
 	// activity sees every request for the Domain and decides when the
 	// Worktree is Idle.
 	activity *activity.Tracker
-	// lifecycle serialises changes to which Processes run: starts and
-	// going Idle.
+	// lifecycle serialises changes to which Processes run (starts and
+	// going Idle) and Portby's writes to the Worktree's .env, so setup's
+	// env step never writes it while a start or a moved Primary Domain
+	// does.
 	lifecycle sync.Mutex
 	// alwaysServices ends the hold its always Processes have on the
 	// Worktree's Services (holdAlwaysServices); nil when there is none.

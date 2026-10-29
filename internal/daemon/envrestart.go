@@ -34,13 +34,26 @@ func (d *Daemon) restartForEnv(s *served, cfg worktreeConfig) {
 	}
 }
 
+// lockLifecycle takes the lifecycle lock of the Worktree served at its own
+// Domain domain, if it is served, and returns what releases it.
+func (d *Daemon) lockLifecycle(domain string) (unlock func()) {
+	d.servedMu.Lock()
+	s := d.served[domain]
+	d.servedMu.Unlock()
+	if s == nil {
+		return func() {}
+	}
+	s.lifecycle.Lock()
+	return s.lifecycle.Unlock
+}
+
 // primaryDomainMoved brings the Worktree served at domain (its own Domain)
 // up to date with its new Primary Domain, in the background: once it is
 // Ready, its Env Patch is applied again and, if it is running, its running
 // Processes restart, since they read .env and their hosts when they start.
-// Waiting for Ready means Preparing's own Env Patch, which renders the
-// Primary Domain it finds, never writes .env at the same time; a Failed
-// setup gets it when retried. A stopped Worktree isn't started: its next
+// A Worktree still Preparing gets the new Primary Domain from its own env
+// step, and a Failed one when its setup is retried; that step takes the
+// lifecycle lock too, so the two never write .env at once. A stopped Worktree isn't started: its next
 // start uses the new Primary Domain.
 func (d *Daemon) primaryDomainMoved(domain string) {
 	d.servedMu.Lock()

@@ -53,6 +53,7 @@ func (d *Daemon) setupPlan(p registry.Project, w worktreeRef) prepare.Plan {
 			steps = append(steps, step)
 		}
 		steps = append(steps, prepare.Step{Name: "env", Run: func(ctx context.Context, _ io.Writer) error {
+			defer d.lockLifecycle(w.domain)()
 			plan, err := d.planEnvPatch(p, w)
 			if err != nil {
 				return fmt.Errorf("the Env Patch for %s: %w", w.dir, err)
