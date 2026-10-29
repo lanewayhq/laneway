@@ -10,7 +10,7 @@ This manual takes a fresh Linux or WSL2 machine that only has the `portby` binar
 - Worktrees: every git worktree gets its own Domain, its own copy of the database, its own `.env` and its own setup run
 - Aliases, Orphans and `portby gc`, the Dashboard, `portby exec`, logs, and Harness config for AI agents
 
-Runtimes come from **mise**, per project and from prebuilt packages only: nothing is compiled, and no PHP, Composer or Node is installed globally.
+Runtimes come from **mise**, per project and from prebuilt packages only: nothing is compiled, and no PHP, Composer, Node or Bun is installed globally. The app is created with the `laravel` CLI (the Laravel installer), and Bun is its package manager.
 
 Commands below use `shop` as the Project name and `~/code` as the place you keep projects. Change both to suit you.
 
@@ -88,7 +88,7 @@ Daemon, service, ports 443 and 80, port permission, the CA in each store, the co
 
 ## 3. Create the project folder with its own Runtimes
 
-Nothing is installed globally. The project's `mise.toml` declares PHP, Composer and Node, and they're only on your `PATH` inside the project, and in Portby's Processes and setup steps for it.
+Nothing is installed globally. The project's `mise.toml` declares PHP, Composer, Node and Bun, and they're only on your `PATH` inside the project, and in Portby's Processes and setup steps for it.
 
 mise's default `php` plugin (`vfox:jdx/vfox-php`) **builds PHP from source**: it needs a compiler toolchain and about 15 `-dev` packages, takes a long time, and you only get `pdo_pgsql` if `libpq` headers happen to be installed. Don't use it. Use these prebuilt ones:
 
@@ -96,7 +96,8 @@ mise's default `php` plugin (`vfox:jdx/vfox-php`) **builds PHP from source**: it
 | -------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | PHP      | `conda:php`                | Prebuilt PHP from conda-forge. Installs in seconds, with `pdo_pgsql`, `pgsql`, `intl`, `pcntl`, OPcache, `zip`, `sodium`, `bcmath` and `pdo_sqlite`. |
 | Composer | `github:composer/composer` | The official `composer.phar` from Composer's GitHub releases, installed as `composer`                                 |
-| Node     | `node` (mise core)         | Official Node binaries                                                                                                |
+| Node     | `node` (mise core)         | Official Node binaries. Vite+ (`vp`) runs on Node, and the starter kit's own setup hook runs `npm install` once        |
+| Bun      | `bun` (mise core)          | Official Bun binaries. The package manager: installs `node_modules` and writes `bun.lock`                             |
 
 ```sh
 mkdir -p ~/code/shop && cd ~/code/shop
@@ -106,6 +107,7 @@ cat > mise.toml <<'TOML'
 "conda:php" = "8.5"
 "github:composer/composer" = { version = "2", bin = "composer" }
 node = "24"
+bun = "1"
 TOML
 
 mise install
@@ -113,6 +115,7 @@ php -v                 # PHP 8.5.x (only inside ~/code/shop)
 php -m | grep -i pgsql # pdo_pgsql, pgsql
 composer --version
 node -v
+bun --version
 ```
 
 `mise install` puts the binaries in mise's own store (`~/.local/share/mise/installs`), the way every mise tool is installed. Nothing goes into the global config or onto your `PATH` outside the project. `mise trust` isn't needed because `~/code` is trusted (§1.2).
@@ -121,28 +124,63 @@ Notes:
 
 - Without `bin = "composer"` the file is installed as `composer.phar` and `composer` isn't found. If you installed it before adding `bin`, delete `~/.local/share/mise/installs/github-composer-composer` and run `mise install` again.
 - If `mise install` fails with "HTTP timed out after 3.00s" for GitHub, run `MISE_FETCH_REMOTE_VERSIONS_TIMEOUT=30s mise install`.
+- Bun installs the packages, but keep Node: `vp` is a Node script (`#!/usr/bin/env node`), and the starter kit's post-create hook runs `npm install` before the installer switches to Bun.
 - conda-forge only publishes PHP 8.5.x right now (`mise ls-remote conda:php`). Laravel 13 needs PHP ^8.3, so that's fine.
 - This PHP has no `gd` and no `redis` extension. If you later switch the cache or queue to Redis (§9.4), use Predis instead of phpredis.
 - `composer diagnose` reports `Checking pubkeys: FAIL`. That only affects `composer self-update`. mise updates Composer, so you can ignore it.
 
-Commit `mise.toml` with the app (§5.4). Teammates, every worktree and Portby's Processes then use the same versions. Portby never installs Runtimes: it asks mise (`mise env`) in each Worktree, then checks the result against `composer.json`'s `require.php` / `ext-*` and `package.json`'s `engines`. Any mismatch shows up in `portby doctor` and when the Worktree starts.
+Commit `mise.toml` with the app (§5.5). Teammates, every worktree and Portby's Processes then use the same versions. Portby never installs Runtimes: it asks mise (`mise env`) in each Worktree, then checks the result against `composer.json`'s `require.php` / `ext-*` and `package.json`'s `engines`. Any mismatch shows up in `portby doctor` and when the Worktree starts.
 
 ---
 
 ## 4. Create the app in that folder
 
-`composer create-project` refuses a directory that isn't empty ("Project directory … is not empty"), and `shop/` already has `mise.toml`. Composer has no flag to force it. The Laravel installer's `laravel new . --force` refuses the current directory too, and `laravel new shop --force` deletes `shop/` first. So create the app in a hidden subfolder, using the project's Runtimes, and move it up:
+### 4.1 Install the Laravel installer
+
+The `laravel` CLI is a Composer package. Install it with the project's Composer, so run this inside `~/code/shop`, where `composer` exists:
 
 ```sh
 cd ~/code/shop
-composer create-project laravel/react-starter-kit .starter-kit --stability=dev
-(shopt -s dotglob && mv .starter-kit/* .) && rmdir .starter-kit
-php artisan --version     # Laravel Framework 13.x
+composer global require laravel/installer
 ```
 
-This is the command `laravel new shop --react` runs, so you don't need the Laravel installer. `--stability=dev` is required. Without it you get the starter kit's last *tagged* release, which is still on Laravel 12 and Inertia 2. With it you get the current kit: Laravel 13, Inertia 3, React 19 and Vite+.
+`composer global` installs into Composer's per-user folder, `~/.config/composer`, and puts the command in `~/.config/composer/vendor/bin`. That folder isn't on your `PATH`, and this manual leaves it that way: it runs the installer by its full path, the one time it's needed.
 
-It takes about two minutes. It runs `npm install` and migrates a temporary SQLite database, which the next step removes. Moving the app afterwards is safe: `vendor/` and `node_modules/.bin` only use relative paths.
+```sh
+~/.config/composer/vendor/bin/laravel --version
+```
+
+This installs a Composer package, not a Runtime. `laravel` is a PHP script (`#!/usr/bin/env php`), so it runs on the PHP of whatever folder you're in, and outside a project it fails with "php: not found". Update it later with `composer global update laravel/installer`, again from inside a project.
+
+### 4.2 Create the app
+
+`laravel new` won't create the app in the current folder: `laravel new .` stops with "Application already exists!", and `--force` is refused for `.`. From the parent, `laravel new shop --force` runs `rm -rf shop` first, which deletes your `mise.toml`. So create the app in a hidden subfolder, using the project's Runtimes, and move it up:
+
+```sh
+cd ~/code/shop
+~/.config/composer/vendor/bin/laravel new .starter-kit --react --bun
+(shopt -s dotglob && mv .starter-kit/* .) && rmdir .starter-kit
+php artisan --version     # Laravel Framework 13.x
+ls bun.lock
+```
+
+`--react` picks the React starter kit, and the installer then asks:
+
+- **which of the starter kit's features to keep**
+- **Pest or PHPUnit**: either works with everything below
+- **whether to install Laravel Boost**: see §9.1 if you say yes
+
+For starter kits the installer runs `composer create-project laravel/react-starter-kit .starter-kit --stability=dev`, so you get the current kit: Laravel 13, Inertia 3, React 19 and Vite+.
+
+`--bun` makes Bun the package manager. The kit's own post-create hook runs `npm install` first, because the kit ships no lockfile. The installer then runs `bun install` and `bun run build`, and `bun.lock` is created. Portby's Laravel Recipe picks the package manager from the lockfile, so it uses `bun install` in every Worktree from now on. Bun also copies the kit's `pnpm-workspace.yaml` into `package.json` as `"workspaces": ["."]`. That's harmless: leave both files.
+
+It takes about two minutes, and it migrates a temporary SQLite database, which the next step removes. Moving the app afterwards is safe: `vendor/` and `node_modules/.bin` only use relative paths.
+
+Notes:
+
+- **Don't pass `--database=pgsql`.** For a starter kit the installer leaves the database question out and uses SQLite. With `--database=pgsql`, it runs `php artisan migrate` against Postgres before Portby has created a database, so that step fails, and it writes `DB_DATABASE=.starter_kit` (from the folder name). Switch to Postgres in §5.2 instead.
+- The installer sets `APP_URL=http://localhost:8000` in `.env`. That's harmless: the next step deletes `.env`, and Portby's Env Patch sets `APP_URL`.
+- Run it in a terminal. When its output isn't a terminal (piped to `tee`, in CI), the installer adds `--no-ansi` to every command, and `bun install` stops with "bun install has no --no-ansi flag". In that case, run `bun install && bun run build` in `.starter-kit` yourself afterwards.
 
 ---
 
@@ -150,7 +188,17 @@ It takes about two minutes. It runs `npm install` and migrates a temporary SQLit
 
 Do all of this **before** `portby link`. Portby reads these files when it first prepares the Worktree, and some decisions, such as the Test Database, are made then.
 
-### 5.1 Switch to PostgreSQL
+### 5.1 Make it a git repository
+
+Portby works on git repositories: `portby init` (§5.4) and `portby link` both stop with "not inside a git repository" without one. `laravel new` only runs `git init` when you pass `--git`, so do it now:
+
+```sh
+git init -b main
+```
+
+You commit at the end of this section (§5.5), once the app is ready.
+
+### 5.2 Switch to PostgreSQL
 
 Portby's Laravel Recipe reads `DB_CONNECTION` from `.env`, or from `.env.example` when there's no `.env`. Point the template at Postgres, then delete the SQLite `.env` so Portby builds a fresh one:
 
@@ -161,7 +209,7 @@ rm -f .env database/database.sqlite
 
 You don't need to fill in `DB_HOST`, `DB_DATABASE` and the rest: those keys are part of the Env Patch.
 
-### 5.2 Give the tests their own Postgres database (Test Database)
+### 5.3 Give the tests their own Postgres database (Test Database)
 
 Out of the box the kit's tests use in-memory SQLite (`phpunit.xml` sets `DB_CONNECTION=sqlite` and `DB_DATABASE=:memory:`), and Portby leaves that alone. To run tests against Postgres, in a database that is wiped independently of your dev data:
 
@@ -180,7 +228,7 @@ echo '.env.testing' >> .gitignore
 
 The Recipe now detects a Test Database (a `.env.testing` exists, and `phpunit.xml` no longer forces SQLite). Every Worktree gets an empty `<database>_test`, and Portby patches `.env.testing` to point at it. New worktrees get a copy of the main Worktree's `.env.testing`.
 
-### 5.3 Write `portby.toml` and fix the Vite Process for Vite+
+### 5.4 Write `portby.toml` and fix the Vite Process for Vite+
 
 Write the Recipe's resolved config to a file you can edit and commit:
 
@@ -188,7 +236,7 @@ Write the Recipe's resolved config to a file you can edit and commit:
 portby init
 ```
 
-The Recipe found a `web` Process (`php artisan serve`, the Primary Process, with `public/` served directly by Portby), a `queue` worker (`QUEUE_CONNECTION=database`), a `vite` Process (`laravel-vite-plugin` is in `package.json`), Postgres 18 and Mailpit as Services, and its setup steps.
+The Recipe found a `web` Process (`php artisan serve`, the Primary Process, with `public/` served directly by Portby), a `queue` worker (`QUEUE_CONNECTION=database`), a `vite` Process (`laravel-vite-plugin` is in `package.json`), Postgres 18 and Mailpit as Services, and its setup steps, which install packages with `bun install` because the app has a `bun.lock`.
 
 **The `vite` command needs a fix.** The current starter kit uses Vite+: `vite` is an alias of `@voidzero-dev/vite-plus-core`, and there is no `node_modules/.bin/vite`, only `vp`. The Recipe's command runs `node_modules/.bin/vite`, so the Process would exit with "not found". `vp dev` takes the same flags, so change the command in `portby.toml`:
 
@@ -204,7 +252,7 @@ Then add migrations to the setup steps (`on_create` in the `[worktree]` table `p
 
 ```toml
 [worktree]
-on_create = ["composer install", "grep -Eq \"^APP_KEY=[\\\"']?[^\\\"'[:space:]#]\" .env || php artisan key:generate", "npm install", "php artisan storage:link", "php artisan migrate --force"]
+on_create = ["composer install", "grep -Eq \"^APP_KEY=[\\\"']?[^\\\"'[:space:]#]\" .env || php artisan key:generate", "bun install", "php artisan storage:link", "php artisan migrate --force"]
 ```
 
 The full file should now look like this:
@@ -224,7 +272,7 @@ static_dir = "public"
 
 [worktree]
 inherit_setup = false
-on_create = ["composer install", "grep -Eq \"^APP_KEY=[\\\"']?[^\\\"'[:space:]#]\" .env || php artisan key:generate", "npm install", "php artisan storage:link", "php artisan migrate --force"]
+on_create = ["composer install", "grep -Eq \"^APP_KEY=[\\\"']?[^\\\"'[:space:]#]\" .env || php artisan key:generate", "bun install", "php artisan storage:link", "php artisan migrate --force"]
 
 [database]
 engine = "postgres"
@@ -268,12 +316,9 @@ idle_timeout = "1h"
 
 For settings only you want, use a gitignored `portby.local.toml`. It overrides `portby.toml` key by key.
 
-### 5.4 Make it a git repository
-
-Portby Links git repositories. `create-project` doesn't run `git init`, so do it now:
+### 5.5 Commit
 
 ```sh
-git init -b main
 git add -A
 git commit -m "chore: new Laravel React starter kit on Portby"
 ```
@@ -291,7 +336,7 @@ Portby shows each env file it will create or change, as a diff of only the keys 
 1. **database**: the first connection to port 5432 starts the shared `postgres:18` container (the image is pulled the first time, so this one is slow), and Portby creates the database `shop`
 2. **test database**: an empty `shop_test`
 3. **env**: `.env` is created from `.env.example` with the Env Patch applied (`APP_URL=https://shop.localhost`, `DB_HOST=127.0.0.1`, `DB_PORT=5432`, `DB_DATABASE=shop`, `DB_USERNAME=portby`, `DB_PASSWORD=portby`, `MAIL_MAILER=smtp`, `MAIL_HOST=127.0.0.1`, `MAIL_PORT=1025`), and `.env.testing` gets the same keys with `DB_DATABASE=shop_test`. Before Portby first changes an existing file, it saves the original as `<file>.portby.bak`.
-4. **setup steps** (`[worktree] on_create`): `composer install`, `php artisan key:generate` (only if `APP_KEY` is empty), `npm install`, `storage:link`, `migrate --force`
+4. **setup steps** (`[worktree] on_create`): `composer install`, `php artisan key:generate` (only if `APP_KEY` is empty), `bun install`, `storage:link`, `migrate --force`
 
 Wait for it, then open the app:
 
@@ -335,7 +380,7 @@ portby restart queue          # ...or one Process (do this after changing a Job 
 
 portby exec php artisan migrate         # run a command with this Worktree's Runtimes
 portby exec php artisan tinker
-portby exec npm run build
+portby exec bun run build
 
 portby services               # shared Services and their state
 portby services up postgres   # start or stop one by hand
@@ -348,7 +393,7 @@ Things to know:
 - **Lazy and Idle.** After 15 minutes with no requests and no open connections, the Worktree's lazy Processes stop. The next request starts them again. Services stop too, 15 minutes after their last connection once no running Worktree uses them. Change these globally in `~/.config/portby/config.toml` (`idle_timeout = "30m"`, `service_idle_timeout = "1h"`) or per Project in `portby.toml`.
 - **Changing `.env` yourself:** `artisan serve` runs with `--no-reload`, so run `portby restart` afterwards. When Portby changes `.env` itself, it restarts the Processes for you.
 - **Edited Blade views and PHP** show on the next request: Portby's PHP ini turns off OPcache's revalidation delay.
-- **Without the `vite` Process** (`portby down vite`), Laravel loads built assets, so run `portby exec npm run build` first, or pages fail with "Vite manifest not found".
+- **Without the `vite` Process** (`portby down vite`), Laravel loads built assets, so run `portby exec bun run build` first, or pages fail with "Vite manifest not found".
 - If the `web` Process crashes, the Domain shows Portby's error page with its last output instead of a bare 502.
 
 ### 7.3 Tests
@@ -382,7 +427,7 @@ Portby then prepares the new Worktree:
 | Test Database  | `shop_test`                | `shop__feature_x_test`, empty                                                       |
 | `.env`         | yours                      | a copy of the main Worktree's `.env` (same `APP_KEY`), with its own URL and database |
 | Cache/Redis keys | Laravel's defaults       | `CACHE_PREFIX` / `REDIS_PREFIX` = `shop_feature-x_`, so queues and caches never cross |
-| Setup steps    | run at link                | run again: `composer install`, `npm install`, `migrate --force`                     |
+| Setup steps    | run at link                | run again: `composer install`, `bun install`, `migrate --force`                     |
 | Gitignored files | yours                    | the paths in `[worktree] copy` in `portby.toml`, copied from the main Worktree (see §9.2)       |
 
 ```sh
@@ -430,7 +475,7 @@ portby harness add claude   # SessionStart hook in .claude/settings.json + a sec
 portby harness add t3       # a "Portby: wait until Ready" script in t3.json that runs when T3 Code creates a worktree, + the AGENTS.md section
 ```
 
-The hook runs `portby worktree ready`, so an agent's session in a new worktree starts only once its database, `.env` and `composer`/`npm install` are done. The `AGENTS.md` section tells the agent to use `portby info --json` for its URL and `portby exec` for commands. It's safe for teammates without Portby: the hook does nothing if `portby` isn't installed.
+The hook runs `portby worktree ready`, so an agent's session in a new worktree starts only once its database, `.env` and `composer`/`bun install` are done. The `AGENTS.md` section tells the agent to use `portby info --json` for its URL and `portby exec` for commands. It's safe for teammates without Portby: the hook does nothing if `portby` isn't installed.
 
 **If you use Laravel Boost**, Boost writes `CLAUDE.md` and `AGENTS.md` itself, so Portby leaves them alone and puts its instructions in `.ai/guidelines/portby.md`, where Boost [takes custom guidelines](https://laravel.com/docs/boost#adding-custom-ai-guidelines). Boost adds them to its files when it runs, so run it after `portby harness add`:
 
@@ -498,9 +543,10 @@ If you wrote `portby.toml` with `portby init` before this change, add `redis = "
 | Symptom | Cause and fix |
 | --- | --- |
 | `portby worktree ready` exits 1 at `composer install`: "php: not found" | Portby's daemon can't get PHP from mise. Check `mise settings get trusted_config_paths` covers the worktree, and that `mise` was on your `PATH` when you ran `portby install` (if not, run it again; `systemctl --user cat portby` shows the `PATH` the daemon has). `portby doctor`, run in the worktree, shows the PHP mise resolves there. Fix it, then `portby worktree ready --retry`. |
-| The `vite` Process fails right away: `node_modules/.bin/vite: not found` | The Vite+ starter kit has no `vite` binary. Apply the `vp dev` override from §5.3, then `portby restart vite`. |
-| Pages load without CSS or JS, or with a CORS or mixed-content error | Check `portby logs vite`. Check `public/hot` holds `https://vite.<domain>…` and not `http://127.0.0.1…`. A stale file from running `npm run dev` by hand is the usual cause: delete it, then `portby restart vite`. |
-| Tests touch `shop` or run on SQLite | `phpunit.xml` still sets `DB_CONNECTION` / `DB_DATABASE` (§5.2). Portby warns about `DB_DATABASE` in `portby doctor` and in the Worktree's setup warnings. |
+| `portby worktree ready` exits 1 at `bun install`: "bun: not found" | The Worktree's `mise.toml` has no `bun` (§3), or it isn't installed yet. Add it, run `mise install`, then `portby worktree ready --retry`. |
+| The `vite` Process fails right away: `node_modules/.bin/vite: not found` | The Vite+ starter kit has no `vite` binary. Apply the `vp dev` override from §5.4, then `portby restart vite`. |
+| Pages load without CSS or JS, or with a CORS or mixed-content error | Check `portby logs vite`. Check `public/hot` holds `https://vite.<domain>…` and not `http://127.0.0.1…`. A stale file from running `bun run dev` by hand is the usual cause: delete it, then `portby restart vite`. |
+| Tests touch `shop` or run on SQLite | `phpunit.xml` still sets `DB_CONNECTION` / `DB_DATABASE` (§5.3). Portby warns about `DB_DATABASE` in `portby doctor` and in the Worktree's setup warnings. |
 | No Test Database even after adding `.env.testing` | The decision is made when the Worktree is prepared. Add `test = "on"` under `[database]` in `portby.toml`. Existing Worktrees pick it up on `portby unlink` + `portby link` (their databases come straight back from Orphans). New ones get it right away. |
 | `portby doctor`: `port 5432` / `443` "in use by …" | Another Postgres (or Herd, or Valet) holds the port. Doctor names the program. Stop it. |
 | Browser warns about the certificate | Re-run `portby install` and accept the CA. On WSL2, restart Windows browsers; Firefox may need `security.enterprise_roots.enabled`. On Debian/Ubuntu desktops, Chrome and Firefox use their own NSS store. |
