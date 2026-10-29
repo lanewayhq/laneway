@@ -565,10 +565,11 @@ func (r router) StaticDir(domain string) string {
 	return st.static[process]
 }
 
-// PrimaryDomain is the Primary Domain of the Worktree whose Domain or Alias
-// is domain, when that isn't domain itself. <process>.<domain> hosts have
-// none, so they are never redirected.
-func (r router) PrimaryDomain(domain string) (string, bool) {
+// RedirectTarget is the Primary Domain of the Worktree whose Domain or
+// Alias is domain, when that isn't domain itself: page loads there are
+// redirected to it. <process>.<domain> hosts are no Worktree's Domain or
+// Alias, so they are never redirected.
+func (r router) RedirectTarget(domain string) (string, bool) {
 	s, ok := r.d.servedAt(domain)
 	if !ok {
 		return "", false
