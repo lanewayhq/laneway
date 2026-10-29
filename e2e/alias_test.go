@@ -59,6 +59,25 @@ func TestAliasSaysWhereTheWorktreesURLMoved(t *testing.T) {
 	assertContains(t, res.Stdout, "the main Worktree; its URL is now https://alias-moved.localhost/")
 }
 
+func TestAddingAnAliasTheWorktreeHasSaysSoAndWhereItsURLIs(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	repo := routedProject(t, "alias-again")
+	wt := repo.AddWorktree("t3-5c0a77e1")
+	d.MustRunCLI(repo.Dir, "link")
+	d.MustRunCLI(wt.Dir, "worktree", "alias", "checkout")
+	d.MustRunCLI(wt.Dir, "worktree", "alias", "basket")
+
+	// Adding checkout again changes nothing: basket stays the Primary Domain.
+	res := d.MustRunCLI(wt.Dir, "worktree", "alias", "checkout")
+	assertContains(t, res.Stdout, `checkout.alias-again.localhost is already an Alias of Worktree "t3-5c0a77e1"; `+
+		"its URL is https://basket.alias-again.localhost/")
+	assertNotContains(t, res.Stdout, "Added")
+	if got := infoJSON(t, d, wt.Dir)["url"]; got != "https://basket.alias-again.localhost/" {
+		t.Fatalf("the Worktree's URL is %v after adding checkout again, want basket's", got)
+	}
+}
+
 func TestAliasesAreUniqueWithinAProject(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)

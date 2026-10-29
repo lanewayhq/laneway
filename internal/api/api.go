@@ -273,6 +273,9 @@ type AliasResponse struct {
 	// Moved is true if the change moved the Worktree's Primary Domain, so
 	// its URL is now Worktree.URL.
 	Moved bool `json:"moved,omitempty"`
+	// Existed is true when adding an Alias the Worktree already had, which
+	// changes nothing: an older Alias stays older.
+	Existed bool `json:"existed,omitempty"`
 }
 
 // DaemonInfo is the body of GET /v1/daemon.

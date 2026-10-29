@@ -49,24 +49,29 @@ func runWorktreeAlias(ctx context.Context, env Env, args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(env.Stdout, "Removed the Alias %s from %s%s\n", res.Domain, describeWorktree(res.Worktree.Worktree), urlMoved(res))
+		fmt.Fprintf(env.Stdout, "Removed the Alias %s from %s%s\n", res.Domain, describeWorktree(res.Worktree.Worktree), urlMovedText(res))
 		return nil
 	}
 	res, err := c.AddAlias(ctx, api.AliasRequest{Dir: env.Dir, Worktree: worktree(), Name: name})
 	if err != nil {
 		return err
 	}
-	moved := urlMoved(res)
-	if moved == "" {
-		moved = fmt.Sprintf(": https://%s/", res.Domain)
+	switch {
+	case res.Existed:
+		fmt.Fprintf(env.Stdout, "%s is already an Alias of %s; its URL is %s\n",
+			res.Domain, describeWorktree(res.Worktree.Worktree), res.Worktree.URL)
+	case res.Moved:
+		fmt.Fprintf(env.Stdout, "Added the Alias %s to %s%s\n", res.Domain, describeWorktree(res.Worktree.Worktree), urlMovedText(res))
+	default:
+		fmt.Fprintf(env.Stdout, "Added the Alias %s to %s: https://%s/\n", res.Domain, describeWorktree(res.Worktree.Worktree), res.Domain)
 	}
-	fmt.Fprintf(env.Stdout, "Added the Alias %s to %s%s\n", res.Domain, describeWorktree(res.Worktree.Worktree), moved)
 	return nil
 }
 
-// urlMoved ends the message about an Alias change with where the
-// Worktree's URL is now, if the change moved its Primary Domain.
-func urlMoved(res api.AliasResponse) string {
+// urlMovedText is the text that ends the message about an Alias change:
+// where the Worktree's URL is now if the change moved its Primary Domain,
+// else nothing.
+func urlMovedText(res api.AliasResponse) string {
 	if !res.Moved {
 		return ""
 	}

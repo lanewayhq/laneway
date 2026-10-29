@@ -132,6 +132,7 @@ func (d *Daemon) addAlias(ctx context.Context, dir, name string) (api.AliasRespo
 	domain := d.checkoutDomain(p, checkout)
 	d.syncMu.Lock()
 	before := d.primaryDomain(p, checkout.Name, domain)
+	existed := slices.Contains(d.registry.Aliases(p.Path), alias)
 	if slices.Contains(reservedLabels(p), name) {
 		err = &api.Error{
 			Code: api.CodeAliasTaken,
@@ -161,7 +162,7 @@ func (d *Daemon) addAlias(ctx context.Context, dir, name string) (api.AliasRespo
 		d.primaryDomainMoved(domain)
 	}
 	info, err := d.worktreeInfo(ctx, dir)
-	return api.AliasResponse{Domain: aliasDomain(p, alias), Worktree: info, Moved: before != after}, err
+	return api.AliasResponse{Domain: aliasDomain(p, alias), Worktree: info, Moved: before != after, Existed: existed}, err
 }
 
 // removeAlias removes the Alias name from the Worktree containing dir.
