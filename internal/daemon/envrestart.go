@@ -34,12 +34,32 @@ func (d *Daemon) restartForEnv(s *served, cfg worktreeConfig) {
 	}
 }
 
+// restartRunning restarts the running Processes of the served Worktree s,
+// if it is still served and running, so they read its changed .env. The
+// caller holds s.lifecycle; why is what the log says on failure.
+func (d *Daemon) restartRunning(s *served, why string) {
+	if s.ctx.Err() != nil || len(d.supervisor.Processes(s.group)) == 0 {
+		return
+	}
+	cfg, err := d.resolveWorktree(s.ctx, s.dir)
+	if err != nil {
+		d.log.Error(why, "project", s.project, "dir", s.dir, "err", err)
+		return
+	}
+	d.restartForEnv(s, cfg)
+}
+
+// servedWorktree is the Worktree served at its own Domain domain, or nil.
+func (d *Daemon) servedWorktree(domain string) *served {
+	d.servedMu.Lock()
+	defer d.servedMu.Unlock()
+	return d.served[domain]
+}
+
 // lockLifecycle takes the lifecycle lock of the Worktree served at its own
 // Domain domain, if it is served, and returns what releases it.
 func (d *Daemon) lockLifecycle(domain string) (unlock func()) {
-	d.servedMu.Lock()
-	s := d.served[domain]
-	d.servedMu.Unlock()
+	s := d.servedWorktree(domain)
 	if s == nil {
 		return func() {}
 	}
@@ -51,18 +71,18 @@ func (d *Daemon) lockLifecycle(domain string) (unlock func()) {
 // up to date with its new Primary Domain, in the background: once it is
 // Ready, its Env Patch is applied again and, if it is running, its running
 // Processes restart, since they read .env and their hosts when they start.
-// A Worktree still Preparing gets the new Primary Domain from its own env
-// step, and a Failed one when its setup is retried; that step takes the
-// lifecycle lock too, so the two never write .env at once. A stopped Worktree isn't started: its next
-// start uses the new Primary Domain.
+// A Failed setup gets the new Primary Domain when retried. Setup's env step
+// takes the lifecycle lock too, so the two never write .env at once. A
+// stopped Worktree isn't started: its next start uses the new Primary
+// Domain.
 func (d *Daemon) primaryDomainMoved(domain string) {
-	d.servedMu.Lock()
-	s := d.served[domain]
-	d.servedMu.Unlock()
+	s := d.servedWorktree(domain)
 	if s == nil {
 		return
 	}
 	d.background(func() {
+		// Setup can take minutes, and its env step takes the lifecycle
+		// lock: wait for it first.
 		if err := d.waitForReady(s); err != nil {
 			return
 		}
@@ -72,44 +92,21 @@ func (d *Daemon) primaryDomainMoved(domain string) {
 			return
 		}
 		d.applyServedEnvPatch(s)
-		if len(d.supervisor.Processes(s.group)) == 0 {
-			return
-		}
-		cfg, err := d.resolveWorktree(s.ctx, s.dir)
-		if err != nil {
-			d.log.Error("restarting Processes for the new Primary Domain", "project", s.project, "dir", s.dir, "err", err)
-			return
-		}
-		d.restartForEnv(s, cfg)
+		d.restartRunning(s, "restarting Processes for the new Primary Domain")
 	})
 }
 
-// restartServedForEnv restarts the running Processes of the Worktree at dir,
-// if it is served and running, in the background, after Portby changed its
-// .env outside a start (`portby link`).
-func (d *Daemon) restartServedForEnv(dir string) {
-	d.servedMu.Lock()
-	var s *served
-	for _, candidate := range d.served {
-		if candidate.dir == dir {
-			s = candidate
-		}
-	}
-	d.servedMu.Unlock()
+// restartServedForEnv restarts the running Processes of the Worktree served
+// at domain (its own Domain), if it is running, in the background, after
+// Portby changed its .env outside a start (`portby link`).
+func (d *Daemon) restartServedForEnv(domain string) {
+	s := d.servedWorktree(domain)
 	if s == nil {
 		return
 	}
 	d.background(func() {
 		s.lifecycle.Lock()
 		defer s.lifecycle.Unlock()
-		if s.ctx.Err() != nil || len(d.supervisor.Processes(s.group)) == 0 {
-			return
-		}
-		cfg, err := d.resolveWorktree(s.ctx, s.dir)
-		if err != nil {
-			d.log.Error("restarting Processes for the changed .env", "project", s.project, "dir", s.dir, "err", err)
-			return
-		}
-		d.restartForEnv(s, cfg)
+		d.restartRunning(s, "restarting Processes for the changed .env")
 	})
 }

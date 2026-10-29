@@ -156,7 +156,7 @@ func (d *Daemon) linkEnvPatch(ctx context.Context, p registry.Project, apply boo
 			}
 			if filepath.Base(fp.plan.Path) == envFileName {
 				// Its running Processes read .env when they started.
-				d.restartServedForEnv(fp.w.dir)
+				d.restartServedForEnv(fp.w.domain)
 			}
 		}
 		res = append(res, envPatchFor(fp.w, fp.plan))
@@ -168,13 +168,13 @@ func (d *Daemon) linkEnvPatch(ctx context.Context, p registry.Project, apply boo
 func (d *Daemon) apiProject(p registry.Project) api.Project {
 	res := api.Project{Name: p.Name, Path: p.Path, Worktrees: []api.Worktree{
 		{Path: p.Path, Main: true, Domain: domainOf(p), Aliases: d.aliasDomains(p, ""),
-			PrimaryDomain: d.primaryDomain(p, "", domainOf(p))},
+			PrimaryDomain: d.primaryDomain(p, mainWorktreeRef(p))},
 	}}
 	for _, w := range d.registry.Worktrees(p.Path) {
-		domain := worktreeDomain(p, w)
+		ref := linkedWorktreeRef(p, w)
 		res.Worktrees = append(res.Worktrees, api.Worktree{
-			Name: w.Name, Path: w.Path, Domain: domain, Aliases: d.aliasDomains(p, w.Name),
-			PrimaryDomain: d.primaryDomain(p, w.Name, domain),
+			Name: w.Name, Path: w.Path, Domain: ref.domain, Aliases: d.aliasDomains(p, w.Name),
+			PrimaryDomain: d.primaryDomain(p, ref),
 		})
 	}
 	return res

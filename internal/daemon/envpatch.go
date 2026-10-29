@@ -50,7 +50,7 @@ func linkedWorktreeRef(p registry.Project, w registry.Worktree) worktreeRef {
 // database names come from its label, so they stay. db is the Project's
 // database config; {db} is only set if it has one.
 func (d *Daemon) envVars(p registry.Project, w worktreeRef, db recipe.Database) map[string]string {
-	primary := d.primaryDomain(p, w.name, w.domain)
+	primary := d.primaryDomain(p, w)
 	vars := map[string]string{
 		"project":  p.Name,
 		"worktree": w.name,
@@ -195,20 +195,12 @@ func (d *Daemon) applyPlan(p registry.Project, plan envpatch.Plan) error {
 // before its Processes start, so template changes apply at every start. It
 // reports whether it changed .env.
 func (d *Daemon) applyServedEnvPatch(s *served) bool {
-	for _, p := range d.registry.Projects() {
-		if p.Name != s.project {
-			continue
-		}
-		if s.dir == p.Path {
-			return d.applyEnvPatch(p, mainWorktreeRef(p))
-		}
-		for _, w := range d.registry.Worktrees(p.Path) {
-			if w.Path == s.dir {
-				return d.applyEnvPatch(p, linkedWorktreeRef(p, w))
-			}
-		}
+	p, ok := d.servedProject(s)
+	if !ok {
+		return false
 	}
-	return false
+	w, ok := d.worktreeRefOf(p, s.dir)
+	return ok && d.applyEnvPatch(p, w)
 }
 
 // projectWorktreeRefs are the Project's Worktrees as they will be once

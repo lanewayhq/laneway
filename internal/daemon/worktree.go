@@ -22,7 +22,8 @@ func (d *Daemon) worktreeInfo(ctx context.Context, dir string) (api.WorktreeInfo
 	}
 	info.Worktree.Domain = info.Domain
 	info.Worktree.Aliases = d.aliasDomains(p, checkout.Name)
-	info.Worktree.PrimaryDomain = d.primaryDomain(p, checkout.Name, info.Domain)
+	w, _ := d.worktreeRefOf(p, checkout.Dir)
+	info.Worktree.PrimaryDomain = d.primaryDomain(p, w)
 	if info.Domain != "" {
 		info.URL = domainURL(info.Worktree.PrimaryDomain)
 		info.Worktree.Setup = d.setupOf(checkout.Dir)
