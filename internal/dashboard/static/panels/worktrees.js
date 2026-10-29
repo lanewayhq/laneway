@@ -104,7 +104,7 @@ export default {
           d.primary ? h("span", { class: "tag" }, "primary") : "",
           d.startMode && d.startMode !== "lazy" ? h("span", { class: "tag" }, d.startMode) : "",
           badge(states.get(d.name) ?? "stopped"),
-          d.http && !d.primary && w.domain ? link(`${d.name}.${w.primaryDomain || w.domain}`) : "",
+          d.http && !d.primary && w.domain ? link(`${d.name}.${w.primaryDomain}`) : "",
           controls(key, w, d.name),
           ...extra(key, dash.processActions.flatMap((fn) => fn(w, p, d))));
       }));
@@ -118,9 +118,8 @@ export default {
 // its Domain), then lists its other names: its Domain, which identifies it,
 // and its older Aliases.
 function names(w) {
-  const primary = w.primaryDomain || w.domain;
-  const others = [w.domain, ...(w.aliases ?? [])].filter((d) => d && d !== primary);
-  return [link(primary), ...others.map((d) => h("div", { class: "alias" }, link(d)))];
+  const others = [w.domain, ...(w.aliases ?? [])].filter((d) => d && d !== w.primaryDomain);
+  return [link(w.primaryDomain), ...others.map((d) => h("div", { class: "alias" }, link(d)))];
 }
 
 function link(domain) {
