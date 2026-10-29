@@ -1,8 +1,10 @@
 package e2e
 
 import (
+	"context"
 	"encoding/json"
 	"html"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -96,33 +98,29 @@ func TestSimultaneousFirstRequestsStartTheWorktreeOnce(t *testing.T) {
 	}
 }
 
-func TestBrowserGetsAnAutoRefreshingStartingPageUntilTheAppIsUp(t *testing.T) {
+func TestABrowserPageLoadIsHeldUntilTheAppIsUp(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "lazy-page").
 		WriteFile("portby.toml", processConfig(testkit.TestServer(t)+" --name web --delay 2s")).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
-	// Until then a navigation gets the setup page (#15), not this one.
+	// Until then a page load gets the Preparing page (#15).
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
 
+	began := time.Now()
 	page := d.Navigate("https://lazy-page.localhost/dashboard")
+	took := time.Since(began)
 
-	if page.StatusCode != http.StatusServiceUnavailable {
-		t.Fatalf("first navigation: status %d, want 503:\n%s", page.StatusCode, page.Body)
-	}
-	if page.Header.Get("Refresh") == "" {
-		t.Fatalf("starting page has no Refresh header: %v", page.Header)
-	}
-	assertContains(t, page.Header.Get("Content-Type"), "text/html")
-	assertContains(t, page.Body, "Starting")
-	assertContains(t, page.Body, "lazy-page")
-
-	// What the browser does on each refresh, until the app loads.
-	page = navigateUntilStarted(t, d, "https://lazy-page.localhost/dashboard")
 	var res testkit.ServerResponse
 	if page.StatusCode != http.StatusOK || json.Unmarshal([]byte(page.Body), &res) != nil || res.Path != "/dashboard" {
-		t.Fatalf("after the Process came up: status %d, want the app's 200:\n%s", page.StatusCode, page.Body)
+		t.Fatalf("page load: status %d, want the app's 200 for /dashboard:\n%s", page.StatusCode, page.Body)
+	}
+	if refresh := page.Header.Get("Refresh"); refresh != "" {
+		t.Fatalf("page load has a Refresh header %q, want none", refresh)
+	}
+	if took < 2*time.Second || took > 15*time.Second {
+		t.Fatalf("page load was held for %v, want about the Process's 2s delay", took)
 	}
 }
 
@@ -169,13 +167,13 @@ func TestAnotherProgramOnThePrimaryProcessPortIsNotMistakenForIt(t *testing.T) {
 	}
 }
 
-// navigateUntilStarted navigates to url, as the starting page's refreshes do,
-// until it gets something other than the starting (or preparing) page, and
-// returns that.
-func navigateUntilStarted(t *testing.T, d *testkit.Daemon, url string) testkit.Response {
+// navigateUntilPrepared navigates to url, as the Preparing page's refreshes
+// do, until it gets something other than the Preparing page, and returns
+// that.
+func navigateUntilPrepared(t *testing.T, d *testkit.Daemon, url string) testkit.Response {
 	t.Helper()
 	var page testkit.Response
-	testkit.WaitUntil(t, 15*time.Second, url+" to stop answering with the starting page", func() bool {
+	testkit.WaitUntil(t, 15*time.Second, url+" to stop answering with the Preparing page", func() bool {
 		page = d.Navigate(url)
 		return page.StatusCode != http.StatusServiceUnavailable
 	})
@@ -191,7 +189,7 @@ func TestBrowserGetsAnErrorPageWhenThePrimaryProcessExitsWhileStarting(t *testin
 		Commit("declare a web Process that crashes")
 	d.MustRunCLI(repo.Dir, "link")
 
-	page := navigateUntilStarted(t, d, "https://lazy-exit.localhost/")
+	page := d.Navigate("https://lazy-exit.localhost/")
 
 	if page.StatusCode != http.StatusBadGateway {
 		t.Fatalf("status %d, want 502:\n%s", page.StatusCode, page.Body)
@@ -217,7 +215,7 @@ func TestBrowserGetsAnErrorPageWhenThePrimaryProcessTimesOutWhileStarting(t *tes
 		Commit("declare a web Process that never listens")
 	d.MustRunCLI(repo.Dir, "link")
 
-	page := navigateUntilStarted(t, d, "https://lazy-slow.localhost/")
+	page := d.Navigate("https://lazy-slow.localhost/")
 
 	if page.StatusCode != http.StatusGatewayTimeout {
 		t.Fatalf("status %d, want 504:\n%s", page.StatusCode, page.Body)
@@ -227,25 +225,99 @@ func TestBrowserGetsAnErrorPageWhenThePrimaryProcessTimesOutWhileStarting(t *tes
 	assertContains(t, page.Body, "start_timeout")
 }
 
+// crashOnceCommand is a Process command that exits on its first start only,
+// like an app whose bug was fixed after its failure was seen.
+func crashOnceCommand(t *testing.T) string {
+	marker := filepath.Join(gitfixture.TempDir(t), "crashed-once")
+	return "if [ -e " + marker + " ]; then exec " + testkit.TestServer(t) + "; fi; touch " + marker + "; exit 1"
+}
+
 func TestReloadingTheErrorPageStartsTheWorktreeAgain(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
-	// Crashes on its first start only, like an app whose bug was fixed
-	// after the error page was shown.
-	marker := filepath.Join(gitfixture.TempDir(t), "crashed-once")
-	command := "if [ -e " + marker + " ]; then exec " + testkit.TestServer(t) + "; fi; touch " + marker + "; exit 1"
+	command := crashOnceCommand(t)
 	repo := gitfixture.New(t, "lazy-retry").
 		WriteFile("portby.toml", processConfig(command)).
 		Commit("declare a web Process that crashes once")
 	d.MustRunCLI(repo.Dir, "link")
 
-	if page := navigateUntilStarted(t, d, "https://lazy-retry.localhost/"); page.StatusCode != http.StatusBadGateway {
+	if page := d.Navigate("https://lazy-retry.localhost/"); page.StatusCode != http.StatusBadGateway {
 		t.Fatalf("first start: status %d, want the 502 error page:\n%s", page.StatusCode, page.Body)
 	}
 
-	page := navigateUntilStarted(t, d, "https://lazy-retry.localhost/")
+	page := d.Navigate("https://lazy-retry.localhost/")
 	if page.StatusCode != http.StatusOK {
 		t.Fatalf("after reloading the error page: status %d, want the app's 200:\n%s", page.StatusCode, page.Body)
+	}
+}
+
+func TestRequestingAgainAfterAFailedStartStartsTheWorktreeAgain(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	command := crashOnceCommand(t)
+	repo := gitfixture.New(t, "lazy-retry-curl").
+		WriteFile("portby.toml", processConfig(command)).
+		Commit("declare a web Process that crashes once")
+	d.MustRunCLI(repo.Dir, "link")
+
+	if resp := d.Get("https://lazy-retry-curl.localhost/"); resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("first start: status %d, want the 502 error page:\n%s", resp.StatusCode, resp.Body)
+	}
+
+	resp := d.Get("https://lazy-retry-curl.localhost/")
+	var res testkit.ServerResponse
+	if resp.StatusCode != http.StatusOK || json.Unmarshal([]byte(resp.Body), &res) != nil {
+		t.Fatalf("requesting again: status %d, want the app's 200:\n%s", resp.StatusCode, resp.Body)
+	}
+}
+
+func TestSimultaneousRequestsShareAFailedStartAndRetryItOnce(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	command, log := startCounting(t, "sleep 1; exit 1")
+	repo := gitfixture.New(t, "lazy-fail-once").
+		WriteFile("portby.toml", processConfig(command)).
+		Commit("declare a web Process that always crashes")
+	d.MustRunCLI(repo.Dir, "link")
+
+	client := d.HTTPS()
+	// requestAll sends 10 simultaneous requests and fails the test unless
+	// every one gets the same 502 error page.
+	requestAll := func(round string) {
+		t.Helper()
+		statuses := make([]int, 10)
+		bodies := make([]string, 10)
+		var wg sync.WaitGroup
+		for i := range statuses {
+			wg.Go(func() {
+				resp, err := client.Get("https://lazy-fail-once.localhost/")
+				if err != nil {
+					return
+				}
+				defer resp.Body.Close()
+				b, _ := io.ReadAll(resp.Body)
+				statuses[i], bodies[i] = resp.StatusCode, string(b)
+			})
+		}
+		wg.Wait()
+		for i, status := range statuses {
+			if status != http.StatusBadGateway {
+				t.Fatalf("%s, request %d: status %d, want 502:\n%s", round, i, status, bodies[i])
+			}
+			if bodies[i] != bodies[0] {
+				t.Fatalf("%s, request %d got a different failure than request 0:\n%s\n---\n%s", round, i, bodies[i], bodies[0])
+			}
+		}
+	}
+
+	requestAll("first requests")
+	if n := starts(t, log); n != 1 {
+		t.Fatalf("Process started %d times for 10 simultaneous first requests, want 1", n)
+	}
+
+	requestAll("requests after the failure")
+	if n := starts(t, log); n != 2 {
+		t.Fatalf("Process started %d times after 10 requests that each got the failure, want 2", n)
 	}
 }
 
@@ -291,15 +363,37 @@ func waitForPID(t *testing.T, file string) int {
 	return pid
 }
 
+// loadInBackground starts a browser page load of url, as a tab left
+// loading does, without waiting for it to finish. The page load is
+// cancelled, like a closed tab, when the test ends.
+func loadInBackground(t *testing.T, d *testkit.Daemon, url string) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	testkit.SetNavigationHeaders(req)
+	client := d.HTTPS()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if resp, err := client.Do(req); err == nil {
+			resp.Body.Close()
+		}
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+}
+
 // startByBrowsing starts the Worktree served at domain the way a browser
 // visiting it does, without waiting for its Primary Process to come up, and
 // waits until `portby status` shows its Processes running.
 func startByBrowsing(t *testing.T, d *testkit.Daemon, domain string) {
 	t.Helper()
-	url := "https://" + domain + "/"
-	if page := d.Navigate(url); page.StatusCode != http.StatusServiceUnavailable && page.StatusCode != http.StatusOK {
-		t.Fatalf("visiting %s: status %d:\n%s", url, page.StatusCode, page.Body)
-	}
+	loadInBackground(t, d, "https://"+domain+"/")
 	testkit.WaitUntil(t, 10*time.Second, "`portby status` to show "+domain+"'s Processes running", func() bool {
 		for line := range strings.Lines(d.MustRunCLI(d.Home, "status").Stdout) {
 			if slices.Contains(strings.Fields(line), domain) && strings.Contains(line, ":running") {

@@ -7,8 +7,9 @@ import (
 	"strings"
 )
 
-// StartingRefresh is how often the starting page reloads itself, in seconds.
-const StartingRefresh = 1
+// PreparingRefresh is how often the Preparing page reloads itself, in
+// seconds.
+const PreparingRefresh = 1
 
 // isNavigation reports whether r is a browser loading a page, as opposed to
 // a script, asset or API client. Browsers send Sec-Fetch-Mode on every
@@ -18,18 +19,6 @@ func isNavigation(r *http.Request) bool {
 		return mode == "navigate"
 	}
 	return r.Method == http.MethodGet && strings.Contains(r.Header.Get("Accept"), "text/html")
-}
-
-// writeStartingPage answers a browser navigation while the Domain's
-// Processes start. The page reloads itself until the Primary Process answers
-// instead.
-func writeStartingPage(w http.ResponseWriter, domain string) {
-	refresh := fmt.Sprint(StartingRefresh)
-	w.Header().Set("Refresh", refresh)
-	w.Header().Set("Retry-After", refresh)
-	writePage(w, http.StatusServiceUnavailable, "Starting…",
-		fmt.Sprintf("Portby is starting the Processes for <code>%s</code>.", html.EscapeString(domain)),
-		"This page reloads by itself and shows the Domain's page as soon as its Primary Process accepts connections.")
 }
 
 // writeStartErrorPage explains why the Domain's Primary Process didn't start,
@@ -64,10 +53,11 @@ func writeStartErrorPage(w http.ResponseWriter, domain string, e *StartError) {
 	writePage(w, status, title, paragraphs...)
 }
 
-// writePreparingPage is the starting page for a Domain whose Worktree is
-// still Preparing.
+// writePreparingPage answers a browser navigation while the Domain's
+// Worktree is Preparing. The page reloads itself; once the Worktree is
+// Ready, the reload is held until the Primary Process answers.
 func writePreparingPage(w http.ResponseWriter, domain string) {
-	refresh := fmt.Sprint(StartingRefresh)
+	refresh := fmt.Sprint(PreparingRefresh)
 	w.Header().Set("Refresh", refresh)
 	w.Header().Set("Retry-After", refresh)
 	writePage(w, http.StatusServiceUnavailable, "Preparing…",

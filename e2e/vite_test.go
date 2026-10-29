@@ -194,7 +194,7 @@ func TestAStartWaitsForTheWorktreesOtherHTTPProcesses(t *testing.T) {
 	d.MustRunCLI(repo.Dir, "link")
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
 
-	d.Navigate("https://start-waits-vite.localhost/")
+	loadInBackground(t, d, "https://start-waits-vite.localhost/")
 	eventually(t, "the web Process to listen", func() bool { _, err := os.Stat(webUp); return err == nil })
 
 	if state := worktreeState(t, d, "start-waits-vite.localhost").State; state != "starting" {

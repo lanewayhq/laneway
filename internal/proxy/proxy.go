@@ -43,12 +43,14 @@ import (
 type Router interface {
 	// Upstream returns the loopback address ("127.0.0.1:<port>") of the
 	// Process serving domain, starting it if needed. While it is starting,
-	// Upstream waits for it to accept connections if wait is true, and
-	// otherwise returns ErrStarting at once (ErrSettingUp while the
-	// Worktree is Preparing; a *PreparationError if preparing it failed). It returns an error wrapping
-	// ErrUnknownDomain if domain is not one of Portby's Domains; any other
-	// error is shown to the user.
-	Upstream(ctx context.Context, domain string, wait bool) (string, error)
+	// Upstream waits for it to accept connections, up to the start timeout,
+	// and then returns a *StartError if it didn't start. While the
+	// Worktree is Preparing, it waits through that too if
+	// waitForPreparation is true, and otherwise returns ErrPreparing at
+	// once. It returns a *PreparationError if preparing failed, an error
+	// wrapping ErrUnknownDomain if domain is not one of Portby's Domains;
+	// any other error is shown to the user.
+	Upstream(ctx context.Context, domain string, waitForPreparation bool) (string, error)
 	// Begin is called when a request for domain arrives, and the func it
 	// returns once the request is over. For a WebSocket that is when the
 	// connection closes, so an open connection keeps its Domain active.
@@ -72,11 +74,9 @@ var (
 	// ErrUnknownDomain is returned by a Router for a Domain nothing is
 	// served at.
 	ErrUnknownDomain = errors.New("unknown Domain")
-	// ErrStarting is returned by a Router, when asked not to wait, for a
-	// Domain whose Process is still starting.
-	ErrStarting = errors.New("starting")
-	// ErrPreparing is ErrStarting for a Domain whose Worktree is still
-	// Preparing, so its Processes can't start yet.
+	// ErrPreparing is returned by a Router, when asked not to wait for
+	// preparation, for a Domain whose Worktree is still Preparing, so its
+	// Processes can't start yet.
 	ErrPreparing = errors.New("preparing")
 )
 
