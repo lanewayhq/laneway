@@ -19,6 +19,28 @@ func eventuallyContains(t *testing.T, path, want string) {
 	})
 }
 
+// appURLProject is a Project whose Primary Process names itself after the
+// APP_URL in .env when it starts, so a request shows which APP_URL the
+// running Process read. Its starts are counted into log.
+func appURLProject(t *testing.T, name string) (repo *gitfixture.Repo, log string) {
+	t.Helper()
+	command, log := startCounting(t, testkit.TestServer(t)+` --name "$(sed -n 's/^APP_URL=//p' .env)"`)
+	repo = gitfixture.New(t, name).
+		WriteFile(".gitignore", ".env\n").
+		WriteFile("portby.toml", "[env]\nAPP_URL = \"{url}\"\n\n"+processConfig(command)).
+		Commit("declare a Process that reads APP_URL")
+	return repo, log
+}
+
+func stat(t *testing.T, path string) os.FileInfo {
+	t.Helper()
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fi
+}
+
 func TestTheEnvPatchFollowsTheWorktreesPrimaryDomain(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
@@ -84,25 +106,6 @@ func TestTheEnvTestingFollowsThePrimaryDomainAndDatabaseNamesStay(t *testing.T) 
 		eventuallyContains(t, filepath.Join(tt.dir, ".env"), url+"DB_DATABASE="+tt.db+"\n")
 		eventuallyContains(t, filepath.Join(tt.dir, ".env.testing"), url+"DB_DATABASE="+tt.db+"_test\n")
 	}
-}
-
-// appURLServer is a portby.toml whose Primary Process names itself after the
-// APP_URL in .env when it starts, so a request shows which APP_URL the
-// running Process read. Its starts are counted into log.
-func appURLServer(t *testing.T) (config, log string) {
-	t.Helper()
-	command, log := startCounting(t, testkit.TestServer(t)+` --name "$(sed -n 's/^APP_URL=//p' .env)"`)
-	return "[env]\nAPP_URL = \"{url}\"\n\n" + processConfig(command), log
-}
-
-func appURLProject(t *testing.T, name string) (repo *gitfixture.Repo, log string) {
-	t.Helper()
-	config, log := appURLServer(t)
-	repo = gitfixture.New(t, name).
-		WriteFile(".gitignore", ".env\n").
-		WriteFile("portby.toml", config).
-		Commit("declare a Process that reads APP_URL")
-	return repo, log
 }
 
 func TestARunningWorktreesProcessesRestartWhenItsPrimaryDomainMoves(t *testing.T) {
@@ -180,15 +183,6 @@ func TestAnAliasAddedWhilePreparingIsInTheEnvOnceTheWorktreeIsReady(t *testing.T
 
 	assertSetupState(t, d, wt.Dir, "ready")
 	eventuallyContains(t, filepath.Join(wt.Dir, ".env"), "APP_URL=https://checkout.primary-preparing.localhost\n")
-}
-
-func stat(t *testing.T, path string) os.FileInfo {
-	t.Helper()
-	fi, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return fi
 }
 
 func TestNamingAStoppedWorktreeDoesNotStartItAndItsNextStartUsesTheNewEnv(t *testing.T) {
