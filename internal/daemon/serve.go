@@ -87,10 +87,12 @@ type startAttempt struct {
 	// once up.
 	routed map[string]bool
 	err    error // why it failed
-	// retry is set (under served.mu) once a browser has been shown the
-	// failure. Until then every request gets the failure, so the starting
-	// page's refreshes end on the error page instead of starting again; the
-	// next request after that (a reload) starts the Worktree again.
+	// retry is set (under served.mu) once any request has been given the
+	// failure, whether it waited for the attempt or not; the next request
+	// of any kind then starts the Worktree again. Requests that waited on
+	// one failed attempt all get that failure and together arm a single
+	// retry. A client that keeps requesting a broken Worktree starts a new
+	// attempt on every other request.
 	retry bool
 	// lazy names the lazy Processes in the config it started from: the
 	// ones Idle stops.
@@ -499,11 +501,9 @@ func (r router) Upstream(ctx context.Context, domain string, wait bool) (string,
 		}
 	}
 	if st.err != nil {
-		if !wait {
-			s.mu.Lock()
-			st.retry = true
-			s.mu.Unlock()
-		}
+		s.mu.Lock()
+		st.retry = true
+		s.mu.Unlock()
 		return "", st.err
 	}
 	switch {

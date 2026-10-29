@@ -3,6 +3,7 @@ package e2e
 import (
 	"encoding/json"
 	"html"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -246,6 +247,79 @@ func TestReloadingTheErrorPageStartsTheWorktreeAgain(t *testing.T) {
 	page := navigateUntilStarted(t, d, "https://lazy-retry.localhost/")
 	if page.StatusCode != http.StatusOK {
 		t.Fatalf("after reloading the error page: status %d, want the app's 200:\n%s", page.StatusCode, page.Body)
+	}
+}
+
+func TestRequestingAgainAfterAFailedStartStartsTheWorktreeAgain(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	// Crashes on its first start only, like an app whose bug was fixed
+	// after the failure was seen.
+	marker := filepath.Join(gitfixture.TempDir(t), "crashed-once")
+	command := "if [ -e " + marker + " ]; then exec " + testkit.TestServer(t) + "; fi; touch " + marker + "; exit 1"
+	repo := gitfixture.New(t, "lazy-retry-curl").
+		WriteFile("portby.toml", processConfig(command)).
+		Commit("declare a web Process that crashes once")
+	d.MustRunCLI(repo.Dir, "link")
+
+	if resp := d.Get("https://lazy-retry-curl.localhost/"); resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("first start: status %d, want the 502 error page:\n%s", resp.StatusCode, resp.Body)
+	}
+
+	resp := d.Get("https://lazy-retry-curl.localhost/")
+	var res testkit.ServerResponse
+	if resp.StatusCode != http.StatusOK || json.Unmarshal([]byte(resp.Body), &res) != nil {
+		t.Fatalf("requesting again: status %d, want the app's 200:\n%s", resp.StatusCode, resp.Body)
+	}
+}
+
+func TestSimultaneousRequestsShareAFailedStartAndRetryItOnce(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	command, log := startCounting(t, "sleep 1; exit 1")
+	repo := gitfixture.New(t, "lazy-fail-once").
+		WriteFile("portby.toml", processConfig(command)).
+		Commit("declare a web Process that always crashes")
+	d.MustRunCLI(repo.Dir, "link")
+
+	client := d.HTTPS()
+	// requestAll sends 10 simultaneous requests and fails the test unless
+	// every one gets the same 502 error page.
+	requestAll := func(round string) {
+		t.Helper()
+		statuses := make([]int, 10)
+		bodies := make([]string, 10)
+		var wg sync.WaitGroup
+		for i := range statuses {
+			wg.Go(func() {
+				resp, err := client.Get("https://lazy-fail-once.localhost/")
+				if err != nil {
+					return
+				}
+				defer resp.Body.Close()
+				b, _ := io.ReadAll(resp.Body)
+				statuses[i], bodies[i] = resp.StatusCode, string(b)
+			})
+		}
+		wg.Wait()
+		for i, status := range statuses {
+			if status != http.StatusBadGateway {
+				t.Fatalf("%s, request %d: status %d, want 502:\n%s", round, i, status, bodies[i])
+			}
+			if bodies[i] != bodies[0] {
+				t.Fatalf("%s, request %d got a different failure than request 0:\n%s\n---\n%s", round, i, bodies[i], bodies[0])
+			}
+		}
+	}
+
+	requestAll("first requests")
+	if n := starts(t, log); n != 1 {
+		t.Fatalf("Process started %d times for 10 simultaneous first requests, want 1", n)
+	}
+
+	requestAll("requests after the failure")
+	if n := starts(t, log); n != 2 {
+		t.Fatalf("Process started %d times after 10 requests that each got the failure, want 2", n)
 	}
 }
 
