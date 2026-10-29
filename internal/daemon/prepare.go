@@ -112,7 +112,7 @@ func (d *Daemon) teardown(p registry.Project, w worktreeRef) {
 // steps know which Worktree went. cfg is the config the steps come from.
 func (d *Daemon) setupEnv(ctx context.Context, p registry.Project, w worktreeRef, dir string, cfg recipe.Resolved) []string {
 	env := runtimes.Environ(ctx, dir, d.cfg.Env).Vars
-	vars := envVars(p, w, cfg.Database)
+	vars := d.envVars(p, w, cfg.Database)
 	if name, ok := worktreeTestDatabase(p, w, cfg); ok {
 		vars["test_db"] = name
 	}

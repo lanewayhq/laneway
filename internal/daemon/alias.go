@@ -146,6 +146,9 @@ func (d *Daemon) addAlias(ctx context.Context, dir, name string) (api.AliasRespo
 	if err != nil {
 		return api.AliasResponse{}, err
 	}
+	if before != after {
+		d.primaryDomainMoved(domain)
+	}
 	info, err := d.worktreeInfo(ctx, dir)
 	return api.AliasResponse{Domain: aliasDomain(p, alias), Worktree: info, Moved: before != after}, err
 }
@@ -175,6 +178,9 @@ func (d *Daemon) removeAlias(ctx context.Context, dir, name string) (api.AliasRe
 	}
 	if err != nil {
 		return api.AliasResponse{}, err
+	}
+	if before != after {
+		d.primaryDomainMoved(domain)
 	}
 	info, err := d.worktreeInfo(ctx, dir)
 	return api.AliasResponse{Domain: aliasDomain(p, alias), Worktree: info, Moved: before != after}, err

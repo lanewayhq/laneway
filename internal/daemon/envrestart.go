@@ -34,6 +34,43 @@ func (d *Daemon) restartForEnv(s *served, cfg worktreeConfig) {
 	}
 }
 
+// primaryDomainMoved brings the Worktree served at domain (its own Domain)
+// up to date with its new Primary Domain, in the background: once it is
+// Ready, its Env Patch is applied again and, if it is running, its running
+// Processes restart, since they read .env and their hosts when they start.
+// Waiting for Ready means Preparing's own Env Patch, which renders the
+// Primary Domain it finds, never writes .env at the same time; a Failed
+// setup gets it when retried. A stopped Worktree isn't started: its next
+// start uses the new Primary Domain.
+func (d *Daemon) primaryDomainMoved(domain string) {
+	d.servedMu.Lock()
+	s := d.served[domain]
+	d.servedMu.Unlock()
+	if s == nil {
+		return
+	}
+	d.background(func() {
+		if err := d.waitForReady(s); err != nil {
+			return
+		}
+		s.lifecycle.Lock()
+		defer s.lifecycle.Unlock()
+		if s.ctx.Err() != nil {
+			return
+		}
+		d.applyServedEnvPatch(s)
+		if len(d.supervisor.Processes(s.group)) == 0 {
+			return
+		}
+		cfg, err := d.resolveWorktree(s.ctx, s.dir)
+		if err != nil {
+			d.log.Error("restarting Processes for the new Primary Domain", "project", s.project, "dir", s.dir, "err", err)
+			return
+		}
+		d.restartForEnv(s, cfg)
+	})
+}
+
 // restartServedForEnv restarts the running Processes of the Worktree at dir,
 // if it is served and running, in the background, after Portby changed its
 // .env outside a start (`portby link`).
