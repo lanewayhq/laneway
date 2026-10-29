@@ -35,8 +35,9 @@ func TestCommandsActOnTheWorktreeNamedByTheWorktreeFlag(t *testing.T) {
 
 	res = d.MustRunCLI(repo.Dir, "worktree", "alias", "yy", "--worktree", "feature-y")
 	assertContains(t, res.Stdout, `Added the Alias yy.wt-flag.localhost to Worktree "feature-y"`)
+	// It opens Worktree feature-y, at its Primary Domain: the Alias.
 	res = d.MustRunCLI(d.Home, "open", "--worktree", "yy.wt-flag.localhost")
-	assertContains(t, res.Stdout, "Opening https://"+domain+"/")
+	assertContains(t, res.Stdout, "Opening https://yy.wt-flag.localhost/")
 	res = d.MustRunCLI(repo.Dir, "worktree", "alias", "--remove", "yy", "--worktree", "feature-y")
 	assertContains(t, res.Stdout, `Removed the Alias yy.wt-flag.localhost from Worktree "feature-y"`)
 
