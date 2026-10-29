@@ -443,14 +443,14 @@ The Domain is named after git's name for the worktree (its directory), not its b
 - `fresh`: an empty database. Add `php artisan migrate --seed --force` to `[worktree] on_create`.
 - `shared`: uses the main Worktree's database.
 
-**Aliases** give a Worktree a nicer name, such as one after its task, which matters most for the randomly named worktrees AI tools create (`t3-298e5f25.shop.localhost`):
+**Aliases** give a Worktree a nicer name, such as one after its task, which matters most for the randomly named worktrees a **Harness** (an AI coding tool such as Claude Code or T3 Code) creates (`t3-298e5f25.shop.localhost`):
 
 ```sh
 portby worktree alias checkout   # Added the Alias checkout.shop.localhost …; its URL is now https://checkout.shop.localhost/
 portby worktree alias checkout --remove
 ```
 
-The newest Alias becomes the Worktree's URL, its **Primary Domain**. It is the URL Portby gives out everywhere: `url` in `portby info --json`, `portby open`, the Dashboard and the other Processes' hosts (`vite.checkout.shop.localhost`). Agents set up with `portby harness add` (§9) name their linked worktree this way once they know their task.
+The newest Alias becomes the Worktree's **Primary Domain**, and the Worktree's URL is under it (`https://checkout.shop.localhost/`). That is the URL Portby gives out everywhere: `url` in `portby info --json`, `portby open`, the Dashboard and the other Processes' hosts (`vite.checkout.shop.localhost`). Agents set up with `portby harness add` (§9) name their linked worktree this way once they know their task.
 
 - **`.env` follows it.** Portby re-applies the Worktree's `.env` (and `.env.testing`), so `APP_URL` and anything else rendered from `{url}` or `{domain}` use the new name, and restarts the Worktree's running Processes (`php artisan serve`, queue workers, Vite) so they read it. Vite's live reload then connects at `vite.checkout.shop.localhost`. This happens in the background once the Worktree is Ready, so `.env` changes a moment after the command returns, and an Alias added while the Worktree is still being prepared takes effect when preparing finishes. A stopped Worktree only gets its `.env` rewritten and isn't started; its Processes pick up the new URL at their next start. The databases keep their names.
 - **The old names keep serving it.** `t3-298e5f25.shop.localhost` and any older Alias still reach the Worktree, but a browser loading a page there (a `GET` navigation) gets a temporary redirect (`307`, not cached) to the same path and query on the Primary Domain, so tabs opened before the Worktree was named move over on their next reload. Fetches, form posts, webhooks and `curl` on the old names are served as before, and `vite.<old name>` is never redirected.
