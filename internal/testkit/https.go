@@ -111,10 +111,16 @@ func (d *Daemon) Navigate(url string) Response {
 	if err != nil {
 		d.t.Fatalf("GET %s: %v", url, err)
 	}
+	SetNavigationHeaders(req)
+	return d.do(req)
+}
+
+// SetNavigationHeaders sets the headers a browser navigating sends:
+// Sec-Fetch-Mode: navigate and an Accept header preferring HTML.
+func SetNavigationHeaders(req *http.Request) {
 	req.Header.Set("Sec-Fetch-Mode", "navigate")
 	req.Header.Set("Sec-Fetch-Dest", "document")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-	return d.do(req)
 }
 
 // ServerResponse is what the TestServer Process answers every request with.

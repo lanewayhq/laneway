@@ -89,12 +89,10 @@ type startAttempt struct {
 	err    error // why it failed
 	// retry is set (under served.mu) once any request has been given the
 	// failure; the next request of any kind then starts the Worktree
-	// again. Requests that waited on one failed attempt all get that
-	// failure and together arm a single retry. This is safe because every
-	// request is held until the attempt ends: there is no starting page
-	// reloading itself, which would restart a broken Worktree forever
-	// instead of ending on the error page. A client that keeps requesting
-	// a broken Worktree starts a new attempt on every other request.
+	// again, and requests that waited on one failed attempt arm a single
+	// retry. No page reloads itself while a Ready Worktree starts, so this
+	// can't restart a broken Worktree forever. A client that keeps
+	// requesting one starts a new attempt on every other request.
 	retry bool
 	// lazy names the lazy Processes in the config it started from: the
 	// ones Idle stops.

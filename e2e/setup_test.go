@@ -130,7 +130,7 @@ func TestAWorktreeIsNotStartedUntilItIsReadyAndBrowsersAreToldItIsBeingSetUp(t *
 	writeTestFile(t, gate, "")
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
 
-	if page := navigateUntilStarted(t, d, "https://setup-page.localhost/"); page.StatusCode != http.StatusOK {
+	if page := navigateUntilPrepared(t, d, "https://setup-page.localhost/"); page.StatusCode != http.StatusOK {
 		t.Fatalf("once Ready: status %d, want the app's 200:\n%s", page.StatusCode, page.Body)
 	}
 }
@@ -146,7 +146,7 @@ func TestAFailedWorktreeShowsItsSetupErrorInsteadOfStarting(t *testing.T) {
 		Commit("declare a failing setup step")
 	d.MustRunCLI(repo.Dir, "link")
 
-	page := navigateUntilStarted(t, d, "https://setup-error.localhost/")
+	page := navigateUntilPrepared(t, d, "https://setup-error.localhost/")
 
 	if page.StatusCode != http.StatusBadGateway {
 		t.Fatalf("status %d, want the 502 setup error page:\n%s", page.StatusCode, page.Body)

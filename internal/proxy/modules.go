@@ -49,9 +49,9 @@ func (h *routeHandler) Provision(caddy.Context) error {
 func (h *routeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	domain := requestDomain(r)
 	defer h.router.Begin(domain)()
-	// Every request is held until the Process is up. Preparing has no time
-	// limit, so browsers are shown the Preparing page rather than held
-	// through it; every other client waits.
+	// Preparing has no time limit, so a browser page load is shown the
+	// Preparing page rather than held through it. Otherwise every request
+	// is held until the Process is up.
 	addr, err := h.router.Upstream(r.Context(), domain, !isNavigation(r))
 	if se, ok := errors.AsType[*StartError](err); ok {
 		writeStartErrorPage(w, domain, se)

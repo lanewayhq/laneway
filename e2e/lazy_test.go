@@ -167,10 +167,10 @@ func TestAnotherProgramOnThePrimaryProcessPortIsNotMistakenForIt(t *testing.T) {
 	}
 }
 
-// navigateUntilStarted navigates to url, as the Preparing page's refreshes
+// navigateUntilPrepared navigates to url, as the Preparing page's refreshes
 // do, until it gets something other than the Preparing page, and returns
 // that.
-func navigateUntilStarted(t *testing.T, d *testkit.Daemon, url string) testkit.Response {
+func navigateUntilPrepared(t *testing.T, d *testkit.Daemon, url string) testkit.Response {
 	t.Helper()
 	var page testkit.Response
 	testkit.WaitUntil(t, 15*time.Second, url+" to stop answering with the Preparing page", func() bool {
@@ -225,13 +225,17 @@ func TestBrowserGetsAnErrorPageWhenThePrimaryProcessTimesOutWhileStarting(t *tes
 	assertContains(t, page.Body, "start_timeout")
 }
 
+// crashOnceCommand is a Process command that exits on its first start only,
+// like an app whose bug was fixed after its failure was seen.
+func crashOnceCommand(t *testing.T) string {
+	marker := filepath.Join(gitfixture.TempDir(t), "crashed-once")
+	return "if [ -e " + marker + " ]; then exec " + testkit.TestServer(t) + "; fi; touch " + marker + "; exit 1"
+}
+
 func TestReloadingTheErrorPageStartsTheWorktreeAgain(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
-	// Crashes on its first start only, like an app whose bug was fixed
-	// after the error page was shown.
-	marker := filepath.Join(gitfixture.TempDir(t), "crashed-once")
-	command := "if [ -e " + marker + " ]; then exec " + testkit.TestServer(t) + "; fi; touch " + marker + "; exit 1"
+	command := crashOnceCommand(t)
 	repo := gitfixture.New(t, "lazy-retry").
 		WriteFile("portby.toml", processConfig(command)).
 		Commit("declare a web Process that crashes once")
@@ -250,10 +254,7 @@ func TestReloadingTheErrorPageStartsTheWorktreeAgain(t *testing.T) {
 func TestRequestingAgainAfterAFailedStartStartsTheWorktreeAgain(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
-	// Crashes on its first start only, like an app whose bug was fixed
-	// after the failure was seen.
-	marker := filepath.Join(gitfixture.TempDir(t), "crashed-once")
-	command := "if [ -e " + marker + " ]; then exec " + testkit.TestServer(t) + "; fi; touch " + marker + "; exit 1"
+	command := crashOnceCommand(t)
 	repo := gitfixture.New(t, "lazy-retry-curl").
 		WriteFile("portby.toml", processConfig(command)).
 		Commit("declare a web Process that crashes once")
@@ -372,9 +373,7 @@ func loadInBackground(t *testing.T, d *testkit.Daemon, url string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req.Header.Set("Sec-Fetch-Mode", "navigate")
-	req.Header.Set("Sec-Fetch-Dest", "document")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	testkit.SetNavigationHeaders(req)
 	client := d.HTTPS()
 	done := make(chan struct{})
 	go func() {

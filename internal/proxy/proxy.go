@@ -47,7 +47,7 @@ type Router interface {
 	// and then returns a *StartError if it didn't start. While the
 	// Worktree is Preparing, it waits through that too if
 	// waitForPreparation is true, and otherwise returns ErrPreparing at
-	// once; a *PreparationError if preparing it failed. It returns an error
+	// once. It returns a *PreparationError if preparing failed, an error
 	// wrapping ErrUnknownDomain if domain is not one of Portby's Domains;
 	// any other error is shown to the user.
 	Upstream(ctx context.Context, domain string, waitForPreparation bool) (string, error)
