@@ -118,7 +118,7 @@ func TestAWorktreeIsNotStartedUntilItIsReadyAndBrowsersAreToldItIsBeingSetUp(t *
 	page := d.Navigate("https://setup-page.localhost/")
 
 	if page.StatusCode != http.StatusServiceUnavailable || page.Header.Get("Refresh") == "" {
-		t.Fatalf("navigation while preparing: status %d (Refresh %q), want the 503 starting page:\n%s",
+		t.Fatalf("navigation while preparing: status %d (Refresh %q), want the 503 Preparing page:\n%s",
 			page.StatusCode, page.Header.Get("Refresh"), page.Body)
 	}
 	assertContains(t, page.Body, "being prepared")

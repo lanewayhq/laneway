@@ -194,7 +194,7 @@ func TestAVisitToAnAliasOrAProcessStartsTheWorktree(t *testing.T) {
 	other := repo.AddWorktree("other")
 	d.MustRunCLI(repo.Dir, "link")
 	d.MustRunCLI(repo.Dir, "worktree", "alias", "demo")
-	// Until then a visit gets the setup page, not the starting page.
+	// Until then a visit gets the Preparing page.
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
 	d.MustRunCLI(other.Dir, "worktree", "ready")
 
@@ -202,12 +202,7 @@ func TestAVisitToAnAliasOrAProcessStartsTheWorktree(t *testing.T) {
 		"https://demo.alias-lazy.localhost/":       "web@alias-lazy",
 		"https://vite.other.alias-lazy.localhost/": "vite@other",
 	} {
-		page := d.Navigate(url)
-		if page.StatusCode != http.StatusServiceUnavailable {
-			t.Fatalf("first visit to %s: status %d, want the starting page:\n%s", url, page.StatusCode, page.Body)
-		}
-		assertContains(t, page.Body, "Starting")
-		got := serverResponse(t, url, navigateUntilStarted(t, d, url))
+		got := serverResponse(t, url, d.Navigate(url))
 		if got.Name != want {
 			t.Fatalf("%s reached %q, want %s", url, got.Name, want)
 		}

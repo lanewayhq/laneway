@@ -88,11 +88,13 @@ type startAttempt struct {
 	routed map[string]bool
 	err    error // why it failed
 	// retry is set (under served.mu) once any request has been given the
-	// failure, whether it waited for the attempt or not; the next request
-	// of any kind then starts the Worktree again. Requests that waited on
-	// one failed attempt all get that failure and together arm a single
-	// retry. A client that keeps requesting a broken Worktree starts a new
-	// attempt on every other request.
+	// failure; the next request of any kind then starts the Worktree
+	// again. Requests that waited on one failed attempt all get that
+	// failure and together arm a single retry. This is safe because every
+	// request is held until the attempt ends: there is no starting page
+	// reloading itself, which would restart a broken Worktree forever
+	// instead of ending on the error page. A client that keeps requesting
+	// a broken Worktree starts a new attempt on every other request.
 	retry bool
 	// lazy names the lazy Processes in the config it started from: the
 	// ones Idle stops.
@@ -472,7 +474,7 @@ func (r router) Begin(domain string) func() {
 	return s.activity.Begin()
 }
 
-func (r router) Upstream(ctx context.Context, domain string, wait bool) (string, error) {
+func (r router) Upstream(ctx context.Context, domain string, waitForPreparation bool) (string, error) {
 	d := r.d
 	if domain == d.cfg.DashboardDomain {
 		return d.dashboardUpstream(), nil
@@ -488,11 +490,8 @@ func (r router) Upstream(ctx context.Context, domain string, wait bool) (string,
 	select {
 	case <-st.done:
 	default:
-		if !wait {
-			if d.preparer.Status(s.dir).State != prepare.Ready {
-				return "", proxy.ErrPreparing
-			}
-			return "", proxy.ErrStarting
+		if !waitForPreparation && d.preparer.Status(s.dir).State != prepare.Ready {
+			return "", proxy.ErrPreparing
 		}
 		select {
 		case <-st.done:
@@ -531,7 +530,7 @@ func (r router) Upstream(ctx context.Context, domain string, wait bool) (string,
 			s.start = nil
 		}
 		s.mu.Unlock()
-		return r.Upstream(ctx, domain, wait)
+		return r.Upstream(ctx, domain, waitForPreparation)
 	}
 	ctx, cancel := context.WithTimeout(ctx, StartTimeout)
 	defer cancel()
