@@ -563,6 +563,23 @@ func (r router) StaticDir(domain string) string {
 	return st.static[process]
 }
 
+// PrimaryDomain is the Primary Domain of the Worktree whose Domain or Alias
+// is domain, when that isn't domain itself. <process>.<domain> hosts have
+// none, so they are never redirected.
+func (r router) PrimaryDomain(domain string) (string, bool) {
+	s, ok := r.d.servedAt(domain)
+	if !ok {
+		return "", false
+	}
+	for _, p := range r.d.registry.Projects() {
+		if p.Name == s.project {
+			primary := r.d.primaryDomain(p, s.name, s.domain)
+			return primary, primary != domain
+		}
+	}
+	return "", false
+}
+
 var _ proxy.StaticRouter = router{}
 
 // worktreeState is the state of the Worktree served at domain.

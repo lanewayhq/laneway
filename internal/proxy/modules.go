@@ -48,6 +48,12 @@ func (h *routeHandler) Provision(caddy.Context) error {
 
 func (h *routeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	domain := requestDomain(r)
+	if isPageLoad(r) {
+		if primary, ok := h.router.PrimaryDomain(domain); ok {
+			redirectToPrimaryDomain(w, r, primary)
+			return nil
+		}
+	}
 	defer h.router.Begin(domain)()
 	// Preparing has no time limit, so a browser page load is shown the
 	// Preparing page rather than held through it. Otherwise every request
