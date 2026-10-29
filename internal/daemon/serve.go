@@ -571,13 +571,8 @@ func (r router) PrimaryDomain(domain string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	for _, p := range r.d.registry.Projects() {
-		if p.Name == s.project {
-			primary := r.d.primaryDomain(p, s.name, s.domain)
-			return primary, primary != domain
-		}
-	}
-	return "", false
+	primary, ok := r.d.servedPrimaryDomain(s)
+	return primary, ok && primary != domain
 }
 
 var _ proxy.StaticRouter = router{}

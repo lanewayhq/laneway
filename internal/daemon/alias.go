@@ -44,6 +44,17 @@ func (d *Daemon) primaryDomain(p registry.Project, worktree, domain string) stri
 	return domain
 }
 
+// servedPrimaryDomain is the Primary Domain of the served Worktree s; false
+// once its Project is no longer linked.
+func (d *Daemon) servedPrimaryDomain(s *served) (string, bool) {
+	for _, p := range d.registry.Projects() {
+		if p.Name == s.project {
+			return d.primaryDomain(p, s.name, s.domain), true
+		}
+	}
+	return "", false
+}
+
 // aliasTarget is the Domain of the Worktree that host is an Alias of.
 func (d *Daemon) aliasTarget(host string) (string, bool) {
 	name, rest, ok := strings.Cut(host, ".")
