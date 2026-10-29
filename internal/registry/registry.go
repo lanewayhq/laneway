@@ -333,6 +333,21 @@ func (r *Registry) Aliases(project string) []Alias {
 	return out
 }
 
+// NewestAlias returns the Alias most recently added to the Project's
+// Worktree called worktree ("" for the main Worktree), if it has any.
+// Aliases are stored in the order they were added, which is what makes the
+// newest one the Worktree's Primary Domain.
+func (r *Registry) NewestAlias(project, worktree string) (Alias, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, a := range slices.Backward(r.state.Aliases) {
+		if a.Project == project && a.Worktree == worktree {
+			return a, true
+		}
+	}
+	return Alias{}, false
+}
+
 // AddAlias records a and persists it. It returns an *AliasTakenError if the
 // Project already uses a.Name for a Worktree label or another Alias. Adding
 // an Alias the Worktree already has changes nothing.

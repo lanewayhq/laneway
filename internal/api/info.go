@@ -20,12 +20,15 @@ type Info struct {
 	SchemaVersion int          `json:"schemaVersion"`
 	Project       InfoProject  `json:"project"`
 	Worktree      InfoWorktree `json:"worktree"`
-	// Domain is where the Worktree is served, such as
+	// Domain is the Worktree's own Domain, which identifies it, such as
 	// "feature-x.shop.localhost"; "" if Portby hasn't discovered the
-	// Worktree yet.
+	// Worktree yet. It doesn't change when the Worktree gets an Alias.
 	Domain string `json:"domain"`
-	// URL is the Domain's HTTPS URL, such as
-	// "https://feature-x.shop.localhost/"; "" with Domain.
+	// URL is the Worktree's URL: the HTTPS URL of its Primary Domain,
+	// which is its newest Alias, such as "https://checkout.shop.localhost/",
+	// or Domain's if it has none, such as
+	// "https://feature-x.shop.localhost/"; "" with Domain. Use it to reach
+	// the Worktree.
 	URL string `json:"url"`
 	// Aliases are the Worktree's extra Domains, sorted by Domain.
 	Aliases []InfoAlias `json:"aliases"`

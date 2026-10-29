@@ -69,6 +69,9 @@ type Worktree struct {
 	Main bool   `json:"main"`
 	// Domain is the hostname the Worktree is served at.
 	Domain string `json:"domain,omitempty"`
+	// PrimaryDomain is the Domain Portby gives out for the Worktree: its
+	// newest Alias, or Domain if it has none. Empty with Domain.
+	PrimaryDomain string `json:"primaryDomain,omitempty"`
 	// State is one of the Worktree* run states. Only GET /v1/projects
 	// and the up/down/restart routes fill it in.
 	State string `json:"state,omitempty"`
@@ -228,7 +231,8 @@ type WorktreeInfo struct {
 	// Domain is where the Worktree is served, such as "shop.localhost". It
 	// is empty if the Worktree has no Domain.
 	Domain string `json:"domain"`
-	// URL is the Domain's HTTPS URL, empty with Domain.
+	// URL is the HTTPS URL of the Worktree's Primary Domain (its newest
+	// Alias, else Domain), empty with Domain.
 	URL string `json:"url"`
 	// Database is the Worktree's database and Test Database; nil if the
 	// Project has no database, the Worktree has no Domain yet or its config

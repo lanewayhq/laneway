@@ -30,6 +30,20 @@ func (d *Daemon) aliasDomains(p registry.Project, worktree string) []string {
 	return out
 }
 
+// primaryDomain is the Primary Domain of the Project's Worktree called
+// worktree ("" for the main Worktree), whose own Domain is domain: its
+// newest Alias's Domain, or domain if it has none. It is "" while domain is
+// (a Worktree not discovered yet).
+func (d *Daemon) primaryDomain(p registry.Project, worktree, domain string) string {
+	if domain == "" {
+		return ""
+	}
+	if a, ok := d.registry.NewestAlias(p.Path, worktree); ok {
+		return aliasDomain(p, a)
+	}
+	return domain
+}
+
 // aliasTarget is the Domain of the Worktree that host is an Alias of.
 func (d *Daemon) aliasTarget(host string) (string, bool) {
 	name, rest, ok := strings.Cut(host, ".")
