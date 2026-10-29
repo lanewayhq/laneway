@@ -118,7 +118,9 @@ func (d *Daemon) addAlias(ctx context.Context, dir, name string) (api.AliasRespo
 	alias := registry.Alias{Project: p.Path, Worktree: checkout.Name, Name: name}
 	// Serialised with syncWorktrees, so a Worktree discovered meanwhile
 	// can't be given the same label.
+	domain := d.checkoutDomain(p, checkout)
 	d.syncMu.Lock()
+	before := d.primaryDomain(p, checkout.Name, domain)
 	if slices.Contains(reservedLabels(p), name) {
 		err = &api.Error{
 			Code: api.CodeAliasTaken,
@@ -128,6 +130,7 @@ func (d *Daemon) addAlias(ctx context.Context, dir, name string) (api.AliasRespo
 	} else {
 		err = d.registry.AddAlias(alias)
 	}
+	after := d.primaryDomain(p, checkout.Name, domain)
 	d.syncMu.Unlock()
 	if taken, ok := errors.AsType[*registry.AliasTakenError](err); ok {
 		what := "the Domain"
@@ -144,7 +147,7 @@ func (d *Daemon) addAlias(ctx context.Context, dir, name string) (api.AliasRespo
 		return api.AliasResponse{}, err
 	}
 	info, err := d.worktreeInfo(ctx, dir)
-	return api.AliasResponse{Domain: aliasDomain(p, alias), Worktree: info}, err
+	return api.AliasResponse{Domain: aliasDomain(p, alias), Worktree: info, Moved: before != after}, err
 }
 
 // removeAlias removes the Alias name from the Worktree containing dir.
@@ -154,7 +157,12 @@ func (d *Daemon) removeAlias(ctx context.Context, dir, name string) (api.AliasRe
 		return api.AliasResponse{}, err
 	}
 	alias := registry.Alias{Project: p.Path, Worktree: checkout.Name, Name: name}
+	domain := d.checkoutDomain(p, checkout)
+	d.syncMu.Lock()
+	before := d.primaryDomain(p, checkout.Name, domain)
 	err = d.registry.RemoveAlias(alias)
+	after := d.primaryDomain(p, checkout.Name, domain)
+	d.syncMu.Unlock()
 	if errors.Is(err, registry.ErrNoAlias) {
 		has := "it has none"
 		if domains := d.aliasDomains(p, checkout.Name); len(domains) > 0 {
@@ -169,5 +177,5 @@ func (d *Daemon) removeAlias(ctx context.Context, dir, name string) (api.AliasRe
 		return api.AliasResponse{}, err
 	}
 	info, err := d.worktreeInfo(ctx, dir)
-	return api.AliasResponse{Domain: aliasDomain(p, alias), Worktree: info}, err
+	return api.AliasResponse{Domain: aliasDomain(p, alias), Worktree: info, Moved: before != after}, err
 }

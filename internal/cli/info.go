@@ -61,6 +61,11 @@ func printInfo(env Env, info api.Info) error {
 	tw := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintf(tw, "  Path\t%s\n", info.Worktree.Path)
 	fmt.Fprintf(tw, "  URL\t%s\n", cmp.Or(info.URL, "- (Portby hasn't discovered this Worktree yet)"))
+	if info.Domain != "" && len(info.Aliases) > 0 {
+		// The URL is the newest Alias's; the Domain still identifies the
+		// Worktree.
+		fmt.Fprintf(tw, "  Domain\t%s\n", info.Domain)
+	}
 	if len(info.Aliases) > 0 {
 		var urls []string
 		for _, a := range info.Aliases {

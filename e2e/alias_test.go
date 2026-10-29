@@ -31,6 +31,34 @@ func TestAliasServesTheWorktreeUntilRemoved(t *testing.T) {
 	assertNotServed(t, d, "https://api-v2.alias-basic.localhost/")
 }
 
+func TestAliasSaysWhereTheWorktreesURLMoved(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	repo := routedProject(t, "alias-moved")
+	wt := repo.AddWorktree("t3-298e5f25")
+	d.MustRunCLI(repo.Dir, "link")
+
+	res := d.MustRunCLI(wt.Dir, "worktree", "alias", "checkout")
+	assertContains(t, res.Stdout, `Added the Alias checkout.alias-moved.localhost to Worktree "t3-298e5f25"; `+
+		"its URL is now https://checkout.alias-moved.localhost/")
+	d.MustRunCLI(wt.Dir, "worktree", "alias", "basket")
+
+	// checkout isn't the Primary Domain any more, so the URL stays.
+	res = d.MustRunCLI(wt.Dir, "worktree", "alias", "--remove", "checkout")
+	assertContains(t, res.Stdout, `Removed the Alias checkout.alias-moved.localhost from Worktree "t3-298e5f25"`)
+	assertNotContains(t, res.Stdout, "URL is now")
+
+	res = d.MustRunCLI(wt.Dir, "worktree", "alias", "--remove", "basket")
+	assertContains(t, res.Stdout, `Removed the Alias basket.alias-moved.localhost from Worktree "t3-298e5f25"; `+
+		"its URL is now https://t3-298e5f25.alias-moved.localhost/")
+
+	// The same for the main Worktree.
+	res = d.MustRunCLI(repo.Dir, "worktree", "alias", "demo")
+	assertContains(t, res.Stdout, "the main Worktree; its URL is now https://demo.alias-moved.localhost/")
+	res = d.MustRunCLI(repo.Dir, "worktree", "alias", "--remove", "demo")
+	assertContains(t, res.Stdout, "the main Worktree; its URL is now https://alias-moved.localhost/")
+}
+
 func TestAliasesAreUniqueWithinAProject(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)

@@ -420,7 +420,10 @@ func TestInfoPrintsTheSameDetailsForPeople(t *testing.T) {
 
 	assertLineWith(t, out, "Worktree", `"feature"`, "of", `"info-text"`)
 	assertLineWith(t, out, "Path", wt.Dir)
-	assertLineWith(t, out, "URL", "https://feature.info-text.localhost/")
+	// The Worktree's URL is its Primary Domain's; its own Domain still
+	// identifies it.
+	assertLineWith(t, out, "URL", "https://api.info-text.localhost/")
+	assertLineWith(t, out, "Domain", "feature.info-text.localhost")
 	assertLineWith(t, out, "Aliases", "https://api.info-text.localhost/")
 	assertLineWith(t, out, "Readiness", "ready")
 	assertLineWith(t, out, "State", "stopped")

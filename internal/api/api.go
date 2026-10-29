@@ -270,6 +270,9 @@ type AliasResponse struct {
 	Domain string `json:"domain"`
 	// Worktree is the Worktree afterwards.
 	Worktree WorktreeInfo `json:"worktree"`
+	// Moved is true if the change moved the Worktree's Primary Domain, so
+	// its URL is now Worktree.URL.
+	Moved bool `json:"moved,omitempty"`
 }
 
 // DaemonInfo is the body of GET /v1/daemon.
