@@ -38,7 +38,7 @@ func (d *Daemon) info(ctx context.Context, dir string) (api.Info, error) {
 	dir = wt.Worktree.Path
 	cfg, cfgErr := recipe.ResolveDir(dir)
 	if cfgErr == nil {
-		info.Processes = processInfo(cfg.Processes, d.supervisor.Processes(dir), info.Domain)
+		info.Processes = processInfo(cfg.Processes, d.supervisor.Processes(dir), wt.Worktree.PrimaryDomain)
 	}
 	if wt.Database != nil {
 		info.Database = &api.InfoDatabase{Engine: wt.Database.Engine, Name: wt.Database.Name, Test: wt.Database.Test}
@@ -58,8 +58,9 @@ func (d *Daemon) info(ctx context.Context, dir string) (api.Info, error) {
 
 // processInfo merges the declared Processes with the ones the Supervisor
 // runs: every declared one (stopped unless it runs), then any that run but
-// are no longer declared.
-func processInfo(declared []recipe.Process, runs []supervisor.Status, domain string) []api.InfoProcess {
+// are no longer declared. HTTP Processes are given out under the
+// Worktree's Primary Domain.
+func processInfo(declared []recipe.Process, runs []supervisor.Status, primaryDomain string) []api.InfoProcess {
 	state := map[string]string{}
 	for _, st := range runs {
 		state[st.Name] = string(st.State)
@@ -70,11 +71,11 @@ func processInfo(declared []recipe.Process, runs []supervisor.Status, domain str
 			State: cmp.Or(state[p.Name], string(supervisor.StateStopped))}
 		delete(state, p.Name)
 		switch {
-		case domain == "":
+		case primaryDomain == "":
 		case p.Primary:
-			ip.URL = domainURL(domain)
+			ip.URL = domainURL(primaryDomain)
 		case p.HTTP:
-			ip.URL = domainURL(p.Name + "." + domain)
+			ip.URL = domainURL(p.Name + "." + primaryDomain)
 		}
 		out = append(out, ip)
 	}

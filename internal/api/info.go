@@ -111,8 +111,9 @@ type InfoProcess struct {
 	// "stopped".
 	State string `json:"state"`
 	// URL is where the Process is served: the Worktree's URL for the
-	// Primary Process, https://<name>.<domain>/ for other HTTP Processes,
-	// "" for the rest.
+	// Primary Process, https://<name>.<Primary Domain>/ for other HTTP
+	// Processes (such as "https://vite.checkout.shop.localhost/"), "" for
+	// the rest. <name> under the Worktree's other names serves it too.
 	URL string `json:"url"`
 }
 
