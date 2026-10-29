@@ -55,6 +55,12 @@ type Router interface {
 	// returns once the request is over. For a WebSocket that is when the
 	// connection closes, so an open connection keeps its Domain active.
 	Begin(domain string) (end func())
+	// RedirectTarget is where a browser page load for domain is redirected:
+	// when domain is a Worktree's Domain or older Alias, the Worktree's
+	// Primary Domain (its newest Alias). ok is false when page loads for
+	// domain are served where they are: domain is the Primary Domain, a
+	// <process>.<name> host, or no Worktree's.
+	RedirectTarget(domain string) (primary string, ok bool)
 }
 
 // StaticRouter is a Router whose Processes may have a static directory:

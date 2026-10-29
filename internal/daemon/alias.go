@@ -30,6 +30,59 @@ func (d *Daemon) aliasDomains(p registry.Project, worktree string) []string {
 	return out
 }
 
+// primaryDomain is the Primary Domain of the Project's Worktree w: its
+// newest Alias's Domain, or its own Domain if it has none. It is "" while
+// w's Domain is (a Worktree not discovered yet).
+func (d *Daemon) primaryDomain(p registry.Project, w worktreeRef) string {
+	if w.domain == "" {
+		return ""
+	}
+	if a, ok := d.registry.NewestAlias(p.Path, w.name); ok {
+		return aliasDomain(p, a)
+	}
+	return w.domain
+}
+
+// servedPrimaryDomain is the Primary Domain of the served Worktree s; false
+// once its Project is no longer linked.
+func (d *Daemon) servedPrimaryDomain(s *served) (string, bool) {
+	p, ok := d.servedProject(s)
+	if !ok {
+		return "", false
+	}
+	return d.primaryDomain(p, s.worktreeRef), true
+}
+
+// servedProject is the Project of the served Worktree s; false once it is
+// no longer linked.
+func (d *Daemon) servedProject(s *served) (registry.Project, bool) {
+	for _, p := range d.registry.Projects() {
+		if p.Name == s.project {
+			return p, true
+		}
+	}
+	return registry.Project{}, false
+}
+
+// changeAliases makes change, a change to the Aliases of the Project's
+// Worktree w, and reports whether it moved w's Primary Domain. If it did,
+// w catches up with it (primaryDomainMoved). change runs under syncMu, so
+// a Worktree discovered meanwhile can't be given the same label.
+func (d *Daemon) changeAliases(p registry.Project, w worktreeRef, change func() error) (moved bool, err error) {
+	d.syncMu.Lock()
+	before := d.primaryDomain(p, w)
+	err = change()
+	after := d.primaryDomain(p, w)
+	d.syncMu.Unlock()
+	if err != nil {
+		return false, err
+	}
+	if before != after {
+		d.primaryDomainMoved(w.domain)
+	}
+	return before != after, nil
+}
+
 // aliasTarget is the Domain of the Worktree that host is an Alias of.
 func (d *Daemon) aliasTarget(host string) (string, bool) {
 	name, rest, ok := strings.Cut(host, ".")
@@ -91,10 +144,11 @@ func (d *Daemon) addAlias(ctx context.Context, dir, name string) (api.AliasRespo
 				"(at most 63 characters), such as %q", name, label),
 		}
 	}
-	if d.checkoutDomain(p, checkout) == "" {
+	w, ok := d.worktreeRefOf(p, checkout.Dir)
+	if !ok {
 		// A Worktree the Watcher hasn't reported yet.
 		d.syncWorktrees(ctx, p)
-		if d.checkoutDomain(p, checkout) == "" {
+		if w, ok = d.worktreeRefOf(p, checkout.Dir); !ok {
 			return api.AliasResponse{}, &api.Error{
 				Code:    api.CodeNotLinked,
 				Message: fmt.Sprintf("Worktree %q hasn't been discovered yet; try again in a moment", checkout.Name),
@@ -102,19 +156,18 @@ func (d *Daemon) addAlias(ctx context.Context, dir, name string) (api.AliasRespo
 		}
 	}
 	alias := registry.Alias{Project: p.Path, Worktree: checkout.Name, Name: name}
-	// Serialised with syncWorktrees, so a Worktree discovered meanwhile
-	// can't be given the same label.
-	d.syncMu.Lock()
-	if slices.Contains(reservedLabels(p), name) {
-		err = &api.Error{
-			Code: api.CodeAliasTaken,
-			Message: fmt.Sprintf("%s can't be an Alias: it is where the main Worktree's %q Process is served; "+
-				"choose another name", aliasDomain(p, alias), name),
+	var existed bool
+	moved, err := d.changeAliases(p, w, func() error {
+		existed = slices.Contains(d.registry.Aliases(p.Path), alias)
+		if slices.Contains(reservedLabels(p), name) {
+			return &api.Error{
+				Code: api.CodeAliasTaken,
+				Message: fmt.Sprintf("%s can't be an Alias: it is where the main Worktree's %q Process is served; "+
+					"choose another name", aliasDomain(p, alias), name),
+			}
 		}
-	} else {
-		err = d.registry.AddAlias(alias)
-	}
-	d.syncMu.Unlock()
+		return d.registry.AddAlias(alias)
+	})
 	if taken, ok := errors.AsType[*registry.AliasTakenError](err); ok {
 		what := "the Domain"
 		if taken.IsAlias {
@@ -130,7 +183,7 @@ func (d *Daemon) addAlias(ctx context.Context, dir, name string) (api.AliasRespo
 		return api.AliasResponse{}, err
 	}
 	info, err := d.worktreeInfo(ctx, dir)
-	return api.AliasResponse{Domain: aliasDomain(p, alias), Worktree: info}, err
+	return api.AliasResponse{Domain: aliasDomain(p, alias), Worktree: info, Moved: moved, Existed: existed}, err
 }
 
 // removeAlias removes the Alias name from the Worktree containing dir.
@@ -140,7 +193,8 @@ func (d *Daemon) removeAlias(ctx context.Context, dir, name string) (api.AliasRe
 		return api.AliasResponse{}, err
 	}
 	alias := registry.Alias{Project: p.Path, Worktree: checkout.Name, Name: name}
-	err = d.registry.RemoveAlias(alias)
+	w, _ := d.worktreeRefOf(p, checkout.Dir)
+	moved, err := d.changeAliases(p, w, func() error { return d.registry.RemoveAlias(alias) })
 	if errors.Is(err, registry.ErrNoAlias) {
 		has := "it has none"
 		if domains := d.aliasDomains(p, checkout.Name); len(domains) > 0 {
@@ -155,5 +209,5 @@ func (d *Daemon) removeAlias(ctx context.Context, dir, name string) (api.AliasRe
 		return api.AliasResponse{}, err
 	}
 	info, err := d.worktreeInfo(ctx, dir)
-	return api.AliasResponse{Domain: aliasDomain(p, alias), Worktree: info}, err
+	return api.AliasResponse{Domain: aliasDomain(p, alias), Worktree: info, Moved: moved}, err
 }

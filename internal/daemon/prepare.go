@@ -53,6 +53,7 @@ func (d *Daemon) setupPlan(p registry.Project, w worktreeRef) prepare.Plan {
 			steps = append(steps, step)
 		}
 		steps = append(steps, prepare.Step{Name: "env", Run: func(ctx context.Context, _ io.Writer) error {
+			defer d.lockLifecycle(w.domain)()
 			plan, err := d.planEnvPatch(p, w)
 			if err != nil {
 				return fmt.Errorf("the Env Patch for %s: %w", w.dir, err)
@@ -112,7 +113,7 @@ func (d *Daemon) teardown(p registry.Project, w worktreeRef) {
 // steps know which Worktree went. cfg is the config the steps come from.
 func (d *Daemon) setupEnv(ctx context.Context, p registry.Project, w worktreeRef, dir string, cfg recipe.Resolved) []string {
 	env := runtimes.Environ(ctx, dir, d.cfg.Env).Vars
-	vars := envVars(p, w, cfg.Database)
+	vars := d.envVars(p, w, cfg.Database)
 	if name, ok := worktreeTestDatabase(p, w, cfg); ok {
 		vars["test_db"] = name
 	}
@@ -150,10 +151,7 @@ func (d *Daemon) worktreeReady(ctx context.Context, req api.ReadyRequest) (api.W
 	d.prepare(p, w, req.Retry)
 	if retried {
 		// The always Processes didn't start while setup was Failed.
-		d.servedMu.Lock()
-		s := d.served[w.domain]
-		d.servedMu.Unlock()
-		if s != nil {
+		if s := d.servedWorktree(w.domain); s != nil {
 			d.startAlways(s)
 		}
 	}

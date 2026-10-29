@@ -420,14 +420,86 @@ func TestInfoPrintsTheSameDetailsForPeople(t *testing.T) {
 
 	assertLineWith(t, out, "Worktree", `"feature"`, "of", `"info-text"`)
 	assertLineWith(t, out, "Path", wt.Dir)
-	assertLineWith(t, out, "URL", "https://feature.info-text.localhost/")
+	// The Worktree's URL is its Primary Domain's; its own Domain still
+	// identifies it.
+	assertLineWith(t, out, "URL", "https://api.info-text.localhost/")
+	assertLineWith(t, out, "Domain", "feature.info-text.localhost")
 	assertLineWith(t, out, "Aliases", "https://api.info-text.localhost/")
 	assertLineWith(t, out, "Readiness", "ready")
 	assertLineWith(t, out, "State", "stopped")
-	assertLineWith(t, out, "vite", "manual", "stopped", "https://vite.feature.info-text.localhost/")
-	assertLineWith(t, out, "web", "lazy", "stopped", "https://feature.info-text.localhost/", "(primary)")
+	assertLineWith(t, out, "vite", "manual", "stopped", "https://vite.api.info-text.localhost/")
+	assertLineWith(t, out, "web", "lazy", "stopped", "https://api.info-text.localhost/", "(primary)")
 	assertLineWith(t, out, "Database", "postgres", "info_text__feature", "on", "postgres:18")
 	assertLineWith(t, out, "Test", "Database", "info_text__feature_test")
 	assertLineWith(t, out, "postgres:18", d.ServiceHost()+":5432", "portby", "portby", "running")
 	assertLineWith(t, out, "redis:7", d.ServiceHost()+":6379", "-", "portby", "stopped")
+}
+
+func TestInfoJSONsURLIsTheWorktreesPrimaryDomain(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	repo := routedProject(t, "info-primary")
+	wt := repo.AddWorktree("t3-298e5f25")
+	d.MustRunCLI(repo.Dir, "link")
+	assertURL := func(want string) {
+		t.Helper()
+		info := infoJSON(t, d, wt.Dir)
+		assertAt(t, info, want, "url")
+		assertAt(t, info, "t3-298e5f25.info-primary.localhost", "domain")
+	}
+	assertURL("https://t3-298e5f25.info-primary.localhost/")
+
+	d.MustRunCLI(wt.Dir, "worktree", "alias", "checkout")
+	assertURL("https://checkout.info-primary.localhost/")
+
+	// The newest Alias wins, though it sorts first.
+	d.MustRunCLI(wt.Dir, "worktree", "alias", "basket")
+	assertURL("https://basket.info-primary.localhost/")
+	assertAt(t, infoJSON(t, d, wt.Dir), "basket.info-primary.localhost", "aliases", 0, "domain")
+
+	d.MustRunCLI(wt.Dir, "worktree", "alias", "--remove", "basket")
+	assertURL("https://checkout.info-primary.localhost/")
+	d.MustRunCLI(wt.Dir, "worktree", "alias", "--remove", "checkout")
+	assertURL("https://t3-298e5f25.info-primary.localhost/")
+}
+
+func TestInfoJSONGivesEachHTTPProcessUnderThePrimaryDomain(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	repo := routedProject(t, "info-proc-primary")
+	wt := repo.AddWorktree("t3-298e5f25")
+	d.MustRunCLI(repo.Dir, "link")
+	assertProcessURLs := func(web, vite string) {
+		t.Helper()
+		info := infoJSON(t, d, wt.Dir)
+		assertAt(t, infoProcess(t, info, "web"), web, "url")
+		assertAt(t, infoProcess(t, info, "vite"), vite, "url")
+		assertAt(t, infoProcess(t, info, "queue"), "", "url")
+	}
+
+	d.MustRunCLI(wt.Dir, "worktree", "alias", "checkout")
+	assertProcessURLs("https://checkout.info-proc-primary.localhost/", "https://vite.checkout.info-proc-primary.localhost/")
+
+	d.MustRunCLI(wt.Dir, "worktree", "alias", "--remove", "checkout")
+	assertProcessURLs("https://t3-298e5f25.info-proc-primary.localhost/", "https://vite.t3-298e5f25.info-proc-primary.localhost/")
+}
+
+func TestTheMainWorktreesPrimaryDomainSurvivesADaemonRestart(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	repo := routedProject(t, "info-primary-main")
+	d.MustRunCLI(repo.Dir, "link")
+	d.MustRunCLI(repo.Dir, "worktree", "alias", "demo")
+	d.MustRunCLI(repo.Dir, "worktree", "alias", "beta")
+
+	d.Restart()
+
+	info := infoJSON(t, d, repo.Dir)
+	assertAt(t, info, "https://beta.info-primary-main.localhost/", "url")
+	assertAt(t, info, "info-primary-main.localhost", "domain")
+
+	d.MustRunCLI(repo.Dir, "worktree", "alias", "--remove", "beta")
+	assertAt(t, infoJSON(t, d, repo.Dir), "https://demo.info-primary-main.localhost/", "url")
+	d.MustRunCLI(repo.Dir, "worktree", "alias", "--remove", "demo")
+	assertAt(t, infoJSON(t, d, repo.Dir), "https://info-primary-main.localhost/", "url")
 }

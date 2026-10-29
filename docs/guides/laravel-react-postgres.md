@@ -443,12 +443,21 @@ The Domain is named after git's name for the worktree (its directory), not its b
 - `fresh`: an empty database. Add `php artisan migrate --seed --force` to `[worktree] on_create`.
 - `shared`: uses the main Worktree's database.
 
-**Aliases** give a Worktree an extra, nicer Domain, such as for a demo:
+**Aliases** give a Worktree a nicer name, such as one after its task, which matters most for the randomly named worktrees a **Harness** (an AI coding tool such as Claude Code or T3 Code) creates (`t3-298e5f25.shop.localhost`):
 
 ```sh
-portby worktree alias demo           # https://demo.shop.localhost -> this Worktree
-portby worktree alias demo --remove
+portby worktree alias checkout   # Added the Alias checkout.shop.localhost …; its URL is now https://checkout.shop.localhost/
+portby worktree alias checkout --remove
 ```
+
+The newest Alias becomes the Worktree's **Primary Domain**, and the Worktree's URL is under it (`https://checkout.shop.localhost/`). That is the URL Portby gives out everywhere: `url` in `portby info --json`, `portby open`, the Dashboard and the other Processes' hosts (`vite.checkout.shop.localhost`). Agents set up with `portby harness add` (§9) name their linked worktree this way once they know their task.
+
+- **`.env` follows it.** Portby re-applies the Worktree's `.env` (and `.env.testing`), so `APP_URL` and anything else rendered from `{url}` or `{domain}` use the new name, and restarts the Worktree's running Processes (`php artisan serve`, queue workers, Vite) so they read it. Vite's live reload then connects at `vite.checkout.shop.localhost`. This happens in the background once the Worktree is Ready, so `.env` changes a moment after the command returns, and an Alias added while the Worktree is still being prepared takes effect when preparing finishes. A stopped Worktree only gets its `.env` rewritten and isn't started; its Processes pick up the new URL at their next start. The databases keep their names.
+- **The old names keep serving it.** `t3-298e5f25.shop.localhost` and any older Alias still reach the Worktree, but a browser loading a page there (a `GET` navigation) gets a temporary redirect (`307`, not cached) to the same path and query on the Primary Domain, so tabs opened before the Worktree was named move over on their next reload. Fetches, form posts, webhooks and `curl` on the old names are served as before, and `vite.<old name>` is never redirected.
+- **You log in again once.** Cookies belong to a host, so the browser has no session on the new name until you log in there.
+- **Removing the Alias moves the URL back** to the previous Alias, or to the Worktree's own Domain if it has none: the command says where, `.env` and the running Processes follow the same way, and the redirect goes with it.
+
+The main Worktree follows the same rule: `portby worktree alias demo` there makes `https://demo.shop.localhost/` its URL and redirects page loads from `shop.localhost`.
 
 **Removing a Worktree:**
 
@@ -475,7 +484,7 @@ portby harness add claude   # SessionStart hook in .claude/settings.json + a sec
 portby harness add t3       # a "Portby: wait until Ready" script in t3.json that runs when T3 Code creates a worktree, + the AGENTS.md section
 ```
 
-The hook runs `portby worktree ready`, so an agent's session in a new worktree starts only once its database, `.env` and `composer`/`bun install` are done. The `AGENTS.md` section tells the agent to use `portby info --json` for its URL and `portby exec` for commands. It's safe for teammates without Portby: the hook does nothing if `portby` isn't installed.
+The hook runs `portby worktree ready`, so an agent's session in a new worktree starts only once its database, `.env` and `composer`/`bun install` are done. The `AGENTS.md` section tells the agent to use `portby info --json` for its URL and `portby exec` for commands, and, in a linked worktree without an Alias, to name it after its task once it is Ready (`portby worktree alias checkout-redesign`, see Aliases in §8). Projects set up before that instruction existed get it when `portby harness add` runs again. It's safe for teammates without Portby: the hook does nothing if `portby` isn't installed.
 
 **If you use Laravel Boost**, Boost writes `CLAUDE.md` and `AGENTS.md` itself, so Portby leaves them alone and puts its instructions in `.ai/guidelines/portby.md`, where Boost [takes custom guidelines](https://laravel.com/docs/boost#adding-custom-ai-guidelines). Boost adds them to its files when it runs, so run it after `portby harness add`:
 

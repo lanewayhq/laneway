@@ -148,6 +148,35 @@ func TestAVitePrimaryProcessGetsLiveReloadAtTheDomainItself(t *testing.T) {
 	assertContains(t, config, "const projectConfig = {};") // it has no vite.config.*
 }
 
+func TestViteLiveReloadMovesToThePrimaryDomainWhenTheProcessRestarts(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	server := testkit.TestServer(t)
+	vite := testkit.WriteExecutable(t, gitfixture.TempDir(t), "vite", `exec `+server+` --name "vite $*"`+"\n")
+	repo := gitfixture.New(t, "vite-moves").
+		WriteFile("portby.toml", processConfig(server+" --name web")+
+			"\n[processes.vite]\ncommand = \""+vite+" --config {vite_config}\"\nhttp = true\n").
+		Commit("a web and a vite Process")
+	d.MustRunCLI(repo.Dir, "link")
+	wt := repo.AddWorktree("t3-298e5f25")
+	d.MustRunCLI(wt.Dir, "worktree", "ready")
+	liveReloadAt := func(host string) string { return "host: " + strconv.Quote(host) + "," }
+	_, path, _ := strings.Cut(d.GetServer("https://vite.t3-298e5f25.vite-moves.localhost/").Name, "--config ")
+	assertContains(t, readFile(t, path), liveReloadAt("vite.t3-298e5f25.vite-moves.localhost"))
+
+	d.MustRunCLI(wt.Dir, "worktree", "alias", "checkout")
+
+	eventuallyContains(t, path, liveReloadAt("vite.checkout.vite-moves.localhost"))
+	// Stale pages on the old name still load their assets.
+	if got := d.GetServer("https://vite.t3-298e5f25.vite-moves.localhost/").Name; !strings.HasPrefix(got, "vite ") {
+		t.Errorf("vite.<Domain> reached %q, want the vite Process", got)
+	}
+
+	d.MustRunCLI(wt.Dir, "worktree", "alias", "--remove", "checkout")
+
+	eventuallyContains(t, path, liveReloadAt("vite.t3-298e5f25.vite-moves.localhost"))
+}
+
 func TestAnOpenLiveReloadConnectionKeepsALaravelWorktreeFromGoingIdle(t *testing.T) {
 	t.Parallel()
 	d, clk := idleDaemon(t)

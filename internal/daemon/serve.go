@@ -44,8 +44,10 @@ type served struct {
 	// activity sees every request for the Domain and decides when the
 	// Worktree is Idle.
 	activity *activity.Tracker
-	// lifecycle serialises changes to which Processes run: starts and
-	// going Idle.
+	// lifecycle serialises changes to which Processes run (starts and
+	// going Idle) and Portby's writes to the Worktree's .env, so setup's
+	// env step never writes it while a start or a moved Primary Domain
+	// does.
 	lifecycle sync.Mutex
 	// alwaysServices ends the hold its always Processes have on the
 	// Worktree's Services (holdAlwaysServices); nil when there is none.
@@ -561,6 +563,19 @@ func (r router) StaticDir(domain string) string {
 		process = st.primary
 	}
 	return st.static[process]
+}
+
+// RedirectTarget is the Primary Domain of the Worktree whose Domain or
+// Alias is domain, when that isn't domain itself: page loads there are
+// redirected to it. <process>.<domain> hosts are no Worktree's Domain or
+// Alias, so they are never redirected.
+func (r router) RedirectTarget(domain string) (string, bool) {
+	s, ok := r.d.servedAt(domain)
+	if !ok {
+		return "", false
+	}
+	primary, ok := r.d.servedPrimaryDomain(s)
+	return primary, ok && primary != domain
 }
 
 var _ proxy.StaticRouter = router{}

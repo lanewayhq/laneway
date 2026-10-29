@@ -15,8 +15,9 @@ import (
 // viteConfigVar is replaced, in an HTTP Process's command, with the path of
 // a Vite config Portby writes for it (spike #2): the Worktree's own
 // vite.config.* with Vite's live-reload WebSocket moved to the Process's
-// host on the proxy (wss://vite.<domain>), and TLS and server.origin left to
-// Portby and laravel-vite-plugin. Nothing in the Project changes.
+// host on the proxy (wss://vite.<Primary Domain>), and TLS and
+// server.origin left to Portby and laravel-vite-plugin. Nothing in the
+// Project changes.
 const viteConfigVar = "{vite_config}"
 
 // viteConfigs are the files Vite looks for, in its order.
@@ -24,15 +25,19 @@ var viteConfigs = []string{"vite.config.js", "vite.config.mjs", "vite.config.ts"
 
 // withViteConfig replaces {vite_config} in proc's command with the path of
 // the Vite config it writes for proc of the Worktree s. It writes it again
-// at every start, so it follows the Worktree's Domain, its vite.config.* and
-// the proxy's port.
+// at every start, so it follows the Worktree's Primary Domain, its
+// vite.config.* and the proxy's port. It is kept under the Worktree's own
+// Domain, which a new Primary Domain doesn't change.
 func (d *Daemon) withViteConfig(s *served, proc recipe.Process) (string, error) {
 	if !strings.Contains(proc.Command, viteConfigVar) {
 		return proc.Command, nil
 	}
-	host := s.domain
+	host, ok := d.servedPrimaryDomain(s)
+	if !ok {
+		host = s.domain
+	}
 	if !proc.Primary {
-		host = proc.Name + "." + s.domain
+		host = proc.Name + "." + host
 	}
 	path := filepath.Join(d.cfg.Paths.StateDir, "vite", s.domain, proc.Name+".config.mjs")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

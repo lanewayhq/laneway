@@ -44,18 +44,20 @@ func linkedWorktreeRef(p registry.Project, w registry.Worktree) worktreeRef {
 	return worktreeRef{name: w.Name, label: w.Label, dir: w.Path, domain: worktreeDomain(p, w)}
 }
 
-// envVars are the template variables' values for the Worktree w. They are
-// the Env Patch's inputs besides the templates: when one changes (an Alias
-// changing the URL, #13), call applyEnvPatch for the Worktree again. db is
-// the Project's database config; {db} is only set if it has one.
-func envVars(p registry.Project, w worktreeRef, db recipe.Database) map[string]string {
+// envVars are the template variables' values for the Worktree w. {domain}
+// and {url} are its Primary Domain's, so its Aliases are inputs too: when
+// one changes them, primaryDomainMoved applies the Env Patch again. Its
+// database names come from its label, so they stay. db is the Project's
+// database config; {db} is only set if it has one.
+func (d *Daemon) envVars(p registry.Project, w worktreeRef, db recipe.Database) map[string]string {
+	primary := d.primaryDomain(p, w)
 	vars := map[string]string{
 		"project":  p.Name,
 		"worktree": w.name,
-		"domain":   w.domain,
+		"domain":   primary,
 		// No trailing slash, as Laravel's APP_URL has it, so templates
 		// can append a path: "{url}/shop".
-		"url": strings.TrimSuffix(domainURL(w.domain), "/"),
+		"url": strings.TrimSuffix(domainURL(primary), "/"),
 	}
 	if name, ok := worktreeDatabase(p, w, db); ok {
 		vars["db"] = name
@@ -88,7 +90,7 @@ func (d *Daemon) planEnvPatch(p registry.Project, w worktreeRef) (envpatch.Plan,
 // envPatchVars are the template variables' values for the Worktree w whose
 // config is cfg: envVars, its Services' and its databases'.
 func (d *Daemon) envPatchVars(p registry.Project, w worktreeRef, cfg recipe.Resolved) map[string]string {
-	vars := envVars(p, w, cfg.Database)
+	vars := d.envVars(p, w, cfg.Database)
 	services := d.serviceVars(cfg.Services)
 	maps.Copy(vars, services)
 	maps.Copy(vars, databaseVars(cfg, services))
@@ -193,20 +195,12 @@ func (d *Daemon) applyPlan(p registry.Project, plan envpatch.Plan) error {
 // before its Processes start, so template changes apply at every start. It
 // reports whether it changed .env.
 func (d *Daemon) applyServedEnvPatch(s *served) bool {
-	for _, p := range d.registry.Projects() {
-		if p.Name != s.project {
-			continue
-		}
-		if s.dir == p.Path {
-			return d.applyEnvPatch(p, mainWorktreeRef(p))
-		}
-		for _, w := range d.registry.Worktrees(p.Path) {
-			if w.Path == s.dir {
-				return d.applyEnvPatch(p, linkedWorktreeRef(p, w))
-			}
-		}
+	p, ok := d.servedProject(s)
+	if !ok {
+		return false
 	}
-	return false
+	w, ok := d.worktreeRefOf(p, s.dir)
+	return ok && d.applyEnvPatch(p, w)
 }
 
 // projectWorktreeRefs are the Project's Worktrees as they will be once

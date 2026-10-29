@@ -20,12 +20,15 @@ type Info struct {
 	SchemaVersion int          `json:"schemaVersion"`
 	Project       InfoProject  `json:"project"`
 	Worktree      InfoWorktree `json:"worktree"`
-	// Domain is where the Worktree is served, such as
+	// Domain is the Worktree's own Domain, which identifies it, such as
 	// "feature-x.shop.localhost"; "" if Portby hasn't discovered the
-	// Worktree yet.
+	// Worktree yet. It doesn't change when the Worktree gets an Alias.
 	Domain string `json:"domain"`
-	// URL is the Domain's HTTPS URL, such as
-	// "https://feature-x.shop.localhost/"; "" with Domain.
+	// URL is the Worktree's URL: the HTTPS URL of its Primary Domain,
+	// which is its newest Alias, such as "https://checkout.shop.localhost/",
+	// or Domain's if it has none, such as
+	// "https://feature-x.shop.localhost/"; "" with Domain. Use it to reach
+	// the Worktree.
 	URL string `json:"url"`
 	// Aliases are the Worktree's extra Domains, sorted by Domain.
 	Aliases []InfoAlias `json:"aliases"`
@@ -108,8 +111,9 @@ type InfoProcess struct {
 	// "stopped".
 	State string `json:"state"`
 	// URL is where the Process is served: the Worktree's URL for the
-	// Primary Process, https://<name>.<domain>/ for other HTTP Processes,
-	// "" for the rest.
+	// Primary Process, https://<name>.<Primary Domain>/ for other HTTP
+	// Processes (such as "https://vite.checkout.shop.localhost/"), "" for
+	// the rest. <name> under the Worktree's other names serves it too.
 	URL string `json:"url"`
 }
 
