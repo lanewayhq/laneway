@@ -50,6 +50,42 @@ SESSION_DOMAIN = "{domain}"
 	eventuallyContains(t, mainEnv, "APP_URL=https://primary-env.localhost\nSESSION_DOMAIN=primary-env.localhost\n")
 }
 
+// With Test Databases on, .env.testing follows the Primary Domain too, and
+// neither file's database names change: they come from the Worktree's label.
+func TestTheEnvTestingFollowsThePrimaryDomainAndDatabaseNamesStay(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	repo := gitfixture.New(t, "primary-tdb").
+		WriteFile(".gitignore", ".env\n.env.testing\n").
+		WriteFile("portby.toml", "[database]\nengine = \"postgres\"\ntest = \"on\"\n\n"+
+			"[env]\nAPP_URL = \"{url}\"\nDB_DATABASE = \"{db}\"\n").
+		Commit("declare a Postgres database with Test Databases").
+		WriteFile(".env.testing", "APP_ENV=testing\n")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	wt := repo.AddWorktree("t3-61aa")
+	d.MustRunCLI(wt.Dir, "worktree", "ready")
+
+	for _, tt := range []struct{ dir, alias, db string }{
+		{wt.Dir, "checkout", "primary_tdb__t3_61aa"},
+		{repo.Dir, "demo", "primary_tdb"},
+	} {
+		d.MustRunCLI(tt.dir, "worktree", "alias", tt.alias)
+		url := "APP_URL=https://" + tt.alias + ".primary-tdb.localhost\n"
+		eventuallyContains(t, filepath.Join(tt.dir, ".env"), url+"DB_DATABASE="+tt.db+"\n")
+		eventuallyContains(t, filepath.Join(tt.dir, ".env.testing"), url+"DB_DATABASE="+tt.db+"_test\n")
+
+		d.MustRunCLI(tt.dir, "worktree", "alias", "--remove", tt.alias)
+		domain := "primary-tdb.localhost"
+		if tt.dir == wt.Dir {
+			domain = "t3-61aa." + domain
+		}
+		url = "APP_URL=https://" + domain + "\n"
+		eventuallyContains(t, filepath.Join(tt.dir, ".env"), url+"DB_DATABASE="+tt.db+"\n")
+		eventuallyContains(t, filepath.Join(tt.dir, ".env.testing"), url+"DB_DATABASE="+tt.db+"_test\n")
+	}
+}
+
 // appURLServer is a portby.toml whose Primary Process names itself after the
 // APP_URL in .env when it starts, so a request shows which APP_URL the
 // running Process read. Its starts are counted into log.
@@ -106,6 +142,20 @@ func TestARunningWorktreesProcessesRestartWhenItsPrimaryDomainMoves(t *testing.T
 	if n := starts(t, log) - started; n != 1 {
 		t.Errorf("the Process started %d more times after removing both Aliases, want 1 (for basket only)", n)
 	}
+
+	// The same for the main Worktree.
+	mainURL := "https://primary-restart.localhost/"
+	if got := d.GetServer(mainURL).Name; got != "https://primary-restart.localhost" {
+		t.Fatalf("the main Worktree's Process started with APP_URL %q", got)
+	}
+	d.MustRunCLI(repo.Dir, "worktree", "alias", "demo")
+	eventually(t, "the main Worktree's Process to restart with the demo APP_URL", func() bool {
+		return d.GetServer(mainURL).Name == "https://demo.primary-restart.localhost"
+	})
+	d.MustRunCLI(repo.Dir, "worktree", "alias", "--remove", "demo")
+	eventually(t, "the main Worktree's Process to restart with its Domain's APP_URL", func() bool {
+		return d.GetServer(mainURL).Name == "https://primary-restart.localhost"
+	})
 }
 
 func TestAnAliasAddedWhilePreparingIsInTheEnvOnceTheWorktreeIsReady(t *testing.T) {
