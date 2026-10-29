@@ -63,7 +63,7 @@ export default {
       const key = w.path;
       return h("tr", { "data-domain": w.domain ?? "" },
         h("td", {}, w.main ? h("span", {}, "main") : w.name),
-        h("td", {}, link(w.domain), ...(w.aliases ?? []).map((a) => h("div", { class: "alias" }, link(a)))),
+        h("td", {}, ...names(w)),
         h("td", {}, setup(key, w.setup)),
         h("td", {}, badge(w.state ?? "-")),
         h("td", {}, processes(p, w)),
@@ -113,6 +113,15 @@ export default {
     dash.onProjects(render);
   },
 };
+
+// names links the Worktree at its Primary Domain (its newest Alias, else
+// its Domain), then lists its other names: its Domain, which identifies it,
+// and its older Aliases.
+function names(w) {
+  const primary = w.primaryDomain || w.domain;
+  const others = [w.domain, ...(w.aliases ?? [])].filter((d) => d && d !== primary);
+  return [link(primary), ...others.map((d) => h("div", { class: "alias" }, link(d)))];
+}
 
 function link(domain) {
   if (!domain) {

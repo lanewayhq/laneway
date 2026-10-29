@@ -140,6 +140,36 @@ func TestTheDashboardReadsTheSameAPIAsTheCLI(t *testing.T) {
 	}
 }
 
+func TestTheDashboardIsGivenEachWorktreesPrimaryDomain(t *testing.T) {
+	t.Parallel()
+	d, dash := dashboardDaemon(t, "dash-primary")
+	repo := gitfixture.New(t, "dash-primary-shop")
+	wt := repo.AddWorktree("t3-298e5f25")
+	d.MustRunCLI(repo.Dir, "link")
+	d.MustRunCLI(wt.Dir, "worktree", "alias", "checkout")
+
+	status, body := dashboardRequest(t, d, http.MethodGet, dash+"/api/v1/projects", "", nil)
+	if status != http.StatusOK {
+		t.Fatalf("status %d:\n%s", status, body)
+	}
+	var list api.ProjectList
+	if err := json.Unmarshal([]byte(body), &list); err != nil {
+		t.Fatal(err)
+	}
+	for domain, want := range map[string]string{
+		"dash-primary-shop.localhost":             "dash-primary-shop.localhost",
+		"t3-298e5f25.dash-primary-shop.localhost": "checkout.dash-primary-shop.localhost",
+	} {
+		w, ok := worktreeIn(list, domain)
+		if !ok {
+			t.Fatalf("no Worktree served at %s: %+v", domain, list.Projects)
+		}
+		if w.PrimaryDomain != want {
+			t.Errorf("the Worktree at %s has the Primary Domain %q, want %q", domain, w.PrimaryDomain, want)
+		}
+	}
+}
+
 // projectEvents opens the Dashboard's live stream at url and returns its
 // `projects` events as they arrive. The channel is closed when the stream
 // ends.
