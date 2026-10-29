@@ -108,6 +108,30 @@ func TestARunningWorktreesProcessesRestartWhenItsPrimaryDomainMoves(t *testing.T
 	}
 }
 
+func TestAnAliasAddedWhilePreparingIsInTheEnvOnceTheWorktreeIsReady(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	gate := filepath.Join(gitfixture.TempDir(t), "gate")
+	repo := envProject(t, "primary-preparing", "APP_URL = \"{url}\"\n\n[worktree]\non_create = "+
+		tomlList("until [ -e "+gate+" ]; do sleep 0.05; done")+"\n")
+	writeTestFile(t, gate, "")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	if err := os.Remove(gate); err != nil {
+		t.Fatal(err)
+	}
+	wt := repo.AddWorktree("t3-0b9f")
+	waitForWorktree(t, d, "primary-preparing", "t3-0b9f")
+	assertSetupState(t, d, wt.Dir, "preparing")
+
+	d.MustRunCLI(wt.Dir, "worktree", "alias", "checkout")
+	writeTestFile(t, gate, "")
+	d.MustRunCLI(wt.Dir, "worktree", "ready")
+
+	assertSetupState(t, d, wt.Dir, "ready")
+	eventuallyContains(t, filepath.Join(wt.Dir, ".env"), "APP_URL=https://checkout.primary-preparing.localhost\n")
+}
+
 func stat(t *testing.T, path string) os.FileInfo {
 	t.Helper()
 	fi, err := os.Stat(path)
