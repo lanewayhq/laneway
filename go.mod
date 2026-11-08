@@ -1,4 +1,4 @@
-module github.com/mrsafalpiya/portby.dev
+module github.com/lanewayhq/laneway
 
 go 1.27.0
 

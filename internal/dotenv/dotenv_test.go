@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/dotenv"
+	"github.com/lanewayhq/laneway/internal/dotenv"
 )
 
 const laravelEnv = `# Laravel env
@@ -118,7 +118,7 @@ func TestQuoteWritesTheFormPhpdotenvReadsBackExactly(t *testing.T) {
 		"shop__feat":                  `shop__feat`,
 		"":                            ``,
 		"a #b":                        `'a #b'`,
-		"Portby ${APP_NAME}":          `'Portby ${APP_NAME}'`,
+		"Laneway ${APP_NAME}":         `'Laneway ${APP_NAME}'`,
 		`p@ss w0rd "quoted" $HOME ${APP_NAME} it's \ back#slash`: `"p@ss w0rd \"quoted\" \$HOME \${APP_NAME} it's \\ back#slash"`,
 		"two\nlines": "\"two\nlines\"",
 	}
@@ -151,15 +151,15 @@ func TestSetThenParseReadsTheValueBack(t *testing.T) {
 
 // TestPhpdotenvReadsBackWhatSetWrote asks the real phpdotenv, configured the
 // way Laravel configures it, to read an edited file. It needs PHP and a
-// script that prints a .env file as JSON (parse.php in the Portby research
-// notes), so it only runs with PORTBY_PHPDOTENV=<path to parse.php> and php
-// (or $PORTBY_PHP) available.
+// script that prints a .env file as JSON (parse.php in the Laneway research
+// notes), so it only runs with LANEWAY_PHPDOTENV=<path to parse.php> and php
+// (or $LANEWAY_PHP) available.
 func TestPhpdotenvReadsBackWhatSetWrote(t *testing.T) {
-	script := os.Getenv("PORTBY_PHPDOTENV")
+	script := os.Getenv("LANEWAY_PHPDOTENV")
 	if script == "" {
-		t.Skip("set PORTBY_PHPDOTENV to a phpdotenv parse.php to run this")
+		t.Skip("set LANEWAY_PHPDOTENV to a phpdotenv parse.php to run this")
 	}
-	php := os.Getenv("PORTBY_PHP")
+	php := os.Getenv("LANEWAY_PHP")
 	if php == "" {
 		php = "php"
 	}
@@ -180,7 +180,7 @@ DB_DATABASE=dup_later_wins
 		"DB_DATABASE":    "shop__feat",
 		"DB_PASSWORD":    `p@ss w0rd "quoted" $HOME ${APP_NAME} it's \ back#slash`,
 		"REDIS_PREFIX":   "shop_feat_",
-		"MAIL_FROM_NAME": "Portby ${APP_NAME}",
+		"MAIL_FROM_NAME": "Laneway ${APP_NAME}",
 		"NEW_EMPTY":      "",
 		"NEW_HASH":       "a #b",
 		"NEW_MULTILINE":  "two\nlines",

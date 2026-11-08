@@ -5,17 +5,17 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // envProject is a repo that ignores .env files, as Laravel's does, and
-// declares the Env Patch templates in portby.toml.
+// declares the Env Patch templates in laneway.toml.
 func envProject(t *testing.T, name, env string) *gitfixture.Repo {
 	t.Helper()
 	return gitfixture.New(t, name).
-		WriteFile(".gitignore", ".env\n.env.portby.bak\n").
-		WriteFile("portby.toml", "[env]\n"+env).
+		WriteFile(".gitignore", ".env\n.env.laneway.bak\n").
+		WriteFile("laneway.toml", "[env]\n"+env).
 		Commit("declare the Env Patch")
 }
 
@@ -43,7 +43,7 @@ func assertNoFile(t *testing.T, path string) {
 	}
 }
 
-func TestLinkWithYesPatchesOnlyTheKeysPortbyOwnsAndBacksUpTheOriginal(t *testing.T) {
+func TestLinkWithYesPatchesOnlyTheKeysLanewayOwnsAndBacksUpTheOriginal(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := envProject(t, "env-yes", `APP_URL = "{url}"
@@ -62,7 +62,7 @@ abc
 -----END-----"
 CACHE_PREFIX=env-yes_
 `)
-	assertFile(t, filepath.Join(repo.Dir, ".env.portby.bak"), handWrittenEnv)
+	assertFile(t, filepath.Join(repo.Dir, ".env.laneway.bak"), handWrittenEnv)
 	assertContains(t, res.Stdout, "- APP_URL=http://localhost")
 	assertContains(t, res.Stdout, "+ APP_URL=https://env-yes.localhost")
 	assertContains(t, res.Stdout, "+ CACHE_PREFIX=env-yes_")
@@ -85,7 +85,7 @@ func TestLinkShowsTheDiffAndChangesNothingUnlessConfirmed(t *testing.T) {
 	assertContains(t, declined.Stdout, "Apply these changes? [y/N]")
 	assertContains(t, declined.Stderr, "--yes")
 	assertFile(t, filepath.Join(repo.Dir, ".env"), handWrittenEnv)
-	assertNoFile(t, filepath.Join(repo.Dir, ".env.portby.bak"))
+	assertNoFile(t, filepath.Join(repo.Dir, ".env.laneway.bak"))
 	assertNotContains(t, d.MustRunCLI(repo.Dir, "status").Stdout, "env-confirm")
 
 	// No answer at all (stdin isn't a terminal) is no, too.
@@ -101,7 +101,7 @@ func TestLinkShowsTheDiffAndChangesNothingUnlessConfirmed(t *testing.T) {
 	}
 	assertContains(t, confirmed.Stdout, `Linked Project "env-confirm"`)
 	assertContains(t, readFile(t, filepath.Join(repo.Dir, ".env")), "APP_URL=https://env-confirm.localhost   # set by hand\n")
-	assertFile(t, filepath.Join(repo.Dir, ".env.portby.bak"), handWrittenEnv)
+	assertFile(t, filepath.Join(repo.Dir, ".env.laneway.bak"), handWrittenEnv)
 }
 
 func TestLinkDoesNotAskWhenTheEnvPatchIsAlreadyInPlace(t *testing.T) {
@@ -114,7 +114,7 @@ func TestLinkDoesNotAskWhenTheEnvPatchIsAlreadyInPlace(t *testing.T) {
 
 	assertNotContains(t, res.Stdout, "Apply these changes?")
 	assertFile(t, filepath.Join(repo.Dir, ".env"), patched)
-	assertNoFile(t, filepath.Join(repo.Dir, ".env.portby.bak"))
+	assertNoFile(t, filepath.Join(repo.Dir, ".env.laneway.bak"))
 }
 
 func TestWithoutEnvTemplatesLinkLeavesEnvFilesAlone(t *testing.T) {
@@ -140,7 +140,7 @@ func TestWithoutAnEnvFileLinkCopiesEnvExampleAndPatchesIt(t *testing.T) {
 	assertContains(t, res.Stdout, "(new file, copied from "+filepath.Join(repo.Dir, ".env.example")+")")
 	assertFile(t, filepath.Join(repo.Dir, ".env"), "APP_NAME=Shop\nAPP_URL=https://env-example.localhost\n")
 	assertFile(t, filepath.Join(repo.Dir, ".env.example"), example)
-	assertNoFile(t, filepath.Join(repo.Dir, ".env.portby.bak"))
+	assertNoFile(t, filepath.Join(repo.Dir, ".env.laneway.bak"))
 }
 
 func TestANewWorktreeGetsACopyOfTheMainEnvWithItsOwnEnvPatch(t *testing.T) {
@@ -156,7 +156,7 @@ CACHE_PREFIX = "{project}_{worktree}_"
 
 	assertFile(t, filepath.Join(wt.Dir, ".env"),
 		"APP_KEY=base64:secret\nAPP_URL=https://feature-x.env-wt.localhost\nCACHE_PREFIX=env-wt_feature-x_\n")
-	assertNoFile(t, filepath.Join(wt.Dir, ".env.portby.bak"))
+	assertNoFile(t, filepath.Join(wt.Dir, ".env.laneway.bak"))
 	assertFile(t, filepath.Join(repo.Dir, ".env"),
 		"APP_KEY=base64:secret\nAPP_URL=https://env-wt.localhost\nCACHE_PREFIX=env-wt__\n")
 }
@@ -183,15 +183,15 @@ func TestTheEnvPatchIsReappliedWhenItsTemplatesChange(t *testing.T) {
 	wt := repo.AddWorktree("feature-z")
 	d.MustRunCLI(repo.Dir, "link", "--yes")
 
-	repo.WriteFile("portby.local.toml", "[env]\nAPP_URL = \"{url}/shop\"\nSESSION_DOMAIN = \"{domain}\"\n")
-	wt.WriteFile("portby.local.toml", "[env]\nAPP_URL = \"{url}/shop\"\n")
+	repo.WriteFile("laneway.local.toml", "[env]\nAPP_URL = \"{url}/shop\"\nSESSION_DOMAIN = \"{domain}\"\n")
+	wt.WriteFile("laneway.local.toml", "[env]\nAPP_URL = \"{url}/shop\"\n")
 	d.Restart()
 
 	assertContains(t, readFile(t, filepath.Join(repo.Dir, ".env")), "APP_URL=https://env-reapply.localhost/shop   # set by hand\n")
 	assertContains(t, readFile(t, filepath.Join(repo.Dir, ".env")), "SESSION_DOMAIN=env-reapply.localhost\n")
 	assertContains(t, readFile(t, filepath.Join(wt.Dir, ".env")), "APP_URL=https://feature-z.env-reapply.localhost/shop   # set by hand\n")
-	// The backup is still the file from before Portby's first patch.
-	assertFile(t, filepath.Join(repo.Dir, ".env.portby.bak"), handWrittenEnv)
+	// The backup is still the file from before Laneway's first patch.
+	assertFile(t, filepath.Join(repo.Dir, ".env.laneway.bak"), handWrittenEnv)
 
 	// Re-applying a patch that is in place changes nothing.
 	before := readFile(t, filepath.Join(repo.Dir, ".env"))
@@ -210,7 +210,7 @@ func TestLinkRefusesAnEnvTemplateWithAnUnknownVariable(t *testing.T) {
 	if res.ExitCode == 0 {
 		t.Fatalf("link exited 0:\n%s", res.Output())
 	}
-	assertContains(t, res.Stderr, filepath.Join(repo.Dir, "portby.toml"))
+	assertContains(t, res.Stderr, filepath.Join(repo.Dir, "laneway.toml"))
 	assertContains(t, res.Stderr, "env.APP_URL")
 	assertContains(t, res.Stderr, "{domian}")
 	assertFile(t, filepath.Join(repo.Dir, ".env"), handWrittenEnv)
@@ -238,7 +238,7 @@ func TestTheEnvPatchWritesThroughASymlinkedEnvAndKeepsItsPermissions(t *testing.
 	if info, err := os.Stat(shared); err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("mode after patch = %v (err %v), want 0600", info.Mode().Perm(), err)
 	}
-	assertFile(t, filepath.Join(repo.Dir, ".env.portby.bak"), "APP_URL=http://localhost\n")
+	assertFile(t, filepath.Join(repo.Dir, ".env.laneway.bak"), "APP_URL=http://localhost\n")
 }
 
 func TestTheEnvPatchIsReappliedWhenTheWorktreeStarts(t *testing.T) {
@@ -249,7 +249,7 @@ func TestTheEnvPatchIsReappliedWhenTheWorktreeStarts(t *testing.T) {
 		WriteFile(".env", "APP_URL=http://localhost\n")
 	d.MustRunCLI(repo.Dir, "link", "--yes")
 
-	repo.WriteFile("portby.local.toml", "[env]\nAPP_URL = \"{url}/after\"\n")
+	repo.WriteFile("laneway.local.toml", "[env]\nAPP_URL = \"{url}/after\"\n")
 	d.GetServer("https://env-boot.localhost/")
 
 	assertFile(t, filepath.Join(repo.Dir, ".env"), "APP_URL=https://env-boot.localhost/after\n")

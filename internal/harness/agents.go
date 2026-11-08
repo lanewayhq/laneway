@@ -13,16 +13,16 @@ const (
 )
 
 // agentsBlock is what every generator puts between the markers in AGENTS.md.
-// It is static: the Worktree's own details come from `portby info --json`.
-const agentsBlock = `## Local environment (Portby)
+// It is static: the Worktree's own details come from `lane info --json`.
+const agentsBlock = `## Local environment (Laneway)
 
-This repository is served by Portby when it's installed. Every git worktree gets its own HTTPS URL, database and ` + "`.env`" + `, so work only with this worktree's.
+This repository is served by Laneway when it's installed. Every git worktree gets its own HTTPS URL, database and ` + "`.env`" + `, so work only with this worktree's.
 
-- Find this worktree's URL, its Processes and their states, its databases and its Service connection details with ` + "`portby info --json`" + `. Use that URL rather than starting your own server or guessing a port.
-- Run the project's commands (tests, artisan, composer, npm…) with ` + "`portby exec <command>`" + `, such as ` + "`portby exec php artisan test`" + `, so they use this worktree's PHP and Node versions.
-- ` + "`portby worktree ready`" + ` waits until this worktree is Ready (Portby prepares each new worktree: its database, ` + "`.env`" + ` and setup commands). If it reports that preparing it failed, show the user its output; ` + "`portby worktree ready --retry`" + ` prepares it again once the problem is fixed.
-- Name a linked worktree after your task: if ` + "`worktree.main`" + ` in ` + "`portby info --json`" + ` is false and its ` + "`aliases`" + ` is empty, then once you know your task and ` + "`portby worktree ready`" + ` has finished, run ` + "`portby worktree alias <name>`" + ` with a short kebab-case name for the task (lowercase letters, digits and ` + "`-`" + `, such as ` + "`checkout-redesign`" + `). If the name is taken, pick another. The Alias becomes this worktree's URL, so from then on use the ` + "`url`" + ` that ` + "`portby info --json`" + ` reports. Never add an Alias in the main worktree.
-- If there is no ` + "`portby`" + ` command, Portby isn't installed: ignore this section.
+- Find this worktree's URL, its Processes and their states, its databases and its Service connection details with ` + "`lane info --json`" + `. Use that URL rather than starting your own server or guessing a port.
+- Run the project's commands (tests, artisan, composer, npm…) with ` + "`lane exec <command>`" + `, such as ` + "`lane exec php artisan test`" + `, so they use this worktree's PHP and Node versions.
+- ` + "`lane worktree ready`" + ` waits until this worktree is Ready (Laneway prepares each new worktree: its database, ` + "`.env`" + ` and setup commands). If it reports that preparing it failed, show the user its output; ` + "`lane worktree ready --retry`" + ` prepares it again once the problem is fixed.
+- Name a linked worktree after your task: if ` + "`worktree.main`" + ` in ` + "`lane info --json`" + ` is false and its ` + "`aliases`" + ` is empty, then once you know your task and ` + "`lane worktree ready`" + ` has finished, run ` + "`lane worktree alias <name>`" + ` with a short kebab-case name for the task (lowercase letters, digits and ` + "`-`" + `, such as ` + "`checkout-redesign`" + `). If the name is taken, pick another. The Alias becomes this worktree's URL, so from then on use the ` + "`url`" + ` that ` + "`lane info --json`" + ` reports. Never add an Alias in the main worktree.
+- If there is no ` + "`lane`" + ` command, Laneway isn't installed: ignore this section.
 `
 
 // claudeImport is the marked block added to CLAUDE.md: Claude Code reads
@@ -61,7 +61,7 @@ func instructionEdits(root string, importIntoClaude bool) ([]edit, error) {
 	return edits, nil
 }
 
-// agentsEdit adds Portby's block to AGENTS.md, creating the file if needed.
+// agentsEdit adds Laneway's block to AGENTS.md, creating the file if needed.
 func agentsEdit(root string) (edit, error) {
 	return markdownEdit(root, agentsFile, agentsBlock)
 }
@@ -98,7 +98,7 @@ func markdownEdit(root, rel, body string) (edit, error) {
 	return edit{path: rel, old: old, new: []byte(doc)}, nil
 }
 
-// removeBlockEdit takes Portby's block out of the file rel. It returns false
+// removeBlockEdit takes Laneway's block out of the file rel. It returns false
 // when there is nothing to do: no file, or no block in it.
 func removeBlockEdit(root, rel string) (edit, bool, error) {
 	old, err := readFile(root, rel)

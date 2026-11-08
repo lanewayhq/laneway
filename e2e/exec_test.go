@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 func TestExecRunsACommandInTheWorktreeWithItsRuntimes(t *testing.T) {
@@ -65,7 +65,7 @@ func TestExecOutsideALinkedRepositoryFails(t *testing.T) {
 	if res.ExitCode == 0 {
 		t.Fatalf("exec in an unlinked repository succeeded:\n%s", res.Output())
 	}
-	assertContains(t, res.Stderr, "portby link")
+	assertContains(t, res.Stderr, "lane link")
 }
 
 func TestExecWithoutACommandIsAUsageError(t *testing.T) {

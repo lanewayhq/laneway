@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/mrsafalpiya/portby.dev/internal/config"
-	"github.com/mrsafalpiya/portby.dev/internal/service"
+	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/service"
 )
 
 // Mailpit's inbox is served at the mail Domain, mail.<Dashboard Domain>
-// (https://mail.portby.localhost): router.Upstream forwards it to the
+// (https://mail.laneway.localhost): router.Upstream forwards it to the
 // Mailpit Service's web UI, starting the Service first, and every request
 // to it (a WebSocket for its whole life) keeps the Service from going Idle.
 

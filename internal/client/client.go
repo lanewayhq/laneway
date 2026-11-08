@@ -14,11 +14,11 @@ import (
 	"net/url"
 	"syscall"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
+	"github.com/lanewayhq/laneway/internal/api"
 )
 
 // ErrDaemonNotRunning is returned when nothing is listening on the socket.
-var ErrDaemonNotRunning = errors.New("the Portby daemon is not running")
+var ErrDaemonNotRunning = errors.New("the Laneway daemon is not running")
 
 // Client talks to one daemon.
 type Client struct {
@@ -74,7 +74,7 @@ func (c *Client) Worktree(ctx context.Context, dir, worktree string) (api.Worktr
 }
 
 // Info returns everything about the Worktree worktree names, or the one
-// containing dir: what `portby info` prints.
+// containing dir: what `lane info` prints.
 func (c *Client) Info(ctx context.Context, dir, worktree string) (api.Info, error) {
 	var info api.Info
 	err := c.do(ctx, http.MethodGet, "/v1/info?"+worktreeQuery(dir, worktree), nil, &info)
@@ -232,7 +232,7 @@ func (c *Client) send(ctx context.Context, method, path string, body any) (*http
 		reqBody = bytes.NewReader(data)
 	}
 	// The host is ignored: every request goes to the socket.
-	req, err := http.NewRequestWithContext(ctx, method, "http://portby"+path, reqBody)
+	req, err := http.NewRequestWithContext(ctx, method, "http://laneway"+path, reqBody)
 	if err != nil {
 		return nil, err
 	}

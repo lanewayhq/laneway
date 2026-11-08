@@ -103,10 +103,10 @@ func (m *machine) wsl() *Linux {
 
 const unprivilegedPortStart = "proc/sys/net/ipv4/ip_unprivileged_port_start"
 
-func TestAllowPrivilegedPortsWritesPortbysOwnSysctlFile(t *testing.T) {
+func TestAllowPrivilegedPortsWritesLanewaysOwnSysctlFile(t *testing.T) {
 	m := newMachine(t).file(unprivilegedPortStart, "1024\n")
 
-	if _, err := m.linux().AllowPrivilegedPorts(t.Context(), "/usr/bin/portby"); err != nil {
+	if _, err := m.linux().AllowPrivilegedPorts(t.Context(), "/usr/bin/lane"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -115,7 +115,7 @@ func TestAllowPrivilegedPortsWritesPortbysOwnSysctlFile(t *testing.T) {
 	}
 	c := m.run.cmds[0]
 	line := cmdline(c)
-	for _, want := range []string{"sudo sh -c", "> /etc/sysctl.d/99-portby.conf",
+	for _, want := range []string{"sudo sh -c", "> /etc/sysctl.d/99-laneway.conf",
 		"net.ipv4.ip_unprivileged_port_start=80", "sysctl -w net.ipv4.ip_unprivileged_port_start=80"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("command %q does not contain %q", line, want)
@@ -127,17 +127,17 @@ func TestAllowPrivilegedPortsWritesPortbysOwnSysctlFile(t *testing.T) {
 }
 
 func TestAllowPrivilegedPortsKeepsALowEnoughLiveValueButStillWritesItsFile(t *testing.T) {
-	// Another tool's sysctl.d file set it; Portby must not depend on that.
+	// Another tool's sysctl.d file set it; Laneway must not depend on that.
 	m := newMachine(t).file(unprivilegedPortStart, "80\n").
 		file("etc/sysctl.d/99-lerd-ports.conf", "net.ipv4.ip_unprivileged_port_start=80\n")
 
-	if _, err := m.linux().AllowPrivilegedPorts(t.Context(), "/usr/bin/portby"); err != nil {
+	if _, err := m.linux().AllowPrivilegedPorts(t.Context(), "/usr/bin/lane"); err != nil {
 		t.Fatal(err)
 	}
 
 	line := strings.Join(m.run.lines(), "\n")
-	if !strings.Contains(line, "/etc/sysctl.d/99-portby.conf") {
-		t.Errorf("did not write Portby's own file: %q", line)
+	if !strings.Contains(line, "/etc/sysctl.d/99-laneway.conf") {
+		t.Errorf("did not write Laneway's own file: %q", line)
 	}
 	if strings.Contains(line, "sysctl -w") {
 		t.Errorf("changed the live value although it was already 80: %q", line)
@@ -148,18 +148,18 @@ func TestAllowPrivilegedPortsFallsBackToSetcap(t *testing.T) {
 	m := newMachine(t).file(unprivilegedPortStart, "1024\n")
 	m.run.respond = func(c Cmd) (string, error) {
 		if strings.Contains(cmdline(c), "sysctl.d") {
-			return "", errors.New("sh: /etc/sysctl.d/99-portby.conf: Read-only file system")
+			return "", errors.New("sh: /etc/sysctl.d/99-laneway.conf: Read-only file system")
 		}
 		return "", nil
 	}
 
-	done, err := m.linux().AllowPrivilegedPorts(t.Context(), "/home/me/bin/portby")
+	done, err := m.linux().AllowPrivilegedPorts(t.Context(), "/home/me/bin/lane")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	lines := m.run.lines()
-	if got := lines[len(lines)-1]; got != "sudo setcap cap_net_bind_service=+ep /home/me/bin/portby" {
+	if got := lines[len(lines)-1]; got != "sudo setcap cap_net_bind_service=+ep /home/me/bin/lane" {
 		t.Fatalf("last command %q, want setcap on the binary", got)
 	}
 	if !strings.Contains(done, "upgrad") {
@@ -168,7 +168,7 @@ func TestAllowPrivilegedPortsFallsBackToSetcap(t *testing.T) {
 }
 
 func TestPortPermission(t *testing.T) {
-	const ownFile = "etc/sysctl.d/99-portby.conf"
+	const ownFile = "etc/sysctl.d/99-laneway.conf"
 	tests := []struct {
 		name             string
 		start            string
@@ -176,9 +176,9 @@ func TestPortPermission(t *testing.T) {
 		getcap           string
 		allowed, persist bool
 	}{
-		{name: "sysctl in Portby's file", start: "80", ownFile: true, allowed: true, persist: true},
+		{name: "sysctl in Laneway's file", start: "80", ownFile: true, allowed: true, persist: true},
 		{name: "sysctl set by someone else", start: "80", allowed: true, persist: false},
-		{name: "setcap", start: "1024", getcap: "/usr/bin/portby cap_net_bind_service=ep\n", allowed: true, persist: true},
+		{name: "setcap", start: "1024", getcap: "/usr/bin/lane cap_net_bind_service=ep\n", allowed: true, persist: true},
 		{name: "nothing", start: "1024", allowed: false},
 	}
 	for _, tt := range tests {
@@ -188,13 +188,13 @@ func TestPortPermission(t *testing.T) {
 				m.file(ownFile, "net.ipv4.ip_unprivileged_port_start=80\n")
 			}
 			m.run.respond = func(c Cmd) (string, error) {
-				if cmdline(c) == "getcap /usr/bin/portby" {
+				if cmdline(c) == "getcap /usr/bin/lane" {
 					return tt.getcap, nil
 				}
 				return "", nil
 			}
 
-			got, err := m.linux().PortPermission(t.Context(), "/usr/bin/portby")
+			got, err := m.linux().PortPermission(t.Context(), "/usr/bin/lane")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -209,16 +209,16 @@ func TestInstallServiceWritesAUserUnitAndStartsIt(t *testing.T) {
 	m := newMachine(t).dir("run/systemd/system")
 	l := m.linux()
 
-	if _, err := l.InstallService(t.Context(), "/home/me/bin/portby"); err != nil {
+	if _, err := l.InstallService(t.Context(), "/home/me/bin/lane"); err != nil {
 		t.Fatal(err)
 	}
 
-	unit, err := os.ReadFile(filepath.Join(m.home, ".config/systemd/user/portby.service"))
+	unit, err := os.ReadFile(filepath.Join(m.home, ".config/systemd/user/laneway.service"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"ExecStart=/home/me/bin/portby daemon\n",
+		"ExecStart=/home/me/bin/lane daemon\n",
 		// Processes need the user's PATH (mise shims, nvm) to find PHP and Node.
 		"Environment=PATH=/home/me/.local/share/mise/shims:/usr/bin\n",
 		"WantedBy=default.target\n",
@@ -236,8 +236,8 @@ func TestInstallServiceWritesAUserUnitAndStartsIt(t *testing.T) {
 	}
 	want := []string{
 		"systemctl --user daemon-reload",
-		"systemctl --user enable portby.service",
-		"systemctl --user restart portby.service",
+		"systemctl --user enable laneway.service",
+		"systemctl --user restart laneway.service",
 	}
 	if got := m.run.lines(); strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("ran\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
@@ -247,18 +247,18 @@ func TestInstallServiceWritesAUserUnitAndStartsIt(t *testing.T) {
 func TestInstallServiceAgainLeavesARunningServiceAlone(t *testing.T) {
 	m := newMachine(t).dir("run/systemd/system")
 	l := m.linux()
-	if _, err := l.InstallService(t.Context(), "/home/me/bin/portby"); err != nil {
+	if _, err := l.InstallService(t.Context(), "/home/me/bin/lane"); err != nil {
 		t.Fatal(err)
 	}
 	m.run.cmds = nil
 	m.run.respond = func(c Cmd) (string, error) {
-		if cmdline(c) == "systemctl --user is-active portby.service" {
+		if cmdline(c) == "systemctl --user is-active laneway.service" {
 			return "active\n", nil
 		}
 		return "", nil
 	}
 
-	if _, err := l.InstallService(t.Context(), "/home/me/bin/portby"); err != nil {
+	if _, err := l.InstallService(t.Context(), "/home/me/bin/lane"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -272,7 +272,7 @@ func TestInstallServiceAgainLeavesARunningServiceAlone(t *testing.T) {
 func TestInstallServiceOnWSLWithoutSystemdSaysHowToEnableIt(t *testing.T) {
 	m := newMachine(t)
 
-	_, err := m.wsl().InstallService(t.Context(), "/home/me/bin/portby")
+	_, err := m.wsl().InstallService(t.Context(), "/home/me/bin/lane")
 
 	if err == nil || !strings.Contains(err.Error(), "/etc/wsl.conf") {
 		t.Fatalf("got %v, want an error pointing at /etc/wsl.conf", err)
@@ -287,9 +287,9 @@ func TestServiceStatus(t *testing.T) {
 	l := m.linux()
 	m.run.respond = func(c Cmd) (string, error) {
 		switch cmdline(c) {
-		case "systemctl --user is-enabled portby.service":
+		case "systemctl --user is-enabled laneway.service":
 			return "enabled\n", nil
-		case "systemctl --user is-active portby.service":
+		case "systemctl --user is-active laneway.service":
 			return "inactive\n", errors.New("exit status 3")
 		}
 		return "", nil
@@ -303,7 +303,7 @@ func TestServiceStatus(t *testing.T) {
 		t.Fatalf("got %+v before the unit exists", before)
 	}
 
-	unit := filepath.Join(m.home, ".config/systemd/user/portby.service")
+	unit := filepath.Join(m.home, ".config/systemd/user/laneway.service")
 	os.MkdirAll(filepath.Dir(unit), 0o755)
 	os.WriteFile(unit, []byte("[Unit]\n"), 0o644)
 	after, err := l.ServiceStatus(t.Context())

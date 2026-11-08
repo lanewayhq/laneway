@@ -131,7 +131,7 @@ func EnsureTest(ctx context.Context, e Engine, db string, out io.Writer) error {
 	return nil
 }
 
-// Dropper is an Engine whose databases Portby can drop once they are
+// Dropper is an Engine whose databases Laneway can drop once they are
 // Orphans: the Engines of databases in a Service (Postgres, MySQL). SQLite
 // isn't one: its database is a file in the Worktree's directory, which goes
 // with the Worktree, and the main Worktree's file is the developer's.
@@ -140,7 +140,7 @@ type Dropper interface {
 	// Drop drops db, closing any connections to it first. Dropping a
 	// database that doesn't exist is not an error.
 	Drop(ctx context.Context, db string) error
-	// Databases lists every database in the Service, so Portby can find
+	// Databases lists every database in the Service, so Laneway can find
 	// the parallel test copies of a Test Database (ParallelCopy).
 	Databases(ctx context.Context) ([]string, error)
 }

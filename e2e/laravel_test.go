@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // A Laravel-shaped Project for the Laravel Recipe through Seam 1: its files,
@@ -104,11 +104,11 @@ func TestLinkingAFreshLaravelAppSetsItUpAndServesItWithArtisanServe(t *testing.T
 		"DB_HOST":        d.ServiceHost(),
 		"DB_PORT":        "3306",
 		"DB_DATABASE":    "lara_main",
-		"DB_USERNAME":    "portby",
-		"DB_PASSWORD":    "portby",
+		"DB_USERNAME":    "laneway",
+		"DB_PASSWORD":    "laneway",
 		"REDIS_HOST":     d.ServiceHost(),
 		"REDIS_PORT":     "6379",
-		"REDIS_PASSWORD": "portby",
+		"REDIS_PASSWORD": "laneway",
 		"MAIL_MAILER":    "smtp",
 		"MAIL_HOST":      d.ServiceHost(),
 		"MAIL_PORT":      "1025",
@@ -133,11 +133,11 @@ func TestLinkingAFreshLaravelAppSetsItUpAndServesItWithArtisanServe(t *testing.T
 			t.Errorf("the web Process is %q, want %q in it", web.Name, want)
 		}
 	}
-	// PHP's own scan dir, plus Portby's ini turning off OPcache's
+	// PHP's own scan dir, plus Laneway's ini turning off OPcache's
 	// revalidation delay, so an edited view shows on the next request.
 	ini := regexp.MustCompile(` ini=(\S*) `).FindStringSubmatch(web.Name)
 	if ini == nil || !strings.HasPrefix(ini[1], ":/") {
-		t.Fatalf("the web Process is %q, want PHP_INI_SCAN_DIR=:<Portby's dir>", web.Name)
+		t.Fatalf("the web Process is %q, want PHP_INI_SCAN_DIR=:<Laneway's dir>", web.Name)
 	}
 	inis, _ := filepath.Glob(filepath.Join(ini[1][1:], "*.ini"))
 	var settings string

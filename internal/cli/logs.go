@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/client"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/client"
 )
 
 func runLogs(ctx context.Context, env Env, args []string) error {

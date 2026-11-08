@@ -12,15 +12,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/gitrepo"
-	"github.com/mrsafalpiya/portby.dev/internal/paths"
-	"github.com/mrsafalpiya/portby.dev/internal/platform"
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
-	"github.com/mrsafalpiya/portby.dev/internal/runtimes"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/gitrepo"
+	"github.com/lanewayhq/laneway/internal/paths"
+	"github.com/lanewayhq/laneway/internal/platform"
+	"github.com/lanewayhq/laneway/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/runtimes"
 )
 
-// The ports Portby serves Domains on.
+// The ports Laneway serves Domains on.
 const (
 	httpPort  = 80
 	httpsPort = 443
@@ -61,7 +61,7 @@ func runDoctor(ctx context.Context, env Env, args []string) error {
 	}
 	plat := platformOf(env)
 	r := &report{w: env.Stdout}
-	fmt.Fprintf(env.Stdout, "Portby doctor (%s)\n\n", plat.Name())
+	fmt.Fprintf(env.Stdout, "Laneway doctor (%s)\n\n", plat.Name())
 
 	daemonCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -72,7 +72,7 @@ func runDoctor(ctx context.Context, env Env, args []string) error {
 	}
 	if daemonErr != nil {
 		r.check(statusFail, "daemon", daemonErr.Error(),
-			"run `portby install`, or `systemctl --user start portby` if it is installed")
+			"run `lane install`, or `systemctl --user start laneway` if it is installed")
 	} else {
 		detail := fmt.Sprintf("running (pid %d, HTTPS on %s", info.PID, info.ProxyAddr)
 		if info.HTTPAddr != "" {
@@ -86,7 +86,7 @@ func runDoctor(ctx context.Context, env Env, args []string) error {
 		checkPort(ctx, r, plat, port, "", info.PID)
 	}
 	if daemonErr == nil {
-		// Each Service's port, which Portby listens on to start it.
+		// Each Service's port, which Laneway listens on to start it.
 		services, err := daemon.Services(daemonCtx)
 		if err != nil {
 			r.check(statusWarn, "Service ports", "can't list the Services: "+err.Error(), "")
@@ -178,9 +178,9 @@ func checkService(ctx context.Context, r *report, plat platform.Platform) {
 	case err != nil:
 		r.check(statusFail, "service", err.Error(), "")
 	case !s.Installed:
-		r.check(statusFail, "service", s.Unit+" is not installed", "run `portby install`")
+		r.check(statusFail, "service", s.Unit+" is not installed", "run `lane install`")
 	case !s.Enabled:
-		r.check(statusFail, "service", s.Unit+" is installed but not enabled", "run `portby install`")
+		r.check(statusFail, "service", s.Unit+" is installed but not enabled", "run `lane install`")
 	case !s.Active:
 		r.check(statusFail, "service", s.Unit+" is enabled but not running",
 			"see `journalctl --user -u "+s.Unit+"`, then `systemctl --user restart "+s.Unit+"`")
@@ -189,7 +189,7 @@ func checkService(ctx context.Context, r *report, plat platform.Platform) {
 	}
 }
 
-// checkPort reports who holds port, which Portby needs for what (such as
+// checkPort reports who holds port, which Laneway needs for what (such as
 // "redis:7"; "" for its own HTTP and HTTPS ports). daemonPID is the running
 // daemon's, or 0.
 func checkPort(ctx context.Context, r *report, plat platform.Platform, port int, what string, daemonPID int) {
@@ -205,7 +205,7 @@ func checkPort(ctx context.Context, r *report, plat platform.Platform, port int,
 	var others []string
 	for _, h := range holders {
 		if daemonPID != 0 && h.PID == daemonPID && !h.Windows {
-			r.check(statusOK, name, "bound by Portby", "")
+			r.check(statusOK, name, "bound by Laneway", "")
 			return
 		}
 		others = append(others, h.String())
@@ -213,10 +213,10 @@ func checkPort(ctx context.Context, r *report, plat platform.Platform, port int,
 	switch {
 	case len(others) > 0:
 		r.check(statusFail, name, "in use by "+strings.Join(others, ", "),
-			fmt.Sprintf("stop it or move it off port %d; Portby needs this port", port))
+			fmt.Sprintf("stop it or move it off port %d; Laneway needs this port", port))
 	default:
-		r.check(statusFail, name, "free, but Portby is not listening on it",
-			"start the daemon with `portby install`; if it is running, see `journalctl --user -u portby.service`")
+		r.check(statusFail, name, "free, but Laneway is not listening on it",
+			"start the daemon with `lane install`; if it is running, see `journalctl --user -u laneway.service`")
 	}
 }
 
@@ -227,9 +227,9 @@ func checkPortPermission(ctx context.Context, r *report, plat platform.Platform)
 	case err != nil:
 		r.check(statusFail, "port permission", err.Error(), "")
 	case !perm.Allowed:
-		r.check(statusFail, "port permission", "Portby may not bind ports 80 and 443: "+perm.Detail, "run `portby install`")
+		r.check(statusFail, "port permission", "Laneway may not bind ports 80 and 443: "+perm.Detail, "run `lane install`")
 	case !perm.Persisted:
-		r.check(statusWarn, "port permission", perm.Detail, "run `portby install` so it survives a reboot")
+		r.check(statusWarn, "port permission", perm.Detail, "run `lane install` so it survives a reboot")
 	default:
 		r.check(statusOK, "port permission", perm.Detail, "")
 	}
@@ -240,7 +240,7 @@ func checkCA(ctx context.Context, r *report, plat platform.Platform, caFile stri
 	for _, store := range plat.TrustStores() {
 		name := "CA in " + store.Name()
 		if err != nil {
-			r.check(statusFail, name, err.Error(), "start the daemon (`portby install`); it creates the CA")
+			r.check(statusFail, name, err.Error(), "start the daemon (`lane install`); it creates the CA")
 			continue
 		}
 		trusted, terr := store.Trusted(ctx, ca)
@@ -248,18 +248,18 @@ func checkCA(ctx context.Context, r *report, plat platform.Platform, caFile stri
 		case terr != nil:
 			r.check(statusFail, name, "can't tell: "+terr.Error(), "")
 		case !trusted:
-			r.check(statusFail, name, "Portby's CA is not trusted", "run `portby install`")
+			r.check(statusFail, name, "Laneway's CA is not trusted", "run `lane install`")
 		default:
-			r.check(statusOK, name, "Portby's CA is trusted", "")
+			r.check(statusOK, name, "Laneway's CA is trusted", "")
 		}
 	}
 }
 
-// readCA reads Portby's root CA certificate.
+// readCA reads Laneway's root CA certificate.
 func readCA(file string) (*x509.Certificate, error) {
 	data, err := os.ReadFile(file)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("Portby's CA doesn't exist yet (%s)", file)
+		return nil, fmt.Errorf("Laneway's CA doesn't exist yet (%s)", file)
 	}
 	if err != nil {
 		return nil, err
@@ -271,7 +271,7 @@ func readCA(file string) (*x509.Certificate, error) {
 	return x509.ParseCertificate(block.Bytes)
 }
 
-// executable is the path of the running portby binary, with symlinks
+// executable is the path of the running lane binary, with symlinks
 // resolved: what the service runs and what a file capability is set on.
 func executable() (string, error) {
 	exe, err := os.Executable()

@@ -22,7 +22,7 @@ func runStatus(ctx context.Context, env Env, args []string) error {
 		return err
 	}
 	if len(projects) == 0 {
-		fmt.Fprintln(env.Stdout, "No Projects linked yet. Run `portby link` inside a git repository.")
+		fmt.Fprintln(env.Stdout, "No Projects linked yet. Run `lane link` inside a git repository.")
 		return nil
 	}
 	tw := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)

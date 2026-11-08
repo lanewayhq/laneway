@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/platform"
-	"github.com/mrsafalpiya/portby.dev/internal/platform/platformtest"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/platform"
+	"github.com/lanewayhq/laneway/internal/platform/platformtest"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 func TestDoctorReportsAHealthySetup(t *testing.T) {
@@ -17,8 +17,8 @@ func TestDoctorReportsAHealthySetup(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	d.MustRunCLI(d.Home, "install")
 	// The in-process daemon is this test process.
-	d.Platform.SetPortHolders(443, platform.Holder{Program: "portby", PID: os.Getpid()})
-	d.Platform.SetPortHolders(80, platform.Holder{Program: "portby", PID: os.Getpid()})
+	d.Platform.SetPortHolders(443, platform.Holder{Program: "lane", PID: os.Getpid()})
+	d.Platform.SetPortHolders(80, platform.Holder{Program: "lane", PID: os.Getpid()})
 	d.Platform.SetContainerEngine(platform.Engine{Name: "podman", Address: "unix:///run/user/1000/podman/podman.sock"})
 	d.Platform.SetMise("2026.10.4 linux-x64")
 
@@ -26,8 +26,8 @@ func TestDoctorReportsAHealthySetup(t *testing.T) {
 
 	assertCheck(t, res.Stdout, "ok", "daemon", "running")
 	assertCheck(t, res.Stdout, "ok", "service", "")
-	assertCheck(t, res.Stdout, "ok", "port 443", "bound by Portby")
-	assertCheck(t, res.Stdout, "ok", "port 80", "bound by Portby")
+	assertCheck(t, res.Stdout, "ok", "port 443", "bound by Laneway")
+	assertCheck(t, res.Stdout, "ok", "port 80", "bound by Laneway")
 	assertCheck(t, res.Stdout, "ok", "port permission", "")
 	assertCheck(t, res.Stdout, "ok", "CA in "+platformtest.LinuxStore, "trusted")
 	assertCheck(t, res.Stdout, "ok", "container engine", "podman")
@@ -62,7 +62,7 @@ func TestDoctorReportsWhatIsNotSetUp(t *testing.T) {
 	assertCheck(t, res.Stdout, "FAIL", "CA in "+platformtest.LinuxStore, "not trusted")
 	assertCheck(t, res.Stdout, "FAIL", "container engine", "")
 	assertCheck(t, res.Stdout, "warn", "mise", "not found")
-	assertContains(t, res.Stdout, "portby install")
+	assertContains(t, res.Stdout, "lane install")
 }
 
 func TestDoctorNamesTheProgramHoldingAPort(t *testing.T) {
@@ -176,16 +176,16 @@ func TestDoctorFallsBackToPathWhenMiseFails(t *testing.T) {
 	assertCheck(t, res.Stdout, "ok", "php", "8.4.0 at "+filepath.Join(d.Bin, "php")+" (from PATH)")
 }
 
-func TestDoctorChecksEveryServicePortIsPortbys(t *testing.T) {
+func TestDoctorChecksEveryServicePortIsLaneways(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	d.MustRunCLI(serviceProject(t, "doctor-svc", "redis = \"7\"\nmailpit = \"v1\"", "").Dir, "link")
 	d.Platform.SetPortHolders(6379, platform.Holder{Program: "redis-server", PID: 4545})
 	// The in-process daemon is this test process.
-	d.Platform.SetPortHolders(1025, platform.Holder{Program: "portby", PID: os.Getpid()})
+	d.Platform.SetPortHolders(1025, platform.Holder{Program: "lane", PID: os.Getpid()})
 
 	res := d.RunCLI(d.Home, "doctor")
 
 	assertCheck(t, res.Stdout, "FAIL", "port 6379 (redis:7)", "in use by redis-server (pid 4545)")
-	assertCheck(t, res.Stdout, "ok", "port 1025 (mailpit:v1)", "bound by Portby")
+	assertCheck(t, res.Stdout, "ok", "port 1025 (mailpit:v1)", "bound by Laneway")
 }

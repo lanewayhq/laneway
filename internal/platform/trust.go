@@ -16,7 +16,7 @@ import (
 )
 
 // Caddy's own trust installation is switched off (install_trust: false in
-// package proxy): it knows nothing of Windows, so Portby trusts its root here,
+// package proxy): it knows nothing of Windows, so Laneway trusts its root here,
 // in every store the user's browsers read. Only the root is trusted; Caddy
 // rotates the intermediate.
 
@@ -29,7 +29,7 @@ func (l *Linux) TrustStores() []TrustStore {
 }
 
 // caFileName is what the root is called in every store directory.
-const caFileName = "portby-local-ca.crt"
+const caFileName = "laneway-local-ca.crt"
 
 // linuxAnchors are the distributions' directories for extra trusted roots,
 // and the command that rebuilds the system bundle from them.
@@ -56,11 +56,11 @@ func (s linuxStore) anchorDir() (dir string, update []string, err error) {
 			return a.dir, a.update, nil
 		}
 	}
-	return "", nil, errors.New("this distribution's CA anchor directory wasn't found; add Portby's CA to the system store by hand")
+	return "", nil, errors.New("this distribution's CA anchor directory wasn't found; add Laneway's CA to the system store by hand")
 }
 
 func (s linuxStore) Prompt() string {
-	return "adding Portby's CA to the Linux system store. This needs sudo, so you may be asked for your password."
+	return "adding Laneway's CA to the Linux system store. This needs sudo, so you may be asked for your password."
 }
 
 func (s linuxStore) Trusted(_ context.Context, ca *x509.Certificate) (bool, error) {
@@ -99,7 +99,7 @@ type windowsStore struct{ l *Linux }
 func (s windowsStore) Name() string { return "Windows certificate store" }
 
 func (s windowsStore) Prompt() string {
-	return "adding Portby's CA to the Windows certificate store (Current User). " +
+	return "adding Laneway's CA to the Windows certificate store (Current User). " +
 		"Windows will show a Security Warning asking whether to install it: click Yes."
 }
 
@@ -143,7 +143,7 @@ func (s windowsStore) Trust(ctx context.Context, caFile string, ca *x509.Certifi
 		return fmt.Errorf("certutil.exe -addstore failed (was the dialog declined?): %w", err)
 	}
 	if trusted, err := s.Trusted(ctx, ca); err != nil || !trusted {
-		return errors.New("Windows didn't add the CA; was the dialog declined? Run `portby install` again to retry")
+		return errors.New("Windows didn't add the CA; was the dialog declined? Run `lane install` again to retry")
 	}
 	return nil
 }

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/mrsafalpiya/portby.dev/internal/naming"
-	"github.com/mrsafalpiya/portby.dev/internal/pgwire"
+	"github.com/lanewayhq/laneway/internal/naming"
+	"github.com/lanewayhq/laneway/internal/pgwire"
 )
 
 // Server is how to reach and log in to the database Service an Engine's

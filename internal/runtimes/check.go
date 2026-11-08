@@ -142,7 +142,7 @@ func checkNode(node Runtime, pkg packageJSON) []Warning {
 
 // installHint suggests how to get a Runtime matching constraint with mise.
 func installHint(runtime, constraint string) string {
-	return fmt.Sprintf("install a matching version with mise: `mise use %s@%s` (Portby never installs Runtimes)",
+	return fmt.Sprintf("install a matching version with mise: `mise use %s@%s` (Laneway never installs Runtimes)",
 		runtime, suggestedVersion(constraint))
 }
 

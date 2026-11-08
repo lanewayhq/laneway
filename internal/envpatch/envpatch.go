@@ -1,5 +1,5 @@
 // Package envpatch is the Env Patcher. It renders the Env Patch templates
-// for a Worktree and writes only the keys Portby owns into its env file,
+// for a Worktree and writes only the keys Laneway owns into its env file,
 // leaving every other line, comment and their order as they are. A patch is
 // planned first (Prepare), so it can be shown and confirmed, and then
 // applied (Apply). Applying a patch that is already in place changes
@@ -15,12 +15,12 @@ import (
 	"path/filepath"
 	"slices"
 
-	"github.com/mrsafalpiya/portby.dev/internal/dotenv"
+	"github.com/lanewayhq/laneway/internal/dotenv"
 )
 
 // BackupSuffix is added to an env file's name for the copy of the original
-// that Portby keeps from before it first patched it: .env.portby.bak.
-const BackupSuffix = ".portby.bak"
+// that Laneway keeps from before it first patched it: .env.laneway.bak.
+const BackupSuffix = ".laneway.bak"
 
 // RenderAll renders every template (env key → template) with vars. Errors
 // name the key.
@@ -43,11 +43,11 @@ type File struct {
 	// Seeds are the files Path starts as a copy of when it doesn't exist
 	// yet, the first that exists winning: for a new Worktree, the main
 	// Worktree's .env and then its own .env.example. With none, Path is
-	// created holding only Portby's keys.
+	// created holding only Laneway's keys.
 	Seeds []string
 }
 
-// Change is what happens to one key Portby owns.
+// Change is what happens to one key Laneway owns.
 type Change struct {
 	Key string
 	// Old is the value before; "" when Added.
@@ -172,7 +172,7 @@ func writeNew(path string, data []byte, mode fs.FileMode) error {
 // same directory and renames it over path, so readers see the old or the
 // new file, never a half-written one.
 func writeAtomic(path string, data []byte, mode fs.FileMode) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".portby-*")
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".laneway-*")
 	if err != nil {
 		return err
 	}

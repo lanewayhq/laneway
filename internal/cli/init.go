@@ -9,14 +9,14 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mrsafalpiya/portby.dev/internal/config"
-	"github.com/mrsafalpiya/portby.dev/internal/gitrepo"
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/gitrepo"
+	"github.com/lanewayhq/laneway/internal/recipe"
 )
 
-// runInit writes the resolved config to portby.toml at the root of the
+// runInit writes the resolved config to laneway.toml at the root of the
 // current Worktree. It works on files only, so it doesn't need the daemon.
-// portby.local.toml is left out: personal overrides don't belong in the
+// laneway.local.toml is left out: personal overrides don't belong in the
 // committed file.
 func runInit(ctx context.Context, env Env, args []string) error {
 	flags := newFlags(env, "init")
@@ -26,7 +26,7 @@ func runInit(ctx context.Context, env Env, args []string) error {
 	}
 	checkout, err := gitrepo.Resolve(ctx, env.Dir)
 	if errors.Is(err, gitrepo.ErrNotGitRepo) {
-		return fmt.Errorf("%s is not inside a git repository; run `portby init` from a git repository", env.Dir)
+		return fmt.Errorf("%s is not inside a git repository; run `lane init` from a git repository", env.Dir)
 	}
 	if err != nil {
 		return err
@@ -37,7 +37,7 @@ func runInit(ctx context.Context, env Env, args []string) error {
 	committed, err := config.LoadLayer(path)
 	switch {
 	case err == nil && !*force:
-		return fmt.Errorf("%s already exists; run `portby init --force` to replace it with the resolved config", path)
+		return fmt.Errorf("%s already exists; run `lane init --force` to replace it with the resolved config", path)
 	case err == nil:
 		in.Layers = append(in.Layers, committed)
 	case !errors.Is(err, fs.ErrNotExist):
@@ -64,7 +64,7 @@ func runInit(ctx context.Context, env Env, args []string) error {
 }
 
 func writeInitHeader(buf *bytes.Buffer, res recipe.Resolved) {
-	fmt.Fprintf(buf, "# Portby config for this Project, written by `portby init`.\n")
+	fmt.Fprintf(buf, "# Laneway config for this Project, written by `lane init`.\n")
 	if res.Recipe != "" {
 		fmt.Fprintf(buf, "# These are the %s Recipe's defaults plus your config. Edit them freely.\n", res.Recipe)
 	}

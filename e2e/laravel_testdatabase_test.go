@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/mysqlwire"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/mysqlwire"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // Test Databases of the Laravel Recipe (database.test = auto) through Seam 1,
@@ -121,8 +121,8 @@ func TestAWorktreeStartWarnsWhenPHPUnitConfigBypassesTheTestDatabase(t *testing.
 
 	startByBrowsing(t, d, "lara-start-phpunit.localhost")
 
-	out := waitForLogs(t, d, repo.Dir, []string{"logs", "web"}, "portby: Test Database warning: ")
-	assertContains(t, out, `portby: Test Database warning: phpunit.xml sets DB_DATABASE to "laravel_testing"`)
+	out := waitForLogs(t, d, repo.Dir, []string{"logs", "web"}, "laneway: Test Database warning: ")
+	assertContains(t, out, `laneway: Test Database warning: phpunit.xml sets DB_DATABASE to "laravel_testing"`)
 	assertFile(t, filepath.Join(repo.Dir, "phpunit.xml"), laravelPHPUnitHardCodingTheDatabase)
 }
 

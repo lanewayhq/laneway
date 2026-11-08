@@ -14,17 +14,17 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/mrsafalpiya/portby.dev/internal/database"
-	"github.com/mrsafalpiya/portby.dev/internal/envpatch"
-	"github.com/mrsafalpiya/portby.dev/internal/service"
+	"github.com/lanewayhq/laneway/internal/database"
+	"github.com/lanewayhq/laneway/internal/envpatch"
+	"github.com/lanewayhq/laneway/internal/service"
 )
 
 // LocalFileName is the gitignored per-developer config file. It overrides
-// portby.toml.
-const LocalFileName = "portby.local.toml"
+// laneway.toml.
+const LocalFileName = "laneway.local.toml"
 
-// Layer is one source of config: a Recipe's defaults, portby.toml or
-// portby.local.toml. A nil pointer or a missing map entry means the layer
+// Layer is one source of config: a Recipe's defaults, laneway.toml or
+// laneway.local.toml. A nil pointer or a missing map entry means the layer
 // doesn't set that key, so an earlier layer's value stands. Layers are merged
 // by the Recipe Resolver, never by decoding several files into one value.
 type Layer struct {
@@ -46,7 +46,7 @@ type Layer struct {
 	// connections before it is Idle and its lazy Processes stop, such as
 	// "30m". It overrides the global idle_timeout.
 	IdleTimeout *time.Duration `toml:"idle_timeout"`
-	// Env is the Env Patch: the keys Portby owns in each Worktree's .env,
+	// Env is the Env Patch: the keys Laneway owns in each Worktree's .env,
 	// keyed by env key ([env] table). Values are templates such as
 	// "{url}"; see envpatch.Variables.
 	Env map[string]string `toml:"env"`
@@ -67,10 +67,10 @@ type Layer struct {
 	Database *DatabaseLayer `toml:"database"`
 }
 
-// WorktreeLayer is the [worktree] table: where `portby worktree add` creates
-// worktrees and what Portby does when a Worktree is prepared and removed.
+// WorktreeLayer is the [worktree] table: where `lane worktree add` creates
+// worktrees and what Laneway does when a Worktree is prepared and removed.
 type WorktreeLayer struct {
-	// Root is the directory `portby worktree add` creates worktrees in. A
+	// Root is the directory `lane worktree add` creates worktrees in. A
 	// relative path is relative to the main Worktree's directory.
 	Root *string `toml:"root"`
 	// Copy are paths, relative to the Worktree, copied from the main
@@ -136,12 +136,12 @@ var DatabaseTests = []string{"on", "off", "auto"}
 // ProcessLayer is one [processes.<name>] table.
 type ProcessLayer struct {
 	// Command is run with `sh -c` in the Worktree. Every `{port}` in it is
-	// replaced with the port Portby picked for the Process, which is also
+	// replaced with the port Laneway picked for the Process, which is also
 	// in $PORT. In an HTTP Process, every `{vite_config}` is replaced with
-	// the path of a Vite config Portby writes around the Worktree's own, for
+	// the path of a Vite config Laneway writes around the Worktree's own, for
 	// `vite --config {vite_config}`: Vite's live reload then goes through
-	// the Process's host on Portby's proxy. Every `{php_ini_dir}` is replaced
-	// with the directory of PHP settings Portby writes for development, for
+	// the Process's host on Laneway's proxy. Every `{php_ini_dir}` is replaced
+	// with the directory of PHP settings Laneway writes for development, for
 	// `PHP_INI_SCAN_DIR=$PHP_INI_SCAN_DIR:{php_ini_dir} php …`.
 	Command *string `toml:"command"`
 	// Primary marks the Process that serves the Worktree's Domain. A Project
@@ -153,14 +153,14 @@ type ProcessLayer struct {
 	// StartMode is when the Process runs: "lazy" (the default) starts it
 	// with its Worktree on the first request and stops it when the
 	// Worktree is Idle, "always" keeps it running from when the daemon
-	// starts, and "manual" only runs it through `portby up <process>`.
+	// starts, and "manual" only runs it through `lane up <process>`.
 	StartMode *string `toml:"start_mode"`
 	// HTTP marks a Process that serves HTTP on its {port}. Other than the
 	// Primary Process, which always does, it is served at
 	// <process>.<domain>. Processes that aren't HTTP get no port.
 	HTTP *bool `toml:"http"`
 	// StaticDir is a directory, relative to the Worktree, whose files
-	// Portby serves itself for requests to this HTTP Process, such as
+	// Laneway serves itself for requests to this HTTP Process, such as
 	// Laravel's "public": a GET or HEAD for a path that is an existing file
 	// there (not a directory, not a .php script) never reaches the Process.
 	StaticDir *string `toml:"static_dir"`
@@ -169,7 +169,7 @@ type ProcessLayer struct {
 // StartModes are the valid values of processes.<name>.start_mode.
 var StartModes = []string{"lazy", "always", "manual"}
 
-// LoadLayers reads dir's portby.toml and then portby.local.toml, in the
+// LoadLayers reads dir's laneway.toml and then laneway.local.toml, in the
 // order they apply. Missing files are skipped.
 func LoadLayers(dir string) ([]Layer, error) {
 	var layers []Layer
@@ -221,7 +221,7 @@ func ParseLayer(source string, data []byte) (Layer, error) {
 	if err := l.validate(); err != nil {
 		return Layer{}, fmt.Errorf("%s: %w", source, err)
 	}
-	// Unknown keys only warn, so a config written for a newer Portby, or
+	// Unknown keys only warn, so a config written for a newer Laneway, or
 	// with a typo, still loads. Only the outermost unknown key is reported.
 	unknown := map[string]bool{}
 	for _, key := range md.Undecoded() {
@@ -276,7 +276,7 @@ func (l Layer) validate() error {
 	}
 	for _, name := range slices.Sorted(maps.Keys(l.Services)) {
 		if _, ok := service.Lookup(name); !ok {
-			return fmt.Errorf("services.%s: Portby has no Service %q; the Services are %s",
+			return fmt.Errorf("services.%s: Laneway has no Service %q; the Services are %s",
 				key(name), name, strings.Join(service.Names(), ", "))
 		}
 		if !serviceVersion.MatchString(l.Services[name]) {

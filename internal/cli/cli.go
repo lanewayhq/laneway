@@ -1,4 +1,4 @@
-// Package cli implements the `portby` command line. Every command except
+// Package cli implements the `lane` command line. Every command except
 // `daemon` is a thin client of the daemon's API: it gathers input from the
 // working directory and flags, calls the API through package client, and
 // prints the result.
@@ -13,9 +13,9 @@ import (
 	"os"
 	"sort"
 
-	"github.com/mrsafalpiya/portby.dev/internal/client"
-	"github.com/mrsafalpiya/portby.dev/internal/paths"
-	"github.com/mrsafalpiya/portby.dev/internal/platform"
+	"github.com/lanewayhq/laneway/internal/client"
+	"github.com/lanewayhq/laneway/internal/paths"
+	"github.com/lanewayhq/laneway/internal/platform"
 )
 
 // Env is everything a CLI invocation reads from or writes to the outside
@@ -26,14 +26,14 @@ type Env struct {
 	// Dir is the working directory commands act on.
 	Dir    string
 	Getenv func(string) string
-	// Environ returns the whole environment, for commands Portby runs
-	// (`portby exec`) and Runtime resolution. If nil, os.Environ.
+	// Environ returns the whole environment, for commands Laneway runs
+	// (`lane exec`) and Runtime resolution. If nil, os.Environ.
 	Environ func() []string
-	// Stdin is where commands read answers to questions, and what `portby
+	// Stdin is where commands read answers to questions, and what `lane
 	// exec` passes to its command; nil reads as empty, which answers no.
 	Stdin io.Reader
 	// Terminal reports that Stdin is a terminal, so a person may be there to
-	// answer questions. Commands that only ask to be safe (`portby gc`)
+	// answer questions. Commands that only ask to be safe (`lane gc`)
 	// don't ask when it is false: a script or agent runs them.
 	Terminal bool
 	Stdout   io.Writer
@@ -50,22 +50,22 @@ const (
 	exitUsage = 2
 )
 
-// command is one `portby <name>` subcommand.
+// command is one `lane <name>` subcommand.
 type command struct {
 	summary string
 	run     func(ctx context.Context, env Env, args []string) error
 }
 
 var commands = map[string]command{
-	"daemon":   {"Run the Portby daemon in the foreground", runDaemon},
-	"doctor":   {"Check that Portby is set up and working", runDoctor},
+	"daemon":   {"Run the Laneway daemon in the foreground", runDaemon},
+	"doctor":   {"Check that Laneway is set up and working", runDoctor},
 	"down":     {"Stop the current Worktree's Processes (or one Process)", control("down")},
 	"exec":     {"Run a command in the current Worktree with its Runtimes", runExec},
 	"gc":       {"Drop Orphans (databases of removed Worktrees) now", runGC},
-	"harness":  {"Add Portby config for a Harness (add <claude|t3>)", runHarness},
+	"harness":  {"Add Laneway config for a Harness (add <claude|t3>)", runHarness},
 	"info":     {"Show the current Worktree's URL, Processes, databases and Services (--json for scripts)", runInfo},
-	"init":     {"Write the resolved config to portby.toml", runInit},
-	"install":  {"Set up Portby on this machine (service, ports 80/443, CA trust)", runInstall},
+	"init":     {"Write the resolved config to laneway.toml", runInit},
+	"install":  {"Set up Laneway on this machine (service, ports 80/443, CA trust)", runInstall},
 	"link":     {"Link the current git repository as a Project", runLink},
 	"logs":     {"Show (or follow with -f) Process output", runLogs},
 	"open":     {"Open the current Worktree's Domain in the browser", runOpen},
@@ -83,7 +83,7 @@ type usageError struct{ msg string }
 func (e usageError) Error() string { return e.msg }
 
 // exitCode makes Run exit with code, printing msg first unless it is empty
-// (a command `portby exec` ran has already said why it failed).
+// (a command `lane exec` ran has already said why it failed).
 type exitCode struct {
 	code int
 	msg  string
@@ -99,7 +99,7 @@ func Run(ctx context.Context, env Env) int {
 	}
 	cmd, ok := commands[env.Args[0]]
 	if !ok {
-		fmt.Fprintf(env.Stderr, "portby: unknown command %q\n\n", env.Args[0])
+		fmt.Fprintf(env.Stderr, "lane: unknown command %q\n\n", env.Args[0])
 		printUsage(env.Stderr)
 		return exitUsage
 	}
@@ -111,22 +111,22 @@ func Run(ctx context.Context, env Env) int {
 		return exitOK
 	case errors.As(err, &xerr):
 		if xerr.msg != "" {
-			fmt.Fprintf(env.Stderr, "portby %s: %s\n", env.Args[0], xerr.msg)
+			fmt.Fprintf(env.Stderr, "lane %s: %s\n", env.Args[0], xerr.msg)
 		}
 		return xerr.code
 	case errors.Is(err, flag.ErrHelp):
 		return exitOK
 	case errors.As(err, &uerr):
-		fmt.Fprintf(env.Stderr, "portby %s: %s\n", env.Args[0], uerr.msg)
+		fmt.Fprintf(env.Stderr, "lane %s: %s\n", env.Args[0], uerr.msg)
 		return exitUsage
 	default:
-		fmt.Fprintf(env.Stderr, "portby %s: %s\n", env.Args[0], err)
+		fmt.Fprintf(env.Stderr, "lane %s: %s\n", env.Args[0], err)
 		return exitError
 	}
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprintln(w, "Usage: portby <command> [flags]")
+	fmt.Fprintln(w, "Usage: lane <command> [flags]")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Commands:")
 	names := make([]string, 0, len(commands))
@@ -142,10 +142,10 @@ func printUsage(w io.Writer) {
 // newFlags returns a FlagSet for a subcommand that reports errors through
 // Run rather than printing them itself.
 func newFlags(env Env, name string) *flag.FlagSet {
-	fs := flag.NewFlagSet("portby "+name, flag.ContinueOnError)
+	fs := flag.NewFlagSet("lane "+name, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	fs.Usage = func() {
-		fmt.Fprintf(env.Stdout, "Usage: portby %s [flags]\n", name)
+		fmt.Fprintf(env.Stdout, "Usage: lane %s [flags]\n", name)
 		fs.SetOutput(env.Stdout)
 		fs.PrintDefaults()
 		fs.SetOutput(io.Discard)

@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/envpatch"
-	"github.com/mrsafalpiya/portby.dev/internal/gitrepo"
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
-	"github.com/mrsafalpiya/portby.dev/internal/registry"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/envpatch"
+	"github.com/lanewayhq/laneway/internal/gitrepo"
+	"github.com/lanewayhq/laneway/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/registry"
 )
 
 // envFileName is the env file the Env Patch goes into.
@@ -104,7 +104,7 @@ func (d *Daemon) envPatchVars(p registry.Project, w worktreeRef, cfg recipe.Reso
 // point its tests at its Test Database: it gets the same Env Patch as .env,
 // rendered with {db} holding the Test Database. A linked Worktree without a
 // .env.testing gets a copy of the main Worktree's. The plan is empty when
-// Test Databases are off or there are no templates. Portby never makes a
+// Test Databases are off or there are no templates. Laneway never makes a
 // .env.testing from nothing: when neither the Worktree nor the main Worktree
 // has one, test config is left alone and missing is the Test Database the
 // tests won't use, for a warning.
@@ -141,8 +141,8 @@ func (d *Daemon) planTestEnvPatch(p registry.Project, w worktreeRef) (plan envpa
 // testEnvWarning is the setup warning for a Worktree whose tests won't use
 // its Test Database testDB because there is no .env.testing to patch.
 func testEnvWarning(p registry.Project, testDB string) string {
-	return fmt.Sprintf("the main Worktree has no %s, so Portby left this Worktree's test config alone and its tests "+
-		"don't use its Test Database %s; create %s and it is patched the next time the Worktree starts or `portby link` runs",
+	return fmt.Sprintf("the main Worktree has no %s, so Laneway left this Worktree's test config alone and its tests "+
+		"don't use its Test Database %s; create %s and it is patched the next time the Worktree starts or `lane link` runs",
 		testEnvFileName, testDB, filepath.Join(p.Path, testEnvFileName))
 }
 
@@ -183,7 +183,7 @@ func (d *Daemon) applyPlan(p registry.Project, plan envpatch.Plan) error {
 		return err
 	}
 	if plan.Backup != "" {
-		err := gitrepo.Exclude(p.Path, "*"+envpatch.BackupSuffix, "Portby's backups of the env files it patches (they hold secrets)")
+		err := gitrepo.Exclude(p.Path, "*"+envpatch.BackupSuffix, "Laneway's backups of the env files it patches (they hold secrets)")
 		if err != nil {
 			d.log.Warn("excluding Env Patch backups from git", "project", p.Name, "err", err)
 		}

@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/pgwire"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/pgwire"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // postgresProject is a Project whose database is a Postgres database, with
@@ -23,14 +23,14 @@ func postgresProject(t *testing.T, name, database string) *gitfixture.Repo {
 	t.Helper()
 	return gitfixture.New(t, name).
 		WriteFile(".gitignore", ".env\n").
-		WriteFile("portby.toml", "[database]\nengine = \"postgres\"\n"+database+"\n"+
+		WriteFile("laneway.toml", "[database]\nengine = \"postgres\"\n"+database+"\n"+
 			"[env]\nDB_HOST = \"{db_host}\"\nDB_PORT = \"{db_port}\"\nDB_DATABASE = \"{db}\"\n"+
 			"DB_USERNAME = \"{db_username}\"\nDB_PASSWORD = \"{db_password}\"\n").
 		Commit("declare a Postgres database")
 }
 
 // dialPostgres connects to the database db of the Postgres Service listening
-// on port on the daemon's Service host, as Portby's shared user.
+// on port on the daemon's Service host, as Laneway's shared user.
 func dialPostgres(t *testing.T, d *testkit.Daemon, port int, db string) *pgwire.Conn {
 	t.Helper()
 	conn, err := connectPostgres(d, port, db)
@@ -46,8 +46,8 @@ func connectPostgres(d *testkit.Daemon, port int, db string) (*pgwire.Conn, erro
 	defer cancel()
 	return pgwire.Connect(ctx, pgwire.Config{
 		Addr:     net.JoinHostPort(d.ServiceHost(), strconv.Itoa(port)),
-		User:     "portby",
-		Password: "portby",
+		User:     "laneway",
+		Password: "laneway",
 		Database: db,
 	})
 }
@@ -84,7 +84,7 @@ func TestLinkingCreatesTheProjectsEmptyPostgresDatabase(t *testing.T) {
 
 	env := readFile(t, filepath.Join(repo.Dir, ".env"))
 	for _, line := range []string{"DB_HOST=" + d.ServiceHost(), "DB_PORT=5432", "DB_DATABASE=pg_link",
-		"DB_USERNAME=portby", "DB_PASSWORD=portby"} {
+		"DB_USERNAME=laneway", "DB_PASSWORD=laneway"} {
 		assertContains(t, env, line+"\n")
 	}
 	conn := dialPostgres(t, d, 5432, "pg_link")
@@ -238,7 +238,7 @@ func TestAPinnedPostgresVersionGetsItsOwnPortAndGoesIdleOnceSetupIsDone(t *testi
 
 	assertContains(t, readFile(t, filepath.Join(repo.Dir, ".env")), "DB_PORT=54316\n")
 	if got := serviceRow(t, d, "postgres", "16"); !slices.Equal(got, []string{"postgres", "16", d.ServiceHost(), "54316", "running"}) {
-		t.Fatalf("`portby services` shows %v, want postgres:16 running on port 54316", got)
+		t.Fatalf("`lane services` shows %v, want postgres:16 running on port 54316", got)
 	}
 	if delay := waitForTimer(t, clk); delay != 15*time.Minute {
 		t.Fatalf("Idle scheduled after %s, want the default 15m", delay)

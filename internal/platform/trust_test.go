@@ -26,7 +26,7 @@ func testCA(t *testing.T) (*x509.Certificate, string) {
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "Portby Local CA - Test Root"},
+		Subject:               pkix.Name{CommonName: "Laneway Local CA - Test Root"},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(time.Hour),
 		IsCA:                  true,
@@ -88,14 +88,14 @@ func TestLinuxStoreAddsTheCAAsAnAnchor(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			want := []string{"sudo install -m 0644 " + caFile + " " + tt.dir + "/portby-local-ca.crt", tt.update}
+			want := []string{"sudo install -m 0644 " + caFile + " " + tt.dir + "/laneway-local-ca.crt", tt.update}
 			if got := m.run.lines(); strings.Join(got, "\n") != strings.Join(want, "\n") {
 				t.Fatalf("ran\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 			}
 
 			// What `sudo install` would have done.
 			data, _ := os.ReadFile(caFile)
-			m.file(tt.dir+"/portby-local-ca.crt", string(data))
+			m.file(tt.dir+"/laneway-local-ca.crt", string(data))
 			if trusted, err := store.Trusted(t.Context(), ca); err != nil || !trusted {
 				t.Fatalf("Trusted after = %v, %v; want true", trusted, err)
 			}
@@ -144,7 +144,7 @@ func TestWindowsStoreImportsTheCAWithCertutilFromAWindowsPath(t *testing.T) {
 		case line == `wslpath -u C:\Users\me\AppData\Local\Temp\`:
 			return winTemp + "\n", nil
 		case strings.HasPrefix(line, "certutil.exe"):
-			imported, _ = os.ReadFile(filepath.Join(winTemp, "portby-local-ca.crt"))
+			imported, _ = os.ReadFile(filepath.Join(winTemp, "laneway-local-ca.crt"))
 		case strings.Contains(line, "Test-Path"):
 			return "True\r\n", nil
 		}
@@ -165,13 +165,13 @@ func TestWindowsStoreImportsTheCAWithCertutilFromAWindowsPath(t *testing.T) {
 			certutil = line
 		}
 	}
-	if want := `certutil.exe -user -addstore Root C:\Users\me\AppData\Local\Temp\portby-local-ca.crt`; certutil != want {
+	if want := `certutil.exe -user -addstore Root C:\Users\me\AppData\Local\Temp\laneway-local-ca.crt`; certutil != want {
 		t.Fatalf("ran %q, want %q", certutil, want)
 	}
 	if want, _ := os.ReadFile(caFile); string(imported) != string(want) {
 		t.Fatalf("certutil saw %q, want the CA's PEM", imported)
 	}
-	if _, err := os.Stat(filepath.Join(winTemp, "portby-local-ca.crt")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(winTemp, "laneway-local-ca.crt")); !os.IsNotExist(err) {
 		t.Errorf("the copy in the Windows temp dir was left behind (%v)", err)
 	}
 }

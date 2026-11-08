@@ -9,8 +9,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mrsafalpiya/portby.dev/internal/prepare"
-	"github.com/mrsafalpiya/portby.dev/internal/registry"
+	"github.com/lanewayhq/laneway/internal/prepare"
+	"github.com/lanewayhq/laneway/internal/registry"
 )
 
 // copyStep copies the paths config's copy lists from the main Worktree into

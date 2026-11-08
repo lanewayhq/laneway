@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/config"
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/recipe"
 )
 
 func TestATestDatabaseIsMadeOnlyWhenDatabaseTestIsOn(t *testing.T) {

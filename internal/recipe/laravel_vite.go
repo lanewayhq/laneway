@@ -6,14 +6,14 @@ import (
 	"path/filepath"
 )
 
-// viteCommand runs the Project's Vite dev server behind Portby (spike #2):
+// viteCommand runs the Project's Vite dev server behind Laneway (spike #2):
 //
-//   - --config {vite_config} is a config Portby writes around the Project's
+//   - --config {vite_config} is a config Laneway writes around the Project's
 //     own vite.config.*, so HMR goes through vite.<domain> over wss and
 //     laravel-vite-plugin writes https://vite.<domain> to public/hot. No
 //     committed file changes.
 //   - The vite binary directly, not `npm run dev`, which may run more.
-//   - --host/--port/--strictPort: listen where Portby proxies to.
+//   - --host/--port/--strictPort: listen where Laneway proxies to.
 //   - LARAVEL_BYPASS_ENV_CHECK: the plugin refuses to serve when CI is set.
 //   - rm -f public/hot: the plugin deletes it on a normal exit only; one a
 //     killed Vite left behind would point pages at a dead server.

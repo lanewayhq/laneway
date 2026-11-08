@@ -20,7 +20,7 @@ type Redirect struct {
 // StartRedirect listens on addr, a loopback address, and redirects every
 // request for localhost or a *.localhost name to https:// on httpsPort
 // (left out of the URL when it is 443). Requests for other names get a 404:
-// Portby serves nothing else.
+// Laneway serves nothing else.
 func StartRedirect(addr string, httpsPort string) (*Redirect, error) {
 	if err := checkLoopback(addr); err != nil {
 		return nil, err
@@ -49,7 +49,7 @@ func redirectHandler(httpsPort string) http.Handler {
 		}
 		host = strings.ToLower(strings.TrimSuffix(host, "."))
 		if host != "localhost" && !strings.HasSuffix(host, ".localhost") {
-			http.Error(w, "Portby only serves localhost Domains", http.StatusNotFound)
+			http.Error(w, "Laneway only serves localhost Domains", http.StatusNotFound)
 			return
 		}
 		if httpsPort != "443" {

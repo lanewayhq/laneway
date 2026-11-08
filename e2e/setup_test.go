@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // tomlList is a TOML array of strings, for worktree.on_create and on_remove.
@@ -30,11 +30,11 @@ func TestSetupAppliesTheEnvPatchThenRunsOnCreateStepsInTheWorktree(t *testing.T)
 	out := filepath.Join(gitfixture.TempDir(t), "ran")
 	repo := gitfixture.New(t, "setup-steps").
 		WriteFile(".gitignore", ".env\n").
-		WriteFile("portby.toml", "[worktree]\non_create = "+tomlList(
+		WriteFile("laneway.toml", "[worktree]\non_create = "+tomlList(
 			"pwd >> "+out,
 			"grep APP_URL .env >> "+out,
 		)+"\n[env]\nAPP_URL = \"{url}\"\n").
-		WriteFile("portby.local.toml", "[worktree]\non_create = "+tomlList("echo local-step >> "+out)+"\n").
+		WriteFile("laneway.local.toml", "[worktree]\non_create = "+tomlList("echo local-step >> "+out)+"\n").
 		Commit("declare setup steps")
 	d.MustRunCLI(repo.Dir, "link", "--yes")
 
@@ -52,7 +52,7 @@ func TestAFailedStepIsRecordedWithItsOutputAndSetupCanBeRetried(t *testing.T) {
 	out := filepath.Join(gitfixture.TempDir(t), "ran")
 	failing := "echo checking-deps; test -e " + marker + " || { echo missing-dep >&2; exit 3; }"
 	repo := gitfixture.New(t, "setup-fail").
-		WriteFile("portby.toml", "[worktree]\non_create = "+tomlList(failing, "echo after >> "+out)+"\n").
+		WriteFile("laneway.toml", "[worktree]\non_create = "+tomlList(failing, "echo after >> "+out)+"\n").
 		Commit("declare setup steps")
 	d.MustRunCLI(repo.Dir, "link")
 
@@ -81,7 +81,7 @@ func TestAFailedStepIsRecordedWithItsOutputAndSetupCanBeRetried(t *testing.T) {
 	assertFile(t, out, "after\n")
 }
 
-// assertSetupState checks the setup state `portby status` shows for the
+// assertSetupState checks the setup state `lane status` shows for the
 // Worktree at dir.
 func assertSetupState(t *testing.T, d *testkit.Daemon, dir, want string) {
 	t.Helper()
@@ -111,7 +111,7 @@ func TestAWorktreeIsNotStartedUntilItIsReadyAndBrowsersAreToldItIsBeingSetUp(t *
 	gate := filepath.Join(gitfixture.TempDir(t), "gate")
 	command, log := startCounting(t, testkit.TestServer(t))
 	repo := gitfixture.New(t, "setup-page").
-		WriteFile("portby.toml", "[worktree]\non_create = "+tomlList("until [ -e "+gate+" ]; do sleep 0.05; done")+"\n"+processConfig(command)).
+		WriteFile("laneway.toml", "[worktree]\non_create = "+tomlList("until [ -e "+gate+" ]; do sleep 0.05; done")+"\n"+processConfig(command)).
 		Commit("declare a setup step that waits for the gate")
 	d.MustRunCLI(repo.Dir, "link")
 
@@ -142,7 +142,7 @@ func TestAFailedWorktreeShowsItsSetupErrorInsteadOfStarting(t *testing.T) {
 	failing := "test -e " + marker + " || { echo broken-setup-output; exit 5; }"
 	command, log := startCounting(t, testkit.TestServer(t))
 	repo := gitfixture.New(t, "setup-error").
-		WriteFile("portby.toml", "[worktree]\non_create = "+tomlList(failing)+"\n"+processConfig(command)).
+		WriteFile("laneway.toml", "[worktree]\non_create = "+tomlList(failing)+"\n"+processConfig(command)).
 		Commit("declare a failing setup step")
 	d.MustRunCLI(repo.Dir, "link")
 
@@ -154,7 +154,7 @@ func TestAFailedWorktreeShowsItsSetupErrorInsteadOfStarting(t *testing.T) {
 	assertContains(t, page.Body, "Preparation failed")
 	assertContains(t, page.Body, html.EscapeString("on_create: "+failing))
 	assertContains(t, page.Body, "broken-setup-output")
-	assertContains(t, page.Body, "portby worktree ready --retry")
+	assertContains(t, page.Body, "lane worktree ready --retry")
 	// Requests that aren't navigations get it too, without being held.
 	if res := d.Get("https://setup-error.localhost/api"); res.StatusCode != http.StatusBadGateway {
 		t.Fatalf("held request: status %d, want 502:\n%s", res.StatusCode, res.Body)
@@ -174,7 +174,7 @@ func TestWorktreeReadyInANewWorktreeDiscoversItAndWaitsForItsSetup(t *testing.T)
 	d := testkit.StartDaemon(t)
 	out := filepath.Join(gitfixture.TempDir(t), "ran")
 	repo := gitfixture.New(t, "setup-new").
-		WriteFile("portby.toml", "[worktree]\non_create = "+tomlList(`echo "$(pwd) $PORTBY_WORKTREE $PORTBY_URL" >> `+out)+"\n").
+		WriteFile("laneway.toml", "[worktree]\non_create = "+tomlList(`echo "$(pwd) $LANEWAY_WORKTREE $LANEWAY_URL" >> `+out)+"\n").
 		Commit("declare a setup step")
 	d.MustRunCLI(repo.Dir, "link")
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
@@ -195,7 +195,7 @@ func TestSetupRunsOnceAndAReadyWorktreeStaysReadyAcrossDaemonRestarts(t *testing
 	d := testkit.StartDaemon(t)
 	out := filepath.Join(gitfixture.TempDir(t), "ran")
 	repo := gitfixture.New(t, "setup-once").
-		WriteFile("portby.toml", "[worktree]\non_create = "+tomlList(`echo "$(basename "$(pwd)")" >> `+out)+"\n").
+		WriteFile("laneway.toml", "[worktree]\non_create = "+tomlList(`echo "$(basename "$(pwd)")" >> `+out)+"\n").
 		Commit("declare a setup step")
 	wt := repo.AddWorktree("kept")
 	d.MustRunCLI(repo.Dir, "link")
@@ -220,8 +220,8 @@ func TestOnRemoveStepsRunInTheMainWorktreeWhenAWorktreeIsRemoved(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	out := filepath.Join(gitfixture.TempDir(t), "removed")
 	repo := gitfixture.New(t, "setup-remove").
-		WriteFile("portby.toml", "[worktree]\non_remove = "+tomlList(
-			`echo "$(pwd) $PORTBY_WORKTREE $PORTBY_WORKTREE_PATH" >> `+out,
+		WriteFile("laneway.toml", "[worktree]\non_remove = "+tomlList(
+			`echo "$(pwd) $LANEWAY_WORKTREE $LANEWAY_WORKTREE_PATH" >> `+out,
 		)+"\n").
 		Commit("declare an on_remove step")
 	d.MustRunCLI(repo.Dir, "link")
@@ -239,7 +239,7 @@ func TestRemovingAWorktreeStopsItsSetup(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	pids := gitfixture.TempDir(t)
 	repo := gitfixture.New(t, "setup-stop").
-		WriteFile("portby.toml", "[worktree]\non_create = "+tomlList(`echo $$ > `+pids+`/"$(basename "$(pwd)")"; exec sleep 600`)+"\n").
+		WriteFile("laneway.toml", "[worktree]\non_create = "+tomlList(`echo $$ > `+pids+`/"$(basename "$(pwd)")"; exec sleep 600`)+"\n").
 		Commit("declare a setup step that never ends")
 	d.MustRunCLI(repo.Dir, "link")
 	wt := repo.AddWorktree("doomed")
@@ -259,7 +259,7 @@ func TestASetupInterruptedByTheDaemonStoppingRunsAgainWhenItStarts(t *testing.T)
 	dir := gitfixture.TempDir(t)
 	gate, out := filepath.Join(dir, "gate"), filepath.Join(dir, "ran")
 	repo := gitfixture.New(t, "setup-resume").
-		WriteFile("portby.toml", "[worktree]\non_create = "+tomlList(
+		WriteFile("laneway.toml", "[worktree]\non_create = "+tomlList(
 			"echo begun >> "+out+"; until [ -e "+gate+" ]; do sleep 0.05; done",
 		)+"\n").
 		Commit("declare a setup step that waits for the gate")
@@ -295,7 +295,7 @@ func TestWorktreeReadyGivesUpWithExit4AfterItsTimeout(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "setup-timeout").
-		WriteFile("portby.toml", "[worktree]\non_create = "+tomlList("exec sleep 600")+"\n").
+		WriteFile("laneway.toml", "[worktree]\non_create = "+tomlList("exec sleep 600")+"\n").
 		Commit("declare a setup step that never ends")
 	d.MustRunCLI(repo.Dir, "link")
 
@@ -331,7 +331,7 @@ func TestWorktreeAddUsesTheConfiguredRootAndTheGivenBranch(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "setup-add-root").
-		WriteFile("portby.local.toml", "[worktree]\nroot = \"../trees\"\n")
+		WriteFile("laneway.local.toml", "[worktree]\nroot = \"../trees\"\n")
 	repo.Git("branch", "existing")
 	other := repo.AddWorktree("other")
 	root := filepath.Join(filepath.Dir(repo.Dir), "trees")
@@ -365,7 +365,7 @@ func TestSetupStepsRunWithTheRuntimesMiseResolvesForTheWorktree(t *testing.T) {
 	testkit.StubMise(t, d.Bin, map[string]string{"PATH": miseBin + ":" + d.Path})
 	out := filepath.Join(gitfixture.TempDir(t), "ran")
 	repo := gitfixture.New(t, "setup-runtime").
-		WriteFile("portby.toml", "[worktree]\non_create = "+tomlList("php --version >> "+out)+"\n").
+		WriteFile("laneway.toml", "[worktree]\non_create = "+tomlList("php --version >> "+out)+"\n").
 		Commit("declare a setup step using PHP")
 	d.MustRunCLI(repo.Dir, "link")
 

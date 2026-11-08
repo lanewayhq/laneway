@@ -1,16 +1,16 @@
 package daemon
 
 import (
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
-	"github.com/mrsafalpiya/portby.dev/internal/supervisor"
+	"github.com/lanewayhq/laneway/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/supervisor"
 )
 
 // Processes read .env when they start, and some never look at it again
-// (Laravel's php artisan serve --no-reload, queue:work), so when Portby
+// (Laravel's php artisan serve --no-reload, queue:work), so when Laneway
 // changes a running Worktree's .env it restarts the Worktree's running
 // Processes.
 
-// restartForEnv restarts the Worktree's running Processes, after Portby
+// restartForEnv restarts the Worktree's running Processes, after Laneway
 // changed its .env, with cfg, the config they start from now. The caller
 // holds s.lifecycle.
 func (d *Daemon) restartForEnv(s *served, cfg worktreeConfig) {
@@ -98,7 +98,7 @@ func (d *Daemon) primaryDomainMoved(domain string) {
 
 // restartServedForEnv restarts the running Processes of the Worktree served
 // at domain (its own Domain), if it is running, in the background, after
-// Portby changed its .env outside a start (`portby link`).
+// Laneway changed its .env outside a start (`lane link`).
 func (d *Daemon) restartServedForEnv(domain string) {
 	s := d.servedWorktree(domain)
 	if s == nil {

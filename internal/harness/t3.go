@@ -12,9 +12,9 @@ const t3File = "t3.json"
 const t3Schema = "https://t3.codes/schema/t3.json"
 
 // t3ScriptName names the generated script in T3 Code's scripts menu, and is
-// how Portby recognises its own script on later runs (t3.json allows no keys
+// how Laneway recognises its own script on later runs (t3.json allows no keys
 // of our own).
-const t3ScriptName = "Portby: wait until Ready"
+const t3ScriptName = "Laneway: wait until Ready"
 
 // t3 adds a script to t3.json that T3 Code runs in every Worktree it creates
 // for a thread (runOnWorktreeCreate), holding the agent until it exits
@@ -42,7 +42,7 @@ func t3(root string) ([]edit, error) {
 	if len(others) > 0 {
 		e.warnings = append(e.warnings, fmt.Sprintf(
 			"%s: T3 Code only runs the first script with runOnWorktreeCreate, and %s %s too, so they won't all run; "+
-				"run `portby worktree ready` at the end of yours instead, or turn runOnWorktreeCreate off on all but one",
+				"run `lane worktree ready` at the end of yours instead, or turn runOnWorktreeCreate off on all but one",
 			t3File, strings.Join(others, ", "), plural(len(others), "has it", "have it")))
 	}
 	instructions, err := instructionEdits(root, false)
@@ -52,7 +52,7 @@ func t3(root string) ([]edit, error) {
 	return append([]edit{e}, instructions...), nil
 }
 
-// mergeT3Script makes doc.scripts hold Portby's script once: updated in place
+// mergeT3Script makes doc.scripts hold Laneway's script once: updated in place
 // if it's there, else added at the end.
 func mergeT3Script(doc *object) (bool, error) {
 	script := newObject()
@@ -80,7 +80,7 @@ func mergeT3Script(doc *object) (bool, error) {
 }
 
 // otherWorktreeCreateScripts returns the quoted names of scripts other than
-// Portby's that run on worktree creation.
+// Laneway's that run on worktree creation.
 func otherWorktreeCreateScripts(doc *object) []string {
 	scripts, _ := arrayAt(doc, "scripts", "scripts")
 	var names []string

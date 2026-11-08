@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
-	"github.com/mrsafalpiya/portby.dev/internal/runtimes"
+	"github.com/lanewayhq/laneway/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/runtimes"
 )
 
 // project writes files (name → content) into a fresh Project directory.

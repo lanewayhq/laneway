@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/client"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/client"
 )
 
-// Exit codes of `portby worktree ready`. Harness hooks and scripts depend on
+// Exit codes of `lane worktree ready`. Harness hooks and scripts depend on
 // them, so they don't change. Usage errors exit with exitUsage (2).
 const (
 	// readyFailed: preparing the Worktree Failed. The failed step, its error
@@ -26,7 +26,7 @@ const (
 	readyGaveUp = 4
 )
 
-// defaultReadyTimeout is how long `portby worktree ready` waits by default.
+// defaultReadyTimeout is how long `lane worktree ready` waits by default.
 const defaultReadyTimeout = 10 * time.Minute
 
 func runWorktreeReady(ctx context.Context, env Env, args []string) error {
@@ -57,7 +57,7 @@ func runWorktreeReady(ctx context.Context, env Env, args []string) error {
 		return readyError(ctx, *timeout, err)
 	}
 	for _, w := range info.Worktree.Setup.Warnings {
-		fmt.Fprintf(env.Stderr, "portby worktree: warning: %s\n", w)
+		fmt.Fprintf(env.Stderr, "lane worktree: warning: %s\n", w)
 	}
 	if setup := info.Worktree.Setup; setup.State == api.SetupFailed {
 		var b strings.Builder
@@ -66,7 +66,7 @@ func runWorktreeReady(ctx context.Context, env Env, args []string) error {
 		for _, line := range setup.Output {
 			fmt.Fprintf(&b, "  %s\n", line)
 		}
-		b.WriteString("Fix the problem, then run `portby worktree ready --retry`.")
+		b.WriteString("Fix the problem, then run `lane worktree ready --retry`.")
 		return exitCode{readyFailed, b.String()}
 	}
 	fmt.Fprintf(env.Stdout, "%s of %q is Ready: %s\n", describeWorktree(info.Worktree), info.Project.Name, info.URL)
@@ -88,7 +88,7 @@ func readyError(ctx context.Context, timeout time.Duration, err error) error {
 		return exitCode{readyNothingToWaitFor, err.Error()}
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		return exitCode{readyGaveUp, fmt.Sprintf("the Worktree wasn't Ready after %s; "+
-			"see how far it got with `portby status`, or wait longer with --timeout", timeout)}
+			"see how far it got with `lane status`, or wait longer with --timeout", timeout)}
 	default:
 		return exitCode{readyGaveUp, err.Error()}
 	}

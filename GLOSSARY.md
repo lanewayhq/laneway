@@ -1,11 +1,11 @@
-# Portby
+# Laneway
 
-Portby is a local web development environment manager. It serves every registered project at its own local domain, starts a project's processes only when they're needed, and gives each git worktree its own isolated environment.
+Laneway is a local web development environment manager. It serves every registered project at its own local domain, starts a project's processes only when they're needed, and gives each git worktree its own isolated environment.
 
 ## Projects and worktrees
 
 **Project**:
-A git repository registered with Portby by Linking it.
+A git repository registered with Laneway by Linking it.
 _Avoid_: Site, app, stack
 
 **Link**:
@@ -17,7 +17,7 @@ One checkout of a Project. The main checkout is a Worktree like any other, with 
 _Avoid_: Instance, environment, branch, lane
 
 **Env Patch**:
-The set of env file keys Portby owns and writes for each Worktree, such as its URL, database name and Service ports. Every other key in the file belongs to the developer and is never touched. Portby re-applies it whenever its inputs change, such as when the Worktree's URL changes.
+The set of env file keys Laneway owns and writes for each Worktree, such as its URL, database name and Service ports. Every other key in the file belongs to the developer and is never touched. Laneway re-applies it whenever its inputs change, such as when the Worktree's URL changes.
 _Avoid_: Env override, env template, env sync
 
 **Ready**:
@@ -25,7 +25,7 @@ A Worktree is Ready once its own database exists and its env file has been patch
 _Avoid_: Provisioned, set up, initialised
 
 **Preparing**:
-A Worktree is Preparing from when Portby finds it until it is Ready: the files config says to copy are copied from the main Worktree, its database is being made, its env file patched and its Project's steps run.
+A Worktree is Preparing from when Laneway finds it until it is Ready: the files config says to copy are copied from the main Worktree, its database is being made, its env file patched and its Project's steps run.
 _Avoid_: Provisioning, setting up, initialising
 
 **Test Database**:
@@ -45,13 +45,13 @@ An extra, human-chosen Domain for a Worktree, alongside its own Domain.
 _Avoid_: Nickname, vanity domain
 
 **Primary Domain**:
-The Domain Portby gives out for a Worktree: its newest Alias if it has one, otherwise its own Domain.
+The Domain Laneway gives out for a Worktree: its newest Alias if it has one, otherwise its own Domain.
 _Avoid_: Preferred alias, main URL, canonical domain
 
 ## Running things
 
 **Process**:
-A long-running command Portby supervises on behalf of one Worktree, such as a web server, queue worker or asset bundler.
+A long-running command Laneway supervises on behalf of one Worktree, such as a web server, queue worker or asset bundler.
 _Avoid_: App, server, daemon, job
 
 **Primary Process**:

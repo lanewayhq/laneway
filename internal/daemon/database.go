@@ -7,11 +7,11 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/mrsafalpiya/portby.dev/internal/database"
-	"github.com/mrsafalpiya/portby.dev/internal/prepare"
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
-	"github.com/mrsafalpiya/portby.dev/internal/registry"
-	"github.com/mrsafalpiya/portby.dev/internal/service"
+	"github.com/lanewayhq/laneway/internal/database"
+	"github.com/lanewayhq/laneway/internal/prepare"
+	"github.com/lanewayhq/laneway/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/registry"
+	"github.com/lanewayhq/laneway/internal/service"
 )
 
 // databaseEngine is the Engine of the database config describes, or nil if
@@ -85,7 +85,7 @@ func (d *Daemon) databaseStep(p registry.Project, w worktreeRef, cfg recipe.Reso
 func (d *Daemon) databaseServer(ctx context.Context, svc recipe.Service, out io.Writer) (database.Server, func(), error) {
 	e, ok := service.Lookup(svc.Engine)
 	if !ok {
-		return database.Server{}, nil, fmt.Errorf("Portby has no Service %q", svc.Engine)
+		return database.Server{}, nil, fmt.Errorf("Laneway has no Service %q", svc.Engine)
 	}
 	d.serveServices([]recipe.Service{svc})
 	rs, err := d.registry.PlanService(svc, e.Ports(svc.Version))

@@ -1,6 +1,6 @@
 // Package proxy is the HTTPS front door: Caddy, embedded as a library
 // (ADR-0003), terminating TLS for every *.localhost Domain with certificates
-// from Portby's local CA and reverse-proxying each request (WebSockets
+// from Laneway's local CA and reverse-proxying each request (WebSockets
 // included) to the Process a Router picks.
 //
 // The Caddy config is fixed: routing decisions are made per request by the
@@ -48,7 +48,7 @@ type Router interface {
 	// Worktree is Preparing, it waits through that too if
 	// waitForPreparation is true, and otherwise returns ErrPreparing at
 	// once. It returns a *PreparationError if preparing failed, an error
-	// wrapping ErrUnknownDomain if domain is not one of Portby's Domains;
+	// wrapping ErrUnknownDomain if domain is not one of Laneway's Domains;
 	// any other error is shown to the user.
 	Upstream(ctx context.Context, domain string, waitForPreparation bool) (string, error)
 	// Begin is called when a request for domain arrives, and the func it
@@ -64,7 +64,7 @@ type Router interface {
 }
 
 // StaticRouter is a Router whose Processes may have a static directory:
-// files Portby serves itself rather than sending the request to the Process
+// files Laneway serves itself rather than sending the request to the Process
 // (spike #4: php artisan serve blocks on its log pipe when it serves every
 // asset). A GET or HEAD for a path that is an existing regular file there,
 // other than a .php script, is served from disk once Upstream has found the
@@ -88,7 +88,7 @@ var (
 
 // PreparationError is returned by a Router when preparing a Domain's
 // Worktree failed, so its Processes aren't started. The proxy shows it as
-// Portby's preparation error page.
+// Laneway's preparation error page.
 type PreparationError struct {
 	// Step is the step that failed, Output its last lines of output.
 	Step   string
@@ -101,7 +101,7 @@ func (e *PreparationError) Unwrap() error { return e.Err }
 
 // StartError is returned by a Router when a Domain's Primary Process failed
 // to start, or (Crashed) crashed after it had started and is restarting or
-// has failed. The proxy shows it as Portby's error page.
+// has failed. The proxy shows it as Laneway's error page.
 type StartError struct {
 	// Process is the Primary Process's name.
 	Process string
@@ -245,14 +245,14 @@ var (
 func routerFor(id string) (Router, error) {
 	r, ok := routers.Load(id)
 	if !ok {
-		return nil, fmt.Errorf("no Portby proxy with id %q", id)
+		return nil, fmt.Errorf("no Laneway proxy with id %q", id)
 	}
 	return r.(Router), nil
 }
 
 // upstreamVar is the Caddy request variable the routing handler stores the
 // chosen upstream address in, for reverse_proxy to dial.
-const upstreamVar = "portby.upstream"
+const upstreamVar = "laneway.upstream"
 
 // caddyConfig is the whole Caddy config for one Proxy.
 func caddyConfig(id string, cfg Config) []byte {
@@ -271,8 +271,8 @@ func caddyConfig(id string, cfg Config) []byte {
 			"pki": map[string]any{
 				"certificate_authorities": map[string]any{
 					"local": map[string]any{
-						"name": "Portby Local CA",
-						// Trusting the CA is `portby install`'s job; Caddy
+						"name": "Laneway Local CA",
+						// Trusting the CA is `lane install`'s job; Caddy
 						// would try to do it with sudo.
 						"install_trust": false,
 					},
@@ -285,7 +285,7 @@ func caddyConfig(id string, cfg Config) []byte {
 						"on_demand": true,
 					}},
 					"on_demand": map[string]any{
-						"permission": map[string]any{"module": "portby"},
+						"permission": map[string]any{"module": "laneway"},
 					},
 				},
 				// Storage cleaning stamps an instance ID into Caddy's data
@@ -306,7 +306,7 @@ func caddyConfig(id string, cfg Config) []byte {
 						"tls_connection_policies": []any{map[string]any{}},
 						"routes": []any{map[string]any{
 							"handle": []any{
-								map[string]any{"handler": "portby", "proxy": id},
+								map[string]any{"handler": "laneway", "proxy": id},
 								map[string]any{
 									"handler":   "reverse_proxy",
 									"upstreams": []any{map[string]any{"dial": "{http.vars." + upstreamVar + "}"}},

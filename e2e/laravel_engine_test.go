@@ -12,32 +12,32 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // The Laravel Recipe's slow tier: a real Laravel app, run by real PHP and
 // Composer, with its database in MySQL on a real container engine.
 //
-//	PORTBY_SLOW=1 \
-//	PORTBY_PHP=/path/to/php \
-//	PORTBY_COMPOSER=/path/to/composer.phar \
-//	PORTBY_LARAVEL_APP=/path/to/a/laravel/app \
+//	LANEWAY_SLOW=1 \
+//	LANEWAY_PHP=/path/to/php \
+//	LANEWAY_COMPOSER=/path/to/composer.phar \
+//	LANEWAY_LARAVEL_APP=/path/to/a/laravel/app \
 //	go test ./e2e -run TestARealLaravelApp
 //
-// PORTBY_LARAVEL_APP is any Laravel 11+ app whose composer.lock Composer can
-// install (from its cache, $PORTBY_COMPOSER_CACHE or the user's, so no
+// LANEWAY_LARAVEL_APP is any Laravel 11+ app whose composer.lock Composer can
+// install (from its cache, $LANEWAY_COMPOSER_CACHE or the user's, so no
 // download is needed); the test copies it without vendor/, node_modules/,
 // .env and its Node files, and gives it routes and a migration of its own.
 
-// laravelRoutes are the app's routes: /portby reports what the app sees.
+// laravelRoutes are the app's routes: /laneway reports what the app sees.
 const laravelRoutes = `<?php
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/portby', fn () => [
+Route::get('/laneway', fn () => [
     'url' => config('app.url'),
     'database' => DB::connection()->getDatabaseName(),
     'notes' => DB::table('notes')->orderBy('id')->pluck('body'),
@@ -64,7 +64,7 @@ return new class extends Migration
 };
 `
 
-// laravelReport is what the app's /portby route answers.
+// laravelReport is what the app's /laneway route answers.
 type laravelReport struct {
 	URL      string   `json:"url"`
 	Database string   `json:"database"`
@@ -74,11 +74,11 @@ type laravelReport struct {
 }
 
 func TestARealLaravelAppIsServedAtEachWorktreesDomainWithItsOwnDatabase(t *testing.T) {
-	php, composer, app := os.Getenv("PORTBY_PHP"), os.Getenv("PORTBY_COMPOSER"), os.Getenv("PORTBY_LARAVEL_APP")
+	php, composer, app := os.Getenv("LANEWAY_PHP"), os.Getenv("LANEWAY_COMPOSER"), os.Getenv("LANEWAY_LARAVEL_APP")
 	for name, engine := range realEngines(t) {
 		t.Run(name, func(t *testing.T) {
 			if php == "" || composer == "" || app == "" {
-				t.Skip("set PORTBY_PHP, PORTBY_COMPOSER and PORTBY_LARAVEL_APP to run a real Laravel app")
+				t.Skip("set LANEWAY_PHP, LANEWAY_COMPOSER and LANEWAY_LARAVEL_APP to run a real Laravel app")
 			}
 			t.Parallel()
 			d, prefix := realEngineDaemon(t, engine)
@@ -97,13 +97,13 @@ func TestARealLaravelAppIsServedAtEachWorktreesDomainWithItsOwnDatabase(t *testi
 			if setup := waitForSetup(t, d, repo.Dir); setup.State != api.SetupReady {
 				t.Fatalf("the main Worktree's setup is %+v, want Ready", setup)
 			}
-			main := laravelAt(t, d, "https://"+project+".localhost/portby")
+			main := laravelAt(t, d, "https://"+project+".localhost/laneway")
 			want := laravelReport{URL: "https://" + project + ".localhost", Database: db, Notes: []string{}, Workers: "8", SAPI: "cli-server"}
 			if !reflect.DeepEqual(main, want) {
 				t.Fatalf("the main Worktree's app reports %+v, want %+v", main, want)
 			}
-			if res := d.Get("https://" + project + ".localhost/portby.txt"); res.StatusCode != http.StatusOK || res.Body != "served from public/\n" {
-				t.Errorf("GET /portby.txt = %d %q, want the file in public/", res.StatusCode, res.Body)
+			if res := d.Get("https://" + project + ".localhost/laneway.txt"); res.StatusCode != http.StatusOK || res.Body != "served from public/\n" {
+				t.Errorf("GET /laneway.txt = %d %q, want the file in public/", res.StatusCode, res.Body)
 			}
 			myExec(t, dialMySQL(t, d, 3306, db), "INSERT INTO notes (body) VALUES ('written in main')")
 
@@ -111,7 +111,7 @@ func TestARealLaravelAppIsServedAtEachWorktreesDomainWithItsOwnDatabase(t *testi
 			if setup := waitForSetup(t, d, wt.Dir); setup.State != api.SetupReady {
 				t.Fatalf("the Worktree's setup is %+v, want Ready", setup)
 			}
-			feature := laravelAt(t, d, "https://feature."+project+".localhost/portby")
+			feature := laravelAt(t, d, "https://feature."+project+".localhost/laneway")
 			want = laravelReport{URL: "https://feature." + project + ".localhost", Database: db + "__feature",
 				Notes: []string{"written in main"}, Workers: "8", SAPI: "cli-server"}
 			if !reflect.DeepEqual(feature, want) {
@@ -119,14 +119,14 @@ func TestARealLaravelAppIsServedAtEachWorktreesDomainWithItsOwnDatabase(t *testi
 			}
 			// The Worktree's database is a copy: writes stay in it.
 			myExec(t, dialMySQL(t, d, 3306, db+"__feature"), "INSERT INTO notes (body) VALUES ('written in feature')")
-			if got := laravelAt(t, d, "https://"+project+".localhost/portby").Notes; !reflect.DeepEqual(got, []string{"written in main"}) {
+			if got := laravelAt(t, d, "https://"+project+".localhost/laneway").Notes; !reflect.DeepEqual(got, []string{"written in main"}) {
 				t.Errorf("after a write in the Worktree, the main Worktree's notes are %q", got)
 			}
 		})
 	}
 }
 
-// laravelAt GETs the app's /portby route at url.
+// laravelAt GETs the app's /laneway route at url.
 func laravelAt(t *testing.T, d *testkit.Daemon, url string) laravelReport {
 	t.Helper()
 	res := d.Get(url)
@@ -144,7 +144,7 @@ func realLaravelTools(t *testing.T, d *testkit.Daemon, php, composer string) {
 	if err := os.Symlink(php, filepath.Join(d.Bin, "php")); err != nil {
 		t.Fatal(err)
 	}
-	cache := os.Getenv("PORTBY_COMPOSER_CACHE")
+	cache := os.Getenv("LANEWAY_COMPOSER_CACHE")
 	if cache == "" {
 		dir, err := os.UserCacheDir()
 		if err != nil {
@@ -202,7 +202,7 @@ func realLaravelRepo(t *testing.T, name, app string) *gitfixture.Repo {
 		WriteFile(".env.example", example).
 		WriteFile("routes/web.php", laravelRoutes).
 		WriteFile("database/migrations/2026_01_01_000000_create_notes_table.php", notesMigration).
-		WriteFile("public/portby.txt", "served from public/\n").
-		WriteFile("portby.toml", "[worktree]\non_create = [\"php artisan migrate --force\"]\n").
+		WriteFile("public/laneway.txt", "served from public/\n").
+		WriteFile("laneway.toml", "[worktree]\non_create = [\"php artisan migrate --force\"]\n").
 		Commit("a Laravel app")
 }

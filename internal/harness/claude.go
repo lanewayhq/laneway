@@ -9,8 +9,8 @@ import (
 const claudeSettings = ".claude/settings.json"
 
 // claudeStatusMessage is the spinner text of the generated SessionStart hook,
-// and how Portby recognises its own hook on later runs.
-const claudeStatusMessage = "Portby: waiting for this Worktree to be Ready (from `portby harness add claude`)"
+// and how Laneway recognises its own hook on later runs.
+const claudeStatusMessage = "Laneway: waiting for this Worktree to be Ready (from `lane harness add claude`)"
 
 // claude adds a SessionStart hook to Claude Code's project settings that
 // runs ReadyCommand. SessionStart hooks run on startup, resume, /clear and
@@ -33,7 +33,7 @@ func claude(root string) ([]edit, error) {
 	return append([]edit{{path: claudeSettings, old: old, new: data}}, instructions...), nil
 }
 
-// mergeSessionStartHook makes settings.hooks.SessionStart hold Portby's hook
+// mergeSessionStartHook makes settings.hooks.SessionStart hold Laneway's hook
 // once: updated in place if it's there, else added as a new group at the end.
 func mergeSessionStartHook(settings *object) (bool, error) {
 	handler := newObject()

@@ -15,9 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/activity"
-	"github.com/mrsafalpiya/portby.dev/internal/clock"
-	"github.com/mrsafalpiya/portby.dev/internal/container"
+	"github.com/lanewayhq/laneway/internal/activity"
+	"github.com/lanewayhq/laneway/internal/clock"
+	"github.com/lanewayhq/laneway/internal/container"
 )
 
 // Ref names a Service: an engine (by name) at a version, such as redis at
@@ -45,7 +45,7 @@ func (s Service) Name() string { return s.Ref().Name() }
 
 // States a Service can be in.
 const (
-	// Stopped: its container isn't running (or Portby doesn't know it is).
+	// Stopped: its container isn't running (or Laneway doesn't know it is).
 	Stopped = "stopped"
 	// Starting: a connection or `services up` is starting it.
 	Starting = "starting"
@@ -79,14 +79,14 @@ type Options struct {
 	// host clients are given.
 	Hosts []string
 	// Prefix starts the name of every container and volume, normally
-	// "portby": redis:7 runs as portby-redis-7.
+	// "laneway": redis:7 runs as laneway-redis-7.
 	Prefix string
 	// IdleTimeout is read every time a Service starts; nil or 0 means
 	// DefaultIdleTimeout.
 	IdleTimeout func() time.Duration
 	// StartTimeout is DefaultStartTimeout if 0.
 	StartTimeout time.Duration
-	// PortHolders describes who holds a port Portby can't listen on, for
+	// PortHolders describes who holds a port Laneway can't listen on, for
 	// the Service's error, such as "nginx (pid 4242)"; "" (or nil) if it
 	// can't tell.
 	PortHolders func(port int) string
@@ -98,7 +98,7 @@ type Status struct {
 	// Host is where clients connect, with Service.Port.
 	Host  string
 	State string
-	// Error is why the Service can't be used: Portby can't listen on its
+	// Error is why the Service can't be used: Laneway can't listen on its
 	// port, or its last start failed. "" if it is fine.
 	Error string
 }
@@ -121,7 +121,7 @@ func New(opts Options) *Manager {
 	if opts.Log == nil {
 		opts.Log = slog.New(slog.DiscardHandler)
 	}
-	opts.Prefix = cmp.Or(opts.Prefix, "portby")
+	opts.Prefix = cmp.Or(opts.Prefix, "laneway")
 	opts.StartTimeout = cmp.Or(opts.StartTimeout, DefaultStartTimeout)
 	m := &Manager{opts: opts, log: opts.Log, services: map[string]*managed{}}
 	m.ctx, m.cancel = context.WithCancel(context.Background())
@@ -168,7 +168,7 @@ func (m *Manager) Serve(svc Service) {
 		ln, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(svc.Port)))
 		if err != nil {
 			if i == 0 {
-				s.err = fmt.Sprintf("Portby can't listen on port %d: %v", svc.Port, err)
+				s.err = fmt.Sprintf("Laneway can't listen on port %d: %v", svc.Port, err)
 				if m.opts.PortHolders != nil {
 					if holders := m.opts.PortHolders(svc.Port); holders != "" {
 						s.err += "; it is in use by " + holders
@@ -193,7 +193,7 @@ func (m *Manager) spec(svc Service) container.Spec {
 	spec := container.Spec{
 		Name:         name,
 		Image:        e.Image + ":" + svc.Version,
-		Labels:       map[string]string{"dev.portby.service": svc.Name()},
+		Labels:       map[string]string{"dev.laneway.service": svc.Name()},
 		Port:         e.Port,
 		Volume:       name,
 		VolumeTarget: e.DataDir,
@@ -420,7 +420,7 @@ func (s *managed) handle(conn net.Conn) {
 }
 
 // connect returns a connection to the ready container, starting it if
-// needed. If the container was stopped behind Portby's back, it is started
+// needed. If the container was stopped behind Laneway's back, it is started
 // again.
 func (s *managed) connect(ctx context.Context) (net.Conn, error) {
 	for attempt := 0; ; attempt++ {
@@ -459,7 +459,7 @@ func (s *managed) ensure(ctx context.Context) (string, error) {
 	s.mu.Unlock()
 	if running {
 		// Check with the engine rather than trusting the address: the
-		// container may have been stopped or restarted behind Portby's
+		// container may have been stopped or restarted behind Laneway's
 		// back, and its old port taken by something else. If the engine
 		// can't say, the address is still the best guess.
 		now, ok, err := s.m.opts.Engine.Running(ctx, s.spec.Name, s.spec.Port)

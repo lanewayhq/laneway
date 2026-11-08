@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/clock"
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/clock"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 func TestCrashedProcessRestartsAfterBackoff(t *testing.T) {
@@ -24,7 +24,7 @@ func TestCrashedProcessRestartsAfterBackoff(t *testing.T) {
 	// before it is up fails the lazy start instead: see lazy_test.go.)
 	crash := crashFile(t)
 	repo := gitfixture.New(t, "crash-once").
-		WriteFile("portby.toml", processConfig(
+		WriteFile("laneway.toml", processConfig(
 			"echo boot; if [ -e "+crash+" ]; then exec "+server+"; fi; exec "+server+" --exit-when "+crash)).
 		Commit("declare web Process")
 
@@ -115,7 +115,7 @@ func TestProcessThatKeepsCrashingIsMarkedFailed(t *testing.T) {
 	d := testkit.StartDaemon(t, testkit.WithClock(clk))
 	crash := crashFile(t)
 	repo := gitfixture.New(t, "crash-loop").
-		WriteFile("portby.toml", "idle_timeout = \"24h\"\n"+processConfig("echo boot; exec "+testkit.TestServer(t)+" --exit-when "+crash)).
+		WriteFile("laneway.toml", "idle_timeout = \"24h\"\n"+processConfig("echo boot; exec "+testkit.TestServer(t)+" --exit-when "+crash)).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
 	d.GetServer("https://crash-loop.localhost/")
@@ -155,13 +155,13 @@ func TestProcessThatKeepsCrashingIsMarkedFailed(t *testing.T) {
 		t.Fatalf("status = %d, want 502:\n%s", page.StatusCode, page.Body)
 	}
 	assertContains(t, page.Body, "failed")
-	assertContains(t, page.Body, "portby logs web")
+	assertContains(t, page.Body, "lane logs web")
 	assertContains(t, page.Body, "--exit-when "+crash)
 	if n := strings.Count(page.Body, "boot\n"); n != 5 {
 		t.Fatalf("the page shows %d boots of the Process's output, want all 5:\n%s", n, page.Body)
 	}
 
-	// Once the bug is fixed, `portby up` starts it again.
+	// Once the bug is fixed, `lane up` starts it again.
 	if err := os.Remove(crash); err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestCrashesSpreadOverMoreThanTwoMinutesDoNotFailAProcess(t *testing.T) {
 	d := testkit.StartDaemon(t, testkit.WithClock(clk))
 	crash := crashFile(t)
 	repo := gitfixture.New(t, "crash-sometimes").
-		WriteFile("portby.toml", processConfig("echo boot; exec "+testkit.TestServer(t)+" --exit-when "+crash)).
+		WriteFile("laneway.toml", processConfig("echo boot; exec "+testkit.TestServer(t)+" --exit-when "+crash)).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
 	d.GetServer("https://crash-sometimes.localhost/")

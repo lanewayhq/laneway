@@ -16,38 +16,38 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // The vite Process's slow tier: a real Laravel app with laravel-vite-plugin,
 // run by real PHP, Composer, Node, npm and Vite, its database in SQLite.
 //
-//	PORTBY_SLOW=1 \
-//	PORTBY_PHP=/path/to/php \
-//	PORTBY_COMPOSER=/path/to/composer.phar \
-//	PORTBY_LARAVEL_APP=/path/to/a/laravel/app \
+//	LANEWAY_SLOW=1 \
+//	LANEWAY_PHP=/path/to/php \
+//	LANEWAY_COMPOSER=/path/to/composer.phar \
+//	LANEWAY_LARAVEL_APP=/path/to/a/laravel/app \
 //	go test ./e2e -run TestARealLaravelAppLoadsItsAssets
 //
 // node and npm come from PATH. npm installs laravel-vite-plugin 3 and Vite 8
-// offline, from $PORTBY_NPM_CACHE or the user's ~/.npm, so they must have
+// offline, from $LANEWAY_NPM_CACHE or the user's ~/.npm, so they must have
 // been installed once.
 
 const viteBlade = `<!DOCTYPE html>
 <html>
 <head>@vite(['resources/css/app.css', 'resources/js/app.js'])</head>
-<body>the portby vite page</body>
+<body>the laneway vite page</body>
 </html>
 `
 
 func TestARealLaravelAppLoadsItsAssetsAndLiveReloadsThroughViteDotItsDomain(t *testing.T) {
-	if os.Getenv("PORTBY_SLOW") == "" {
-		t.Skip("slow tier: set PORTBY_SLOW=1 to run a real Laravel app with Vite")
+	if os.Getenv("LANEWAY_SLOW") == "" {
+		t.Skip("slow tier: set LANEWAY_SLOW=1 to run a real Laravel app with Vite")
 	}
-	php, composer, app := os.Getenv("PORTBY_PHP"), os.Getenv("PORTBY_COMPOSER"), os.Getenv("PORTBY_LARAVEL_APP")
+	php, composer, app := os.Getenv("LANEWAY_PHP"), os.Getenv("LANEWAY_COMPOSER"), os.Getenv("LANEWAY_LARAVEL_APP")
 	if php == "" || composer == "" || app == "" {
-		t.Skip("set PORTBY_PHP, PORTBY_COMPOSER and PORTBY_LARAVEL_APP to run a real Laravel app")
+		t.Skip("set LANEWAY_PHP, LANEWAY_COMPOSER and LANEWAY_LARAVEL_APP to run a real Laravel app")
 	}
 	t.Parallel()
 	d := testkit.StartDaemon(t)
@@ -66,9 +66,9 @@ func TestARealLaravelAppLoadsItsAssetsAndLiveReloadsThroughViteDotItsDomain(t *t
 	// vite.<domain> on the proxy, from the public/hot Vite wrote.
 	_, port, _ := net.SplitHostPort(d.ProxyAddr())
 	vite := "https://vite." + domain + ":" + port
-	page := d.Get("https://" + domain + "/portby-vite")
+	page := d.Get("https://" + domain + "/laneway-vite")
 	if page.StatusCode != http.StatusOK {
-		t.Fatalf("GET /portby-vite = %d:\n%s", page.StatusCode, page.Body)
+		t.Fatalf("GET /laneway-vite = %d:\n%s", page.StatusCode, page.Body)
 	}
 	assertContains(t, page.Body, `src="`+vite+`/@vite/client"`)
 	assertContains(t, page.Body, `href="`+vite+`/resources/css/app.css"`)
@@ -92,25 +92,25 @@ func TestARealLaravelAppLoadsItsAssetsAndLiveReloadsThroughViteDotItsDomain(t *t
 	// Live reload: Vite's HMR WebSocket through the proxy.
 	ws := openViteHMR(t, d, "vite."+domain, port, token[1])
 	ws.waitFor(t, `"type":"connected"`)
-	writeFile(t, filepath.Join(repo.Dir, "resources", "css", "app.css"), ".portby { color: tomato; }\n")
+	writeFile(t, filepath.Join(repo.Dir, "resources", "css", "app.css"), ".laneway { color: tomato; }\n")
 	ws.waitFor(t, `"path":"/resources/css/app.css"`)
 	// A page served a while ago and open in a browser: its view and the
 	// compiled view are old enough for OPcache to cache (it skips files
 	// changed in the last 2s), and OPcache has just checked them.
 	old := time.Now().Add(-time.Hour)
 	views, _ := filepath.Glob(filepath.Join(repo.Dir, "storage", "framework", "views", "*.php"))
-	for _, f := range append(views, filepath.Join(repo.Dir, "resources", "views", "portby-vite.blade.php")) {
+	for _, f := range append(views, filepath.Join(repo.Dir, "resources", "views", "laneway-vite.blade.php")) {
 		if err := os.Chtimes(f, old, old); err != nil {
 			t.Fatal(err)
 		}
 	}
-	assertContains(t, d.Get("https://"+domain+"/portby-vite").Body, "the portby vite page")
-	writeFile(t, filepath.Join(repo.Dir, "resources", "views", "portby-vite.blade.php"), strings.Replace(viteBlade, "page", "edited page", 1))
+	assertContains(t, d.Get("https://"+domain+"/laneway-vite").Body, "the laneway vite page")
+	writeFile(t, filepath.Join(repo.Dir, "resources", "views", "laneway-vite.blade.php"), strings.Replace(viteBlade, "page", "edited page", 1))
 	ws.waitFor(t, `"type":"full-reload"`)
-	// The reloaded page shows the edited view at once: Portby's PHP ini
+	// The reloaded page shows the edited view at once: Laneway's PHP ini
 	// turns off OPcache's revalidation delay (spike #2).
-	page = d.Get("https://" + domain + "/portby-vite")
-	assertContains(t, page.Body, "the portby vite edited page")
+	page = d.Get("https://" + domain + "/laneway-vite")
+	assertContains(t, page.Body, "the laneway vite edited page")
 }
 
 // realNodeTools puts node and an npm on the daemon's PATH that installs
@@ -128,7 +128,7 @@ func realNodeTools(t *testing.T, d *testkit.Daemon) {
 	if npm, err = filepath.EvalSymlinks(npm); err != nil {
 		t.Fatal(err)
 	}
-	cache := os.Getenv("PORTBY_NPM_CACHE")
+	cache := os.Getenv("LANEWAY_NPM_CACHE")
 	if cache == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -159,10 +159,10 @@ export default defineConfig({
     plugins: [laravel({ input: ['resources/css/app.css', 'resources/js/app.js'], refresh: true })],
 });
 `).
-		WriteFile("resources/css/app.css", ".portby { color: teal; }\n").
-		WriteFile("resources/js/app.js", "document.body.dataset.portby = 'js';\n").
-		WriteFile("resources/views/portby-vite.blade.php", viteBlade).
-		WriteFile("routes/web.php", "<?php\n\nuse Illuminate\\Support\\Facades\\Route;\n\nRoute::view('/portby-vite', 'portby-vite');\n").
+		WriteFile("resources/css/app.css", ".laneway { color: teal; }\n").
+		WriteFile("resources/js/app.js", "document.body.dataset.laneway = 'js';\n").
+		WriteFile("resources/views/laneway-vite.blade.php", viteBlade).
+		WriteFile("routes/web.php", "<?php\n\nuse Illuminate\\Support\\Facades\\Route;\n\nRoute::view('/laneway-vite', 'laneway-vite');\n").
 		Commit("use laravel-vite-plugin")
 }
 

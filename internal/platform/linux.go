@@ -49,15 +49,15 @@ func (l *Linux) sudo(ctx context.Context, args ...string) error {
 }
 
 // Port permission. Lowering net.ipv4.ip_unprivileged_port_start is preferred:
-// it is a kernel setting, so it survives upgrades of the binary. Portby writes
+// it is a kernel setting, so it survives upgrades of the binary. Laneway writes
 // its own sysctl.d file rather than relying on whoever set the live value.
 // A cap_net_bind_service file capability is the fallback; it is lost whenever
-// the binary is replaced, so `portby install` must be re-run after upgrades.
+// the binary is replaced, so `lane install` must be re-run after upgrades.
 
 const (
 	portStartSysctl = "net.ipv4.ip_unprivileged_port_start"
 	portStartProc   = "/proc/sys/net/ipv4/ip_unprivileged_port_start"
-	sysctlFile      = "/etc/sysctl.d/99-portby.conf"
+	sysctlFile      = "/etc/sysctl.d/99-laneway.conf"
 	sysctlLine      = portStartSysctl + "=80"
 )
 
@@ -97,7 +97,7 @@ func (l *Linux) PortPermission(ctx context.Context, exe string) (PortPermission,
 	}
 	if out, err := l.run(ctx, "getcap", exe); err == nil && strings.Contains(out, "cap_net_bind_service") {
 		return PortPermission{Allowed: true, Persisted: true, Detail: fmt.Sprintf(
-			"cap_net_bind_service set on %s with setcap (re-run `portby install` after upgrading Portby)", exe)}, nil
+			"cap_net_bind_service set on %s with setcap (re-run `lane install` after upgrading Laneway)", exe)}, nil
 	}
 	return PortPermission{Detail: fmt.Sprintf("%s is %d and %s has no cap_net_bind_service", portStartSysctl, start, exe)}, nil
 }
@@ -107,7 +107,7 @@ func (l *Linux) AllowPrivilegedPorts(ctx context.Context, exe string) (string, e
 	if err != nil {
 		return "", err
 	}
-	script := fmt.Sprintf("printf '%%s\\n' '# Written by `portby install`: lets Portby bind ports 80 and 443 without root.' '%s' > %s",
+	script := fmt.Sprintf("printf '%%s\\n' '# Written by `lane install`: lets Laneway bind ports 80 and 443 without root.' '%s' > %s",
 		sysctlLine, sysctlFile)
 	if start > 80 {
 		script += " && sysctl -w " + sysctlLine
@@ -120,12 +120,12 @@ func (l *Linux) AllowPrivilegedPorts(ctx context.Context, exe string) (string, e
 		return "", fmt.Errorf("writing %s failed (%v), and so did setcap on %s: %w", sysctlFile, sysctlErr, exe, err)
 	}
 	return fmt.Sprintf("couldn't write %s (%v), so set cap_net_bind_service on %s instead; "+
-		"re-run `portby install` after upgrading Portby, because replacing the binary drops it", sysctlFile, sysctlErr, exe), nil
+		"re-run `lane install` after upgrading Laneway, because replacing the binary drops it", sysctlFile, sysctlErr, exe), nil
 }
 
-// The service: a systemd user unit running `portby daemon`.
+// The service: a systemd user unit running `lane daemon`.
 
-const serviceUnit = "portby.service"
+const serviceUnit = "laneway.service"
 
 func (l *Linux) unitPath() string {
 	config := l.Getenv("XDG_CONFIG_HOME")
@@ -140,10 +140,10 @@ func (l *Linux) unitPath() string {
 // capability isn't gained. PATH is the installing shell's, so Processes find
 // the user's Runtimes (mise shims, nvm); re-running install refreshes it.
 func (l *Linux) unit(exe string) string {
-	return fmt.Sprintf(`# Written by `+"`portby install`"+`; re-run it to update this file.
+	return fmt.Sprintf(`# Written by `+"`lane install`"+`; re-run it to update this file.
 [Unit]
-Description=Portby daemon
-Documentation=https://github.com/mrsafalpiya/portby.dev
+Description=Laneway daemon
+Documentation=https://github.com/lanewayhq/laneway
 
 [Service]
 Type=simple
@@ -170,12 +170,12 @@ func (l *Linux) checkSystemd() error {
 		return nil
 	}
 	if l.WSL {
-		return errors.New("systemd isn't running, and Portby runs as a systemd user service; " +
+		return errors.New("systemd isn't running, and Laneway runs as a systemd user service; " +
 			"enable systemd by adding \"[boot]\" and \"systemd=true\" to /etc/wsl.conf, " +
-			"run `wsl.exe --shutdown` from Windows, then run `portby install` again")
+			"run `wsl.exe --shutdown` from Windows, then run `lane install` again")
 	}
-	return errors.New("systemd isn't running, and Portby runs as a systemd user service; " +
-		"run `portby daemon` yourself instead")
+	return errors.New("systemd isn't running, and Laneway runs as a systemd user service; " +
+		"run `lane daemon` yourself instead")
 }
 
 func (l *Linux) systemctl(ctx context.Context, args ...string) (string, error) {

@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
-	"github.com/mrsafalpiya/portby.dev/internal/registry"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/registry"
 )
 
 // unlink Unlinks the Project containing dir: its Worktrees' Processes stop,

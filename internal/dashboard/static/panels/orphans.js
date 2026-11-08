@@ -3,7 +3,7 @@
 // daemon drops them (24 hours later). It re-renders on every `orphans`
 // event (and each minute, for the relative times).
 //
-// Dropping now matches `portby gc`: "Drop all now" previews (POST /v1/gc
+// Dropping now matches `lane gc`: "Drop all now" previews (POST /v1/gc
 // with preview, which also finds leftover parallel test copies), asks, then
 // sends exactly the previewed list; "Drop" on a row sends just that one.
 // It also adds "Unlink" to each Project's main Worktree in the Projects
@@ -25,7 +25,7 @@ export default {
     const render = (list) => {
       last = list;
       const note = h("p", { class: "note" },
-        "Databases of removed Worktrees and Unlinked Projects. Portby drops each 24 hours after it was orphaned; ",
+        "Databases of removed Worktrees and Unlinked Projects. Laneway drops each 24 hours after it was orphaned; ",
         "linking the Worktree again before then keeps it.");
       const header = h("div", { class: "panel-header" }, note,
         h("span", { class: "status" }, message),
@@ -86,7 +86,7 @@ async function dropOne(dash, o) {
   }
 }
 
-// dropAll does what `portby gc` does: preview, ask, drop what was listed.
+// dropAll does what `lane gc` does: preview, ask, drop what was listed.
 // It returns what happened, for the panel to show.
 async function dropAll(dash) {
   const preview = await dash.api.post("/v1/gc", { preview: true });
@@ -126,7 +126,7 @@ async function unlink(dash, p) {
   const ok = await dash.confirm({
     title: `Unlink ${p.name}?`,
     body: [
-      `Portby stops its Worktrees and forgets its Domains (${p.worktrees.map((w) => w.domain).filter(Boolean).join(", ")}).`,
+      `Laneway stops its Worktrees and forgets its Domains (${p.worktrees.map((w) => w.domain).filter(Boolean).join(", ")}).`,
       "Its databases become Orphans and are dropped in 24 hours unless you link it again. Files, including .env, are left alone.",
     ],
     action: "Unlink",

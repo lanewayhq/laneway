@@ -17,14 +17,14 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/mrsafalpiya/portby.dev/internal/container"
-	"github.com/mrsafalpiya/portby.dev/internal/mysqlwire"
+	"github.com/lanewayhq/laneway/internal/container"
+	"github.com/lanewayhq/laneway/internal/mysqlwire"
 )
 
 // MySQL is a Server speaking a little of MySQL's protocol, as the mysql image
 // configured by MYSQL_USER / MYSQL_PASSWORD would: a caching_sha2_password
 // login (the fast path only; the RSA exchange is left to the slow tier), and
-// text queries for the statements Portby and the tests send, matched by
+// text queries for the statements Laneway and the tests send, matched by
 // pattern rather than parsed:
 //
 //	SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '<db>'
@@ -184,7 +184,7 @@ func (my *myServer) serve(conn net.Conn) {
 		scramble[i] = scramble[i]%127 + 1
 	}
 	id := my.nextID.Add(1) + 100
-	g := append([]byte{10}, "8.4.0-portby-fake\x00"...)
+	g := append([]byte{10}, "8.4.0-laneway-fake\x00"...)
 	g = binary.LittleEndian.AppendUint32(g, id)
 	g = append(append(g, scramble[:8]...), 0)
 	caps := uint32(0xffffffff &^ (1 << 11)) // everything but SSL

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
 )
 
 func TestALaravelProjectHasATestDatabaseWhenItsTestsUseOne(t *testing.T) {
@@ -86,7 +86,7 @@ func TestALaravelWorktreeHasATestDatabaseWhenTheMainWorktreeHasAnUncommittedEnvT
 		WriteFile(".gitignore", ".env\n.env.testing\n").
 		Commit("a Laravel app whose test env isn't committed")
 	wt := repo.AddWorktree("feature")
-	wt.WriteFile(".env", string(env)) // Portby copies the main Worktree's
+	wt.WriteFile(".env", string(env)) // Laneway copies the main Worktree's
 	if resolveDir(t, wt.Dir).TestDatabase {
 		t.Fatal("TestDatabase = true without any .env.testing, want false")
 	}

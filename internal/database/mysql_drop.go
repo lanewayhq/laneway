@@ -4,10 +4,10 @@ import (
 	"context"
 	"slices"
 
-	"github.com/mrsafalpiya/portby.dev/internal/mysqlwire"
+	"github.com/lanewayhq/laneway/internal/mysqlwire"
 )
 
-// mySystemSchemas are the MySQL server's own databases, never Portby's.
+// mySystemSchemas are the MySQL server's own databases, never Laneway's.
 var mySystemSchemas = []string{"information_schema", "mysql", "performance_schema", "sys"}
 
 // dropLockWait is how long, in seconds, a DROP DATABASE waits for a

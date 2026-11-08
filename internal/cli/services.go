@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"text/tabwriter"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
+	"github.com/lanewayhq/laneway/internal/api"
 )
 
-// runServices is `portby services [ls|up|down] [name]`.
+// runServices is `lane services [ls|up|down] [name]`.
 func runServices(ctx context.Context, env Env, args []string) error {
 	action := "ls"
 	if len(args) > 0 {
@@ -41,7 +41,7 @@ func runServices(ctx context.Context, env Env, args []string) error {
 			return err
 		}
 		if len(services) == 0 {
-			fmt.Fprintln(env.Stdout, "No Services yet. A Project declares the ones it uses in the [services] table of portby.toml, such as redis = \"7\".")
+			fmt.Fprintln(env.Stdout, "No Services yet. A Project declares the ones it uses in the [services] table of laneway.toml, such as redis = \"7\".")
 			return nil
 		}
 		return printServices(env, services)
@@ -52,7 +52,7 @@ func runServices(ctx context.Context, env Env, args []string) error {
 		}
 		return err
 	default:
-		return usageError{fmt.Sprintf("unknown subcommand %q; use `portby services`, `portby services up [name]` or `portby services down [name]`", action)}
+		return usageError{fmt.Sprintf("unknown subcommand %q; use `lane services`, `lane services up [name]` or `lane services down [name]`", action)}
 	}
 }
 

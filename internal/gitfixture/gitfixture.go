@@ -97,10 +97,10 @@ func Git(t testing.TB, dir string, args ...string) string {
 	cmd.Env = append(os.Environ(),
 		"GIT_CONFIG_GLOBAL="+os.DevNull,
 		"GIT_CONFIG_NOSYSTEM=1",
-		"GIT_AUTHOR_NAME=Portby Test",
-		"GIT_AUTHOR_EMAIL=test@portby.invalid",
-		"GIT_COMMITTER_NAME=Portby Test",
-		"GIT_COMMITTER_EMAIL=test@portby.invalid",
+		"GIT_AUTHOR_NAME=Laneway Test",
+		"GIT_AUTHOR_EMAIL=test@laneway.invalid",
+		"GIT_COMMITTER_NAME=Laneway Test",
+		"GIT_COMMITTER_EMAIL=test@laneway.invalid",
 		// Commits otherwise start a detached `git maintenance run --auto`
 		// in the repo, which can outlive the test (testkit fails a test
 		// that leaves processes behind).

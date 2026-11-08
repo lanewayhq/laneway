@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // liveEvents opens the Dashboard's live stream at url and returns the data
@@ -108,7 +108,7 @@ func TestTheDashboardShowsServicesLiveAndStartsAndStopsThem(t *testing.T) {
 			}
 		}
 	}
-	if d.Engine.IsRunning("portby-redis-7") {
+	if d.Engine.IsRunning("laneway-redis-7") {
 		t.Fatal("a rejected request started redis:7")
 	}
 
@@ -119,7 +119,7 @@ func TestTheDashboardShowsServicesLiveAndStartsAndStopsThem(t *testing.T) {
 		s, _ := serviceIn(l, "redis:7")
 		return s.State == "running"
 	})
-	if !d.Engine.IsRunning("portby-redis-7") {
+	if !d.Engine.IsRunning("laneway-redis-7") {
 		t.Fatal("services/up from the Dashboard didn't start the container")
 	}
 
@@ -130,7 +130,7 @@ func TestTheDashboardShowsServicesLiveAndStartsAndStopsThem(t *testing.T) {
 		s, _ := serviceIn(l, "redis:7")
 		return s.State == "stopped"
 	})
-	if d.Engine.IsRunning("portby-redis-7") {
+	if d.Engine.IsRunning("laneway-redis-7") {
 		t.Fatal("services/down from the Dashboard didn't stop the container")
 	}
 }
@@ -157,7 +157,7 @@ func TestTheDashboardShowsOrphansLiveAndDropsThemAsGcDoes(t *testing.T) {
 		t.Fatalf("the Orphan was made at %v and is dropped at %v, want 24 hours later", got.Since, got.Expires)
 	}
 
-	// Like `portby gc`: a preview lists what would go and drops nothing,
+	// Like `lane gc`: a preview lists what would go and drops nothing,
 	// then exactly the previewed list is sent.
 	status, body := dashboardRequest(t, d, http.MethodPost, dash+"/api/v1/gc", dash, api.GCRequest{Preview: true})
 	if status != http.StatusOK {

@@ -8,9 +8,9 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/client"
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/client"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 func TestAPISocketIsOnlyAccessibleByTheUser(t *testing.T) {
@@ -44,9 +44,9 @@ func TestCLIFailsClearlyWhenDaemonIsNotRunning(t *testing.T) {
 	for _, args := range [][]string{{"link"}, {"status"}} {
 		res := d.RunCLI(repo.Dir, args...)
 		if res.ExitCode == 0 {
-			t.Fatalf("portby %s succeeded without a daemon:\n%s", args[0], res.Output())
+			t.Fatalf("lane %s succeeded without a daemon:\n%s", args[0], res.Output())
 		}
-		assertContains(t, res.Stderr, "the Portby daemon is not running")
+		assertContains(t, res.Stderr, "the Laneway daemon is not running")
 	}
 	_, err := d.Client().Projects(context.Background())
 	if !errors.Is(err, client.ErrDaemonNotRunning) {

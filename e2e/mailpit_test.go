@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // dialMail connects to the Mailpit Service listening on port on the
@@ -97,7 +97,7 @@ func TestMailpitAcceptsSMTPOn1025AndStartsOnTheFirstConnection(t *testing.T) {
 }
 
 // inboxSubjects are the subjects of the messages Mailpit's inbox at inbox
-// (such as https://mail.portby.localhost) lists, read through its API as
+// (such as https://mail.laneway.localhost) lists, read through its API as
 // the inbox's page does.
 func inboxSubjects(t *testing.T, d *testkit.Daemon, inbox string) []string {
 	t.Helper()
@@ -113,14 +113,14 @@ func inboxSubjects(t *testing.T, d *testkit.Daemon, inbox string) []string {
 	return subjects
 }
 
-func TestTheInboxIsAtMailPortbyLocalhostAndVisitingItStartsMailpit(t *testing.T) {
+func TestTheInboxIsAtMailLanewayLocalhostAndVisitingItStartsMailpit(t *testing.T) {
 	t.Parallel()
-	// The only test that may use mail.portby.localhost: Caddy's cert cache
+	// The only test that may use mail.laneway.localhost: Caddy's cert cache
 	// is shared by name (see dashboardDaemon).
 	d := testkit.StartDaemon(t)
 	d.MustRunCLI(serviceProject(t, "mail-inbox", `mailpit = "v1"`, "").Dir, "link")
 
-	if subjects := inboxSubjects(t, d, "https://mail.portby.localhost"); len(subjects) != 0 {
+	if subjects := inboxSubjects(t, d, "https://mail.laneway.localhost"); len(subjects) != 0 {
 		t.Fatalf("a new inbox lists %q", subjects)
 	}
 	if n := countCalls(d.Engine.Calls(), "start"); n != 1 {
@@ -131,7 +131,7 @@ func TestTheInboxIsAtMailPortbyLocalhostAndVisitingItStartsMailpit(t *testing.T)
 	}
 
 	sendMail(t, dialMail(t, d, 1025), "Your order shipped")
-	if subjects := inboxSubjects(t, d, "https://mail.portby.localhost"); len(subjects) != 1 || subjects[0] != "Your order shipped" {
+	if subjects := inboxSubjects(t, d, "https://mail.laneway.localhost"); len(subjects) != 1 || subjects[0] != "Your order shipped" {
 		t.Fatalf("the inbox lists %q, want the message just sent", subjects)
 	}
 }

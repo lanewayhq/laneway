@@ -4,7 +4,7 @@
 // installs a Runtime.
 package runtimes
 
-// The Runtimes Portby knows about.
+// The Runtimes Laneway knows about.
 const (
 	PHP  = "php"
 	Node = "node"

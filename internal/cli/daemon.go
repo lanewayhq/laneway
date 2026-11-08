@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/daemon"
-	"github.com/mrsafalpiya/portby.dev/internal/paths"
+	"github.com/lanewayhq/laneway/internal/daemon"
+	"github.com/lanewayhq/laneway/internal/paths"
 )
 
 // runDaemon runs the daemon until ctx is cancelled (main cancels it on SIGINT

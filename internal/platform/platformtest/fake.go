@@ -1,5 +1,5 @@
 // Package platformtest provides a fake platform.Platform that records what
-// Portby asked of the machine instead of doing it.
+// Laneway asked of the machine instead of doing it.
 package platformtest
 
 import (
@@ -11,7 +11,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/mrsafalpiya/portby.dev/internal/platform"
+	"github.com/lanewayhq/laneway/internal/platform"
 )
 
 // The names of the Fake's trust stores.
@@ -43,7 +43,7 @@ type Fake struct {
 // New returns a Fake for a plain Linux machine where nothing is set up yet.
 func New() *Fake {
 	return &Fake{
-		service: platform.ServiceStatus{Unit: "portby.service"},
+		service: platform.ServiceStatus{Unit: "laneway.service"},
 		ports:   platform.PortPermission{Detail: "net.ipv4.ip_unprivileged_port_start is 1024"},
 		trusted: map[string]map[[32]byte]bool{},
 		holders: map[int][]platform.Holder{},
@@ -127,7 +127,7 @@ func (f *Fake) InstallService(_ context.Context, exe string) (string, error) {
 	if hook != nil {
 		hook()
 	}
-	return "installed and started portby.service", nil
+	return "installed and started laneway.service", nil
 }
 
 func (f *Fake) ServiceStatus(context.Context) (platform.ServiceStatus, error) {
@@ -210,7 +210,7 @@ type store struct {
 
 func (s store) Name() string { return s.name }
 
-func (s store) Prompt() string { return fmt.Sprintf("(fake) adding Portby's CA to the %s", s.name) }
+func (s store) Prompt() string { return fmt.Sprintf("(fake) adding Laneway's CA to the %s", s.name) }
 
 func (s store) Trusted(_ context.Context, ca *x509.Certificate) (bool, error) {
 	s.f.mu.Lock()

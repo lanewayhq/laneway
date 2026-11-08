@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/mrsafalpiya/portby.dev/internal/service"
+	"github.com/lanewayhq/laneway/internal/service"
 )
 
 // Variables are the names a template can use as {name}. Every Worktree has a

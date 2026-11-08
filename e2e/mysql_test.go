@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/mysqlwire"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/mysqlwire"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // mysqlProject is a Project whose database is a MySQL database, with the Env
@@ -23,14 +23,14 @@ func mysqlProject(t *testing.T, name, database string) *gitfixture.Repo {
 	t.Helper()
 	return gitfixture.New(t, name).
 		WriteFile(".gitignore", ".env\n").
-		WriteFile("portby.toml", "[database]\nengine = \"mysql\"\n"+database+"\n"+
+		WriteFile("laneway.toml", "[database]\nengine = \"mysql\"\n"+database+"\n"+
 			"[env]\nDB_CONNECTION = \"mysql\"\nDB_HOST = \"{db_host}\"\nDB_PORT = \"{db_port}\"\n"+
 			"DB_DATABASE = \"{db}\"\nDB_USERNAME = \"{db_username}\"\nDB_PASSWORD = \"{db_password}\"\n").
 		Commit("declare a MySQL database")
 }
 
 // dialMySQL connects to the database db of the MySQL Service listening on
-// port on the daemon's Service host, as Portby's shared user.
+// port on the daemon's Service host, as Laneway's shared user.
 func dialMySQL(t *testing.T, d *testkit.Daemon, port int, db string) *mysqlwire.Conn {
 	t.Helper()
 	conn, err := connectMySQL(d, port, db)
@@ -46,8 +46,8 @@ func connectMySQL(d *testkit.Daemon, port int, db string) (*mysqlwire.Conn, erro
 	defer cancel()
 	return mysqlwire.Connect(ctx, mysqlwire.Config{
 		Addr:     net.JoinHostPort(d.ServiceHost(), strconv.Itoa(port)),
-		User:     "portby",
-		Password: "portby",
+		User:     "laneway",
+		Password: "laneway",
 		Database: db,
 	})
 }
@@ -84,7 +84,7 @@ func TestLinkingCreatesTheProjectsEmptyMySQLDatabase(t *testing.T) {
 
 	env := readFile(t, filepath.Join(repo.Dir, ".env"))
 	for _, line := range []string{"DB_CONNECTION=mysql", "DB_HOST=" + d.ServiceHost(), "DB_PORT=3306",
-		"DB_DATABASE=my_link", "DB_USERNAME=portby", "DB_PASSWORD=portby"} {
+		"DB_DATABASE=my_link", "DB_USERNAME=laneway", "DB_PASSWORD=laneway"} {
 		assertContains(t, env, line+"\n")
 	}
 	conn := dialMySQL(t, d, 3306, "my_link")
@@ -191,7 +191,7 @@ func TestAPinnedMySQLVersionGetsItsOwnPortAndGoesIdleOnceSetupIsDone(t *testing.
 
 	assertContains(t, readFile(t, filepath.Join(repo.Dir, ".env")), "DB_PORT=33080\n")
 	if got := serviceRow(t, d, "mysql", "8.0"); !slices.Equal(got, []string{"mysql", "8.0", d.ServiceHost(), "33080", "running"}) {
-		t.Fatalf("`portby services` shows %v, want mysql:8.0 running on port 33080", got)
+		t.Fatalf("`lane services` shows %v, want mysql:8.0 running on port 33080", got)
 	}
 	if !slices.Contains(d.Engine.Calls(), "pull docker.io/library/mysql:8.0") {
 		t.Fatalf("the engine was asked %q, want the mysql:8.0 image pulled", d.Engine.Calls())
@@ -216,7 +216,7 @@ func TestACopyCutShortIsCopiedAgainRatherThanKept(t *testing.T) {
 	// some of its tables, and the table that marks the copy unfinished.
 	myExec(t, main, "CREATE DATABASE `my_cut__feature`")
 	myExec(t, main, "USE `my_cut__feature`")
-	myExec(t, main, "CREATE TABLE portby_copy_in_progress (id int)")
+	myExec(t, main, "CREATE TABLE laneway_copy_in_progress (id int)")
 	myExec(t, main, "CREATE TABLE notes (body text)")
 
 	wt := repo.AddWorktree("feature")
@@ -248,7 +248,7 @@ func TestWithTestDatabasesOnEachWorktreeGetsAnEmptyMySQLTestDatabaseInEnvTesting
 
 	testing := filepath.Join(wt.Dir, ".env.testing")
 	for key, want := range map[string]string{"APP_ENV": "testing", "DB_DATABASE": "my_tdb__feature_t_test",
-		"DB_HOST": d.ServiceHost(), "DB_PORT": "3306", "DB_USERNAME": "portby", "DB_PASSWORD": "portby"} {
+		"DB_HOST": d.ServiceHost(), "DB_PORT": "3306", "DB_USERNAME": "laneway", "DB_PASSWORD": "laneway"} {
 		if got := envValue(t, testing, key); got != want {
 			t.Errorf(".env.testing has %s=%s, want %s", key, got, want)
 		}

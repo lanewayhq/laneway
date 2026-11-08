@@ -9,16 +9,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
-func TestFilesInTheStaticDirAreServedByPortbyAndEverythingElseByTheProcess(t *testing.T) {
+func TestFilesInTheStaticDirAreServedByLanewayAndEverythingElseByTheProcess(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	server := testkit.TestServer(t)
 	repo := gitfixture.New(t, "static-files").
-		WriteFile("portby.toml", fmt.Sprintf("[processes.web]\ncommand = %q\nprimary = true\nstatic_dir = \"public\"\n",
+		WriteFile("laneway.toml", fmt.Sprintf("[processes.web]\ncommand = %q\nprimary = true\nstatic_dir = \"public\"\n",
 			server+" --name web")).
 		WriteFile("public/css/app.css", "body { color: teal }\n").
 		WriteFile("public/index.php", "<?php // the front controller\n").

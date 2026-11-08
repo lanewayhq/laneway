@@ -6,29 +6,29 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitrepo"
-	"github.com/mrsafalpiya/portby.dev/internal/harness"
+	"github.com/lanewayhq/laneway/internal/gitrepo"
+	"github.com/lanewayhq/laneway/internal/harness"
 )
 
-// runHarness is `portby harness add <harness>`. Like `init`, it works on the
+// runHarness is `lane harness add <harness>`. Like `init`, it works on the
 // current Worktree's files only, so it doesn't need the daemon.
 func runHarness(ctx context.Context, env Env, args []string) error {
 	names := strings.Join(harness.Names(), "|")
 	if len(args) == 0 || args[0] != "add" {
-		return usageError{fmt.Sprintf("use `portby harness add <%s>`", names)}
+		return usageError{fmt.Sprintf("use `lane harness add <%s>`", names)}
 	}
 	fs := newFlags(env, "harness add <"+names+">")
 	if err := fs.Parse(args[1:]); err != nil {
 		return parseFlags(fs, args[1:])
 	}
 	if fs.NArg() != 1 {
-		return usageError{fmt.Sprintf("name one Harness: `portby harness add <%s>`", names)}
+		return usageError{fmt.Sprintf("name one Harness: `lane harness add <%s>`", names)}
 	}
 	name := fs.Arg(0)
 
 	checkout, err := gitrepo.Resolve(ctx, env.Dir)
 	if errors.Is(err, gitrepo.ErrNotGitRepo) {
-		return fmt.Errorf("%s is not inside a git repository; run `portby harness add` from a git repository", env.Dir)
+		return fmt.Errorf("%s is not inside a git repository; run `lane harness add` from a git repository", env.Dir)
 	}
 	if err != nil {
 		return err

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 func TestAliasServesTheWorktreeUntilRemoved(t *testing.T) {

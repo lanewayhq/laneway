@@ -3,9 +3,9 @@ package daemon
 import (
 	"context"
 
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
-	"github.com/mrsafalpiya/portby.dev/internal/runtimes"
-	"github.com/mrsafalpiya/portby.dev/internal/supervisor"
+	"github.com/lanewayhq/laneway/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/runtimes"
+	"github.com/lanewayhq/laneway/internal/supervisor"
 )
 
 // worktreeConfig is a Worktree's resolved config plus the environment its
@@ -43,7 +43,7 @@ func (d *Daemon) resolveWorktree(ctx context.Context, dir string) (worktreeConfi
 
 // apply gives specs the Worktree's environment, and writes the Runtime and
 // Test Database warnings into the Primary Process's output (the first Process's if there is
-// no Primary), so `portby logs` and the start error page show them.
+// no Primary), so `lane logs` and the start error page show them.
 func (w worktreeConfig) apply(specs []supervisor.Spec, primary string) {
 	for i := range specs {
 		specs[i].Env = w.env

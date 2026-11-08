@@ -1,10 +1,10 @@
 // Package pgwire is a small Postgres client: just enough of the frontend/
-// backend protocol (v3) for Portby to manage databases in its Postgres
+// backend protocol (v3) for Laneway to manage databases in its Postgres
 // Service. It logs in (cleartext, MD5 or SCRAM-SHA-256 passwords) and runs
 // simple queries, whose results come back as text.
 //
 // It is written here rather than taken from a driver for the same reason the
-// container engine client is: Portby needs a handful of statements, and a
+// container engine client is: Laneway needs a handful of statements, and a
 // driver would bring in far more than that.
 package pgwire
 
@@ -49,7 +49,7 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("%s: %s (SQLSTATE %s)", strings.ToLower(e.Severity), msg, e.Code)
 }
 
-// SQLSTATE codes Portby acts on.
+// SQLSTATE codes Laneway acts on.
 const (
 	// ObjectInUse: CREATE DATABASE … TEMPLATE while others are connected
 	// to the template, among others.

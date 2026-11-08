@@ -1,5 +1,5 @@
-// Package dashboard is Portby's web Dashboard: a page built into the binary,
-// served by the daemon at https://portby.localhost, that talks to the same
+// Package dashboard is Laneway's web Dashboard: a page built into the binary,
+// served by the daemon at https://laneway.localhost, that talks to the same
 // JSON API as the CLI (package api), mounted under /api.
 //
 // The frontend is plain HTML, CSS and JavaScript modules in static/, with no
@@ -14,11 +14,11 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
+	"github.com/lanewayhq/laneway/internal/api"
 )
 
 // DefaultDomain is where the daemon serves the Dashboard.
-const DefaultDomain = "portby.localhost"
+const DefaultDomain = "laneway.localhost"
 
 //go:embed static
 var static embed.FS

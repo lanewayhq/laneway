@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/config"
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/recipe"
 )
 
 // resolveLaravel resolves testdata/<name> the way the daemon does, with the
@@ -376,7 +376,7 @@ func TestProjectConfigLayersOverTheLaravelRecipe(t *testing.T) {
 		t.Errorf("OnCreate = %q, want the Project's step after the Recipe's", res.OnCreate)
 	}
 	if res.Env["MAIL_MAILER"] != "log" || res.Env["MAIL_HOST"] != "{mailpit_host}" {
-		t.Errorf("env MAIL_MAILER = %q, MAIL_HOST = %q; want log from portby.local.toml and the Recipe's {mailpit_host}",
+		t.Errorf("env MAIL_MAILER = %q, MAIL_HOST = %q; want log from laneway.local.toml and the Recipe's {mailpit_host}",
 			res.Env["MAIL_MAILER"], res.Env["MAIL_HOST"])
 	}
 }

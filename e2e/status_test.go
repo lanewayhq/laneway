@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 func TestStatusWithNoProjects(t *testing.T) {
@@ -33,7 +33,7 @@ func TestProjectsSurviveDaemonRestart(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	shop := gitfixture.New(t, "shop")
-	blog := gitfixture.New(t, "blog-src").WriteFile("portby.toml", `name = "blog"`).Commit("config")
+	blog := gitfixture.New(t, "blog-src").WriteFile("laneway.toml", `name = "blog"`).Commit("config")
 	d.MustRunCLI(shop.Dir, "link")
 	d.MustRunCLI(blog.Dir, "link")
 
@@ -83,7 +83,7 @@ func TestStatusListsWorktreesUnderTheirProjects(t *testing.T) {
 	}
 }
 
-// assertStatusRows checks `portby status` lists exactly rows of (Project, path)
+// assertStatusRows checks `lane status` lists exactly rows of (Project, path)
 // in order, after its header line. Each row's Domain sits between the two,
 // then its setup state, and nothing has started them.
 func assertStatusRows(t *testing.T, out string, rows [][2]string) {

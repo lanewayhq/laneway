@@ -1,6 +1,6 @@
 package database
 
-// Engines are the database engines Portby knows, by the name config gives
+// Engines are the database engines Laneway knows, by the name config gives
 // them ([database] engine). Adding an engine is a row here; one whose
 // databases live in a Service also needs that Service's engine (package
 // service) under the same name.
@@ -16,7 +16,7 @@ var Engines = []struct {
 	{"mysql", func(_ string, server Server) Engine { return MySQL{Server: server} }},
 }
 
-// New is the Engine called name, or nil if Portby has none by that name.
+// New is the Engine called name, or nil if Laneway has none by that name.
 func New(name, path string, server Server) Engine {
 	for _, e := range Engines {
 		if e.Name == name {

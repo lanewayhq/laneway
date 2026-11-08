@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/config"
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/recipe"
 )
 
 // servicesStack is a test Recipe, detected by a `services-stack` file, that
@@ -37,7 +37,7 @@ func TestServicesMergeByEngineLaterLayersPinningTheVersion(t *testing.T) {
 
 	res := mustResolveFixture(t, "services-layers", servicesStack{})
 	if want := []recipe.Service{{Engine: "redis", Version: "7.4"}}; !reflect.DeepEqual(res.Services, want) {
-		t.Errorf("Services = %+v, want portby.local.toml's %+v", res.Services, want)
+		t.Errorf("Services = %+v, want laneway.local.toml's %+v", res.Services, want)
 	}
 }
 
@@ -70,14 +70,14 @@ func TestServicesConfigWrittenAsALayerResolvesToItself(t *testing.T) {
 
 func TestInvalidServicesConfigNamesTheFileAndTheKey(t *testing.T) {
 	for _, tc := range []struct{ toml, want string }{
-		{"[services]\nmemcached = \"1.6\"", `services.memcached: Portby has no Service "memcached"; the Services are redis`},
+		{"[services]\nmemcached = \"1.6\"", `services.memcached: Laneway has no Service "memcached"; the Services are redis`},
 		{"[services]\nredis = \"\"", `services.redis must be a version, such as "7" or "7.2", not ""`},
 		{"[services]\nredis = \"7 latest\"", `services.redis must be a version`},
 		{"[services]\nredis = 7", "services.redis"},
 		{`services = "redis"`, "services must be a table"},
 	} {
-		_, err := config.ParseLayer("/code/shop/portby.toml", []byte(tc.toml))
-		if err == nil || !strings.Contains(err.Error(), "/code/shop/portby.toml") || !strings.Contains(err.Error(), tc.want) {
+		_, err := config.ParseLayer("/code/shop/laneway.toml", []byte(tc.toml))
+		if err == nil || !strings.Contains(err.Error(), "/code/shop/laneway.toml") || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: err = %v, want one naming the file and %q", tc.toml, err, tc.want)
 		}
 	}

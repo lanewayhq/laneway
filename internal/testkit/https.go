@@ -36,13 +36,13 @@ func (d *Daemon) HTTPAddr() string {
 	return addr.String()
 }
 
-// CAPool returns a cert pool holding only Portby's local root CA, read from
-// the daemon's home the way `portby install` would trust it.
+// CAPool returns a cert pool holding only Laneway's local root CA, read from
+// the daemon's home the way `lane install` would trust it.
 func (d *Daemon) CAPool() *x509.CertPool {
 	d.t.Helper()
 	pem, err := os.ReadFile(d.Paths.CARootCert())
 	if err != nil {
-		d.t.Fatalf("testkit: reading Portby's root CA: %v", err)
+		d.t.Fatalf("testkit: reading Laneway's root CA: %v", err)
 	}
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(pem) {
@@ -52,7 +52,7 @@ func (d *Daemon) CAPool() *x509.CertPool {
 }
 
 // HTTPS returns a client that sends every request to the daemon's proxy,
-// whatever host the URL names, and trusts only Portby's root CA. The URL's
+// whatever host the URL names, and trusts only Laneway's root CA. The URL's
 // host is used for SNI and the Host header, so
 // d.HTTPS().Get("https://shop.localhost/") is what a browser would do.
 // Redirects are not followed.

@@ -10,12 +10,12 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/prepare"
-	"github.com/mrsafalpiya/portby.dev/internal/proxy"
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
-	"github.com/mrsafalpiya/portby.dev/internal/registry"
-	"github.com/mrsafalpiya/portby.dev/internal/runtimes"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/prepare"
+	"github.com/lanewayhq/laneway/internal/proxy"
+	"github.com/lanewayhq/laneway/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/registry"
+	"github.com/lanewayhq/laneway/internal/runtimes"
 )
 
 // setupPlan is what preparing the Worktree w does, in the spec's order:
@@ -30,7 +30,7 @@ import (
 // its database; other engines extend it there, not here. The Test Database
 // step (testdatabase.go) gives each Worktree an empty Test Database when
 // config's Test Database decision is on. To add a step, append a prepare.Step where that order puts it. A
-// step's Name is what `portby worktree ready`, `portby status` and the setup
+// step's Name is what `lane worktree ready`, `lane status` and the setup
 // error page show when it fails; anything it writes to its output is shown
 // with it, and prepare.Warn reports a problem it worked around. It must stop
 // when its ctx is cancelled (the Worktree was removed or the daemon is
@@ -107,9 +107,9 @@ func (d *Daemon) teardown(p registry.Project, w worktreeRef) {
 // setupEnv is the environment setup steps for the Worktree w run with in
 // dir: the one Processes start from (daemon.Config.Env) with dir's Runtimes
 // resolved into it, as for Processes, so `composer install` finds the
-// Project's PHP; plus PORTBY_<VARIABLE> for every Env Patch template
-// variable (PORTBY_PROJECT, PORTBY_WORKTREE, PORTBY_DOMAIN, PORTBY_URL,
-// PORTBY_DB, PORTBY_TEST_DB, …) and PORTBY_WORKTREE_PATH, so on_remove
+// Project's PHP; plus LANEWAY_<VARIABLE> for every Env Patch template
+// variable (LANEWAY_PROJECT, LANEWAY_WORKTREE, LANEWAY_DOMAIN, LANEWAY_URL,
+// LANEWAY_DB, LANEWAY_TEST_DB, …) and LANEWAY_WORKTREE_PATH, so on_remove
 // steps know which Worktree went. cfg is the config the steps come from.
 func (d *Daemon) setupEnv(ctx context.Context, p registry.Project, w worktreeRef, dir string, cfg recipe.Resolved) []string {
 	env := runtimes.Environ(ctx, dir, d.cfg.Env).Vars
@@ -118,9 +118,9 @@ func (d *Daemon) setupEnv(ctx context.Context, p registry.Project, w worktreeRef
 		vars["test_db"] = name
 	}
 	for _, k := range slices.Sorted(maps.Keys(vars)) {
-		env = append(env, "PORTBY_"+strings.ToUpper(k)+"="+vars[k])
+		env = append(env, "LANEWAY_"+strings.ToUpper(k)+"="+vars[k])
 	}
-	return append(env, "PORTBY_WORKTREE_PATH="+w.dir)
+	return append(env, "LANEWAY_WORKTREE_PATH="+w.dir)
 }
 
 // setupOf is the API view of the setup state of the Worktree at dir.
@@ -170,7 +170,7 @@ func (d *Daemon) worktreeReady(ctx context.Context, req api.ReadyRequest) (api.W
 		case errors.Is(err, prepare.ErrForgotten):
 			return api.WorktreeInfo{}, &api.Error{Code: api.CodeUnknownWorktree, Message: fmt.Sprintf("%s was removed", w.dir)}
 		case errors.Is(err, prepare.ErrClosed) || isClosing(d.closing):
-			return api.WorktreeInfo{}, &api.Error{Code: api.CodeShuttingDown, Message: "the Portby daemon stopped while waiting"}
+			return api.WorktreeInfo{}, &api.Error{Code: api.CodeShuttingDown, Message: "the Laneway daemon stopped while waiting"}
 		case err != nil:
 			return api.WorktreeInfo{}, err
 		}

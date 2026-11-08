@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/dashboard"
+	"github.com/lanewayhq/laneway/internal/dashboard"
 )
 
 // The Dashboard is served on a Unix socket next to the API socket (so the

@@ -16,7 +16,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/mrsafalpiya/portby.dev/internal/container"
+	"github.com/lanewayhq/laneway/internal/container"
 )
 
 // Server serves one fake container's port on ln until ln is closed. spec is
@@ -181,7 +181,7 @@ func (f *Fake) SetUnavailable(err error) {
 	f.unavailable = err
 }
 
-// Kill stops the named container behind Portby's back, as `docker stop`
+// Kill stops the named container behind Laneway's back, as `docker stop`
 // would.
 func (f *Fake) Kill(name string) {
 	f.mu.Lock()

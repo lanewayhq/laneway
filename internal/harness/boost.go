@@ -11,7 +11,7 @@ import (
 // instructions: Boost writes the guideline files of the agents it's set up
 // for (AGENTS.md, CLAUDE.md…) itself, inside its own block, and includes
 // every file in .ai/guidelines when it does.
-const boostGuideline = ".ai/guidelines/portby.md"
+const boostGuideline = ".ai/guidelines/laneway.md"
 
 // usesBoost reports whether the Project at root requires Laravel Boost. It
 // reads composer.json, which is committed, rather than boost.json, which

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/mrsafalpiya/portby.dev/internal/runtimes"
+	"github.com/lanewayhq/laneway/internal/runtimes"
 )
 
 // exitNotFound is the shell's exit code for a command that wasn't found.
@@ -37,7 +37,7 @@ func runExec(ctx context.Context, env Env, args []string) error {
 		args = args[1:]
 	}
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
-		usage := "Usage: portby exec [--worktree <name>] [--] <command> [args...]"
+		usage := "Usage: lane exec [--worktree <name>] [--] <command> [args...]"
 		if len(args) == 0 {
 			return usageError{"missing command; " + usage}
 		}
@@ -55,7 +55,7 @@ func runExec(ctx context.Context, env Env, args []string) error {
 	dir := info.Worktree.Path
 	rt := runtimes.Environ(ctx, dir, environOf(env))
 	for _, w := range rt.Warnings {
-		fmt.Fprintf(env.Stderr, "portby exec: warning: %s\n", w)
+		fmt.Fprintf(env.Stderr, "lane exec: warning: %s\n", w)
 	}
 	path, err := rt.LookPath(args[0])
 	if err != nil {

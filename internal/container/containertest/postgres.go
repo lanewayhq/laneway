@@ -14,12 +14,12 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/mrsafalpiya/portby.dev/internal/container"
+	"github.com/lanewayhq/laneway/internal/container"
 )
 
 // Postgres is a Server speaking a little of Postgres's protocol (v3), as
 // the postgres image configured by POSTGRES_USER / POSTGRES_PASSWORD would:
-// a cleartext password login, and simple queries for the statements Portby
+// a cleartext password login, and simple queries for the statements Laneway
 // and the tests send, matched by pattern rather than parsed:
 //
 //	SELECT 1 FROM pg_database WHERE datname = '<db>'
@@ -163,7 +163,7 @@ func (pg *pgServer) serve(conn net.Conn) {
 		pg.mu.Unlock()
 	}()
 	s.send('R', binary.BigEndian.AppendUint32(nil, 0))
-	s.send('S', []byte("server_version\x0018.0 (portby fake)\x00"))
+	s.send('S', []byte("server_version\x0018.0 (laneway fake)\x00"))
 	s.send('K', binary.BigEndian.AppendUint32(binary.BigEndian.AppendUint32(nil, s.pid), 42))
 	s.send('Z', []byte("I"))
 	for {

@@ -5,7 +5,7 @@ package api
 // level) and adding values to a documented set of states doesn't change it.
 const InfoSchemaVersion = 1
 
-// Info is the body of GET /v1/info and exactly what `portby info --json`
+// Info is the body of GET /v1/info and exactly what `lane info --json`
 // prints: everything about the Worktree containing a directory that agents,
 // scripts and the Dashboard need to work with it.
 //
@@ -21,7 +21,7 @@ type Info struct {
 	Project       InfoProject  `json:"project"`
 	Worktree      InfoWorktree `json:"worktree"`
 	// Domain is the Worktree's own Domain, which identifies it, such as
-	// "feature-x.shop.localhost"; "" if Portby hasn't discovered the
+	// "feature-x.shop.localhost"; "" if Laneway hasn't discovered the
 	// Worktree yet. It doesn't change when the Worktree gets an Alias.
 	Domain string `json:"domain"`
 	// URL is the Worktree's URL: the HTTPS URL of its Primary Domain,
@@ -48,7 +48,7 @@ type Info struct {
 	// Services are the Services the Worktree's config uses (including its
 	// database's), sorted by name, with how to connect to them.
 	Services []InfoService `json:"services"`
-	// ConfigError is why the Worktree's portby.toml or portby.local.toml
+	// ConfigError is why the Worktree's laneway.toml or laneway.local.toml
 	// can't be used, naming the file and key; "" if they can. While it is
 	// set, Processes and Services are empty.
 	ConfigError string `json:"configError"`
@@ -99,12 +99,12 @@ type InfoSetup struct {
 type InfoProcess struct {
 	Name string `json:"name"`
 	// StartMode is "lazy" (started by the first request), "always"
-	// (started once the Worktree is Ready) or "manual" (only by `portby
+	// (started once the Worktree is Ready) or "manual" (only by `lane
 	// up <name>`); "" for a Process that runs but is no longer declared.
 	StartMode string `json:"startMode"`
 	// Primary is the Process the Worktree's Domain is served by.
 	Primary bool `json:"primary"`
-	// HTTP is true for the Processes Portby serves.
+	// HTTP is true for the Processes Laneway serves.
 	HTTP bool `json:"http"`
 	// State is "running", "restarting" (it crashed and is waiting out its
 	// backoff), "failed" (it kept crashing and won't be restarted) or
@@ -139,7 +139,7 @@ type InfoService struct {
 	Name    string `json:"name"`
 	Engine  string `json:"engine"`
 	Version string `json:"version"`
-	// Host and Port are where clients connect. Portby listens there and
+	// Host and Port are where clients connect. Laneway listens there and
 	// starts the Service on the first connection, so connect even when
 	// State isn't "running".
 	Host string `json:"host"`
@@ -150,7 +150,7 @@ type InfoService struct {
 	// State is "stopped", "starting", "running" or "idle" (stopped after
 	// its idle timeout; the next connection starts it).
 	State string `json:"state"`
-	// Error says why the Service can't be used (Portby can't listen on
+	// Error says why the Service can't be used (Laneway can't listen on
 	// its port, or its last start failed); else "".
 	Error string `json:"error"`
 }

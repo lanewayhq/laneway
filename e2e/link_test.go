@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 func TestLinkRegistersProjectNamedAfterDirectory(t *testing.T) {
@@ -34,12 +34,12 @@ func assertContains(t *testing.T, got, want string) {
 	}
 }
 
-func TestLinkUsesNameFromPortbyToml(t *testing.T) {
+func TestLinkUsesNameFromLanewayToml(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "shop-checkout").
-		WriteFile("portby.toml", "name = \"shop\"\n").
-		Commit("add portby.toml")
+		WriteFile("laneway.toml", "name = \"shop\"\n").
+		Commit("add laneway.toml")
 
 	res := d.MustRunCLI(repo.Dir, "link")
 	assertContains(t, res.Stdout, `Linked Project "shop"`)

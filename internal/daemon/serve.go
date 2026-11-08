@@ -10,15 +10,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/activity"
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/config"
-	"github.com/mrsafalpiya/portby.dev/internal/naming"
-	"github.com/mrsafalpiya/portby.dev/internal/prepare"
-	"github.com/mrsafalpiya/portby.dev/internal/proxy"
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
-	"github.com/mrsafalpiya/portby.dev/internal/registry"
-	"github.com/mrsafalpiya/portby.dev/internal/supervisor"
+	"github.com/lanewayhq/laneway/internal/activity"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/naming"
+	"github.com/lanewayhq/laneway/internal/prepare"
+	"github.com/lanewayhq/laneway/internal/proxy"
+	"github.com/lanewayhq/laneway/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/registry"
+	"github.com/lanewayhq/laneway/internal/supervisor"
 )
 
 // StartTimeout is how long the Primary Process gets to accept connections
@@ -45,7 +45,7 @@ type served struct {
 	// Worktree is Idle.
 	activity *activity.Tracker
 	// lifecycle serialises changes to which Processes run (starts and
-	// going Idle) and Portby's writes to the Worktree's .env, so setup's
+	// going Idle) and Laneway's writes to the Worktree's .env, so setup's
 	// env step never writes it while a start or a moved Primary Domain
 	// does.
 	lifecycle sync.Mutex
@@ -197,11 +197,11 @@ func (d *Daemon) specs(s *served, cfg worktreeConfig, procs []recipe.Process) []
 		command, err := d.withViteConfig(s, proc)
 		if err != nil {
 			d.log.Error("writing the Vite config", "project", s.project, "process", proc.Name, "err", err)
-			command = "echo " + shellQuote("portby: could not write the Vite config: "+err.Error()) + " >&2; exit 1"
+			command = "echo " + shellQuote("laneway: could not write the Vite config: "+err.Error()) + " >&2; exit 1"
 		}
 		if command, err = d.withPHPIniDir(command); err != nil {
 			d.log.Error("writing the PHP ini", "project", s.project, "process", proc.Name, "err", err)
-			command = "echo " + shellQuote("portby: could not write the PHP ini: "+err.Error()) + " >&2; exit 1"
+			command = "echo " + shellQuote("laneway: could not write the PHP ini: "+err.Error()) + " >&2; exit 1"
 		}
 		specs = append(specs, supervisor.Spec{
 			Name:    proc.Name,
@@ -273,7 +273,7 @@ func (d *Daemon) starting(s *served) *startAttempt {
 		d.startsMu.Lock()
 		defer d.startsMu.Unlock()
 		if d.shuttingDown {
-			st.err = errors.New("the Portby daemon is shutting down")
+			st.err = errors.New("the Laneway daemon is shutting down")
 			close(st.done)
 			return st
 		}
@@ -295,7 +295,7 @@ func (d *Daemon) starting(s *served) *startAttempt {
 // and the lazy and manual ones in st.
 func (d *Daemon) bootWorktree(s *served, st *startAttempt) (string, error) {
 	// Setup can take minutes: wait for it before taking the lifecycle
-	// lock, so `portby down` doesn't wait for it too.
+	// lock, so `lane down` doesn't wait for it too.
 	if err := d.waitForReady(s); err != nil {
 		return "", err
 	}
@@ -520,10 +520,10 @@ func (r router) Upstream(ctx context.Context, domain string, waitForPreparation 
 		manual := st.manual[process]
 		s.mu.Unlock()
 		if manual {
-			return "", fmt.Errorf("Process %q of Project %q isn't running; it is manual, so start it with `portby up %s`",
+			return "", fmt.Errorf("Process %q of Project %q isn't running; it is manual, so start it with `lane up %s`",
 				process, s.project, process)
 		}
-		// `portby down <process>` stopped it: start it again, as after
+		// `lane down <process>` stopped it: start it again, as after
 		// Idle.
 		s.mu.Lock()
 		if s.start == st {

@@ -1,11 +1,11 @@
 // Package mysqlwire is a small MySQL client: just enough of the client/server
-// protocol for Portby to manage databases in its MySQL Service. It logs in
+// protocol for Laneway to manage databases in its MySQL Service. It logs in
 // (caching_sha2_password, including the RSA exchange a plain-TCP connection
 // needs the first time, and mysql_native_password) and runs text queries,
 // whose results come back as text.
 //
 // It is written here rather than taken from a driver for the reasons pgwire
-// is: Portby sends a few statements, all on one session whose settings
+// is: Laneway sends a few statements, all on one session whose settings
 // (USE, foreign_key_checks) must stick, which database/sql's pool works
 // against. The fake MySQL in containertest has to speak the protocol anyway.
 package mysqlwire
@@ -44,7 +44,7 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("%s (MySQL error %d, SQLSTATE %s)", e.Message, e.Code, e.State)
 }
 
-// Error codes Portby acts on.
+// Error codes Laneway acts on.
 const (
 	// BadDatabase: unknown database.
 	BadDatabase = 1049

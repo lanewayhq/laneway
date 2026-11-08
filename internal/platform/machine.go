@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// Detect returns the Platform for the machine Portby is running on, reading
+// Detect returns the Platform for the machine Laneway is running on, reading
 // the environment through getenv.
 func Detect(getenv func(string) string) Platform {
 	l := &Linux{Getenv: getenv, Run: ExecRunner{}}
@@ -204,7 +204,7 @@ func pingEngine(ctx context.Context, sock string) bool {
 func (l *Linux) EnableContainerEngine(ctx context.Context) (string, error) {
 	if _, err := l.Run.LookPath("podman"); err != nil {
 		if _, err := l.Run.LookPath("docker"); err == nil {
-			return "Podman isn't installed, so Portby will use Docker", nil
+			return "Podman isn't installed, so Laneway will use Docker", nil
 		}
 		return "", errors.New("neither Podman nor Docker is installed")
 	}

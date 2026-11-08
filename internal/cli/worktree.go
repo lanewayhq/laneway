@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
+	"github.com/lanewayhq/laneway/internal/api"
 )
 
-// worktreeCommands are the `portby worktree <name>` subcommands.
+// worktreeCommands are the `lane worktree <name>` subcommands.
 var worktreeCommands = map[string]func(ctx context.Context, env Env, args []string) error{
 	"add":   runWorktreeAdd,
 	"alias": runWorktreeAlias,
@@ -16,11 +16,11 @@ var worktreeCommands = map[string]func(ctx context.Context, env Env, args []stri
 
 func runWorktree(ctx context.Context, env Env, args []string) error {
 	if len(args) == 0 {
-		return usageError{"missing subcommand; use `portby worktree add <name>`, `portby worktree ready` or `portby worktree alias <name>`"}
+		return usageError{"missing subcommand; use `lane worktree add <name>`, `lane worktree ready` or `lane worktree alias <name>`"}
 	}
 	run, ok := worktreeCommands[args[0]]
 	if !ok {
-		return usageError{fmt.Sprintf("unknown subcommand %q; use `portby worktree add <name>`, `portby worktree ready` or `portby worktree alias <name>`", args[0])}
+		return usageError{fmt.Sprintf("unknown subcommand %q; use `lane worktree add <name>`, `lane worktree ready` or `lane worktree alias <name>`", args[0])}
 	}
 	return run(ctx, env, args[1:])
 }
@@ -34,7 +34,7 @@ func runWorktreeAlias(ctx context.Context, env Env, args []string) error {
 		return parseFlags(fs, args)
 	}
 	if fs.NArg() == 0 {
-		return usageError{"missing the Alias name, such as `portby worktree alias api-v2`"}
+		return usageError{"missing the Alias name, such as `lane worktree alias api-v2`"}
 	}
 	name := fs.Arg(0)
 	if err := parseFlags(fs, fs.Args()[1:]); err != nil {

@@ -1,4 +1,4 @@
-// Command portby is both the Portby daemon (`portby daemon`) and its CLI.
+// Command laneway is both the Laneway daemon (`lane daemon`) and its CLI.
 package main
 
 import (
@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/mrsafalpiya/portby.dev/internal/cli"
+	"github.com/lanewayhq/laneway/internal/cli"
 )
 
 func main() {
@@ -16,7 +16,7 @@ func main() {
 	defer stop()
 	dir, err := os.Getwd()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "portby: %v\n", err)
+		fmt.Fprintf(os.Stderr, "lane: %v\n", err)
 		os.Exit(1)
 	}
 	os.Exit(cli.Run(ctx, cli.Env{

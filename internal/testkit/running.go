@@ -7,11 +7,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/cli"
+	"github.com/lanewayhq/laneway/internal/cli"
 )
 
 // RunningCLI is a CLI invocation started by StartCLI that may still be
-// running, such as `portby logs -f`.
+// running, such as `lane logs -f`.
 type RunningCLI struct {
 	d      *Daemon
 	args   []string
@@ -22,7 +22,7 @@ type RunningCLI struct {
 	code   int
 }
 
-// StartCLI runs `portby <args...>` in-process in the background, with dir as
+// StartCLI runs `lane <args...>` in-process in the background, with dir as
 // its working directory. Stop it with Stop (like pressing Ctrl-C) or wait for
 // it to exit by itself with Wait. It is stopped when the test ends.
 func (d *Daemon) StartCLI(dir string, args ...string) *RunningCLI {
@@ -50,10 +50,10 @@ func (r *RunningCLI) WaitForOutput(want string) {
 			if strings.Contains(r.Stdout(), want) {
 				return
 			}
-			r.d.t.Fatalf("portby %s exited %d before printing %q:\n%s%s",
+			r.d.t.Fatalf("lane %s exited %d before printing %q:\n%s%s",
 				strings.Join(r.args, " "), r.code, want, r.Stdout(), r.stderr.String())
 		case <-deadline:
-			r.d.t.Fatalf("portby %s never printed %q; so far:\n%s%s",
+			r.d.t.Fatalf("lane %s never printed %q; so far:\n%s%s",
 				strings.Join(r.args, " "), want, r.Stdout(), r.stderr.String())
 		case <-time.After(10 * time.Millisecond):
 		}
@@ -73,7 +73,7 @@ func (r *RunningCLI) Wait() CLIResult {
 	select {
 	case <-r.done:
 	case <-time.After(cliTimeout):
-		r.d.t.Fatalf("portby %s still running after %s:\n%s%s",
+		r.d.t.Fatalf("lane %s still running after %s:\n%s%s",
 			strings.Join(r.args, " "), cliTimeout, r.Stdout(), r.stderr.String())
 	}
 	return CLIResult{Stdout: r.Stdout(), Stderr: r.stderr.String(), ExitCode: r.code}
