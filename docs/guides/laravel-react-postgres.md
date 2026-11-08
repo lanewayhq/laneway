@@ -359,12 +359,12 @@ The first request starts `web`, `queue` and `vite` together and waits for `web` 
 | Vite dev server and HMR | `https://vite.shop.localhost` (laravel-vite-plugin finds it via `public/hot`) |
 | Caught mail (Mailpit)   | `https://mail.laneway.localhost`                                          |
 | Laneway Dashboard        | `https://laneway.localhost`: Projects, Worktrees, Processes, Services, Orphans |
-| Postgres                | `127.0.0.1:5432`, user `lane`, password `lane`, database `shop`      |
+| Postgres                | `127.0.0.1:5432`, user `laneway`, password `laneway`, database `shop`|
 | Logs on disk            | `~/.local/state/laneway/logs/<domain>/`                                   |
 
 Mail: the starter kit sends password-reset and email-verification mail. With `MAIL_MAILER=smtp` pointed at Mailpit, all of it lands in the inbox at `mail.laneway.localhost`, and none of it leaves your machine.
 
-Database GUIs (TablePlus, DBeaver, `psql`) connect to `127.0.0.1:5432` as `lane`/`lane`. Laneway itself listens on 5432, so the first connection also starts the Postgres container. Each Worktree's database is listed by `lane info`.
+Database GUIs (TablePlus, DBeaver, `psql`) connect to `127.0.0.1:5432` as `laneway`/`laneway`. Laneway itself listens on 5432, so the first connection also starts the Postgres container. Each Worktree's database is listed by `lane info`.
 
 ### 7.2 Commands
 

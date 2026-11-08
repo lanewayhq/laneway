@@ -1,4 +1,4 @@
-// Command laneway is both the Laneway daemon (`lane daemon`) and its CLI.
+// Command lane is both the Laneway daemon (`lane daemon`) and its CLI.
 package main
 
 import (

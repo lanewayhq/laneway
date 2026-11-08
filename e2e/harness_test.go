@@ -108,7 +108,7 @@ func laneCommand(t *testing.T, commands []string) string {
 	t.Helper()
 	var found []string
 	for _, c := range commands {
-		if strings.Contains(c, "lane") {
+		if strings.Contains(c, "lane ") {
 			found = append(found, c)
 		}
 	}
