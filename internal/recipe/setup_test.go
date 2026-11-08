@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/config"
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/recipe"
 )
 
 // setupStack is a test Recipe, detected by a `setup-stack` file, with setup
@@ -112,8 +112,8 @@ func TestATopLevelWorktreeKeyNamesWhereItMoved(t *testing.T) {
 		{`copy = ["AGENTS.md"]`, "write it as copy under [worktree]"},
 		{`worktree_root = "../trees"`, "worktree_root moved into the [worktree] table: write it as root under [worktree]"},
 	} {
-		_, err := config.ParseLayer("/code/shop/portby.toml", []byte(tc.toml))
-		if err == nil || !strings.Contains(err.Error(), "/code/shop/portby.toml") || !strings.Contains(err.Error(), tc.want) {
+		_, err := config.ParseLayer("/code/shop/laneway.toml", []byte(tc.toml))
+		if err == nil || !strings.Contains(err.Error(), "/code/shop/laneway.toml") || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: err = %v, want one naming the file and %q", tc.toml, err, tc.want)
 		}
 	}
@@ -132,8 +132,8 @@ func TestInvalidSetupConfigNamesTheFileAndTheKey(t *testing.T) {
 		{"[worktree]\ncopy = \"AGENTS.md\"", "worktree.copy"},
 		{`worktree = "../trees"`, "worktree: type mismatch"},
 	} {
-		_, err := config.ParseLayer("/code/shop/portby.toml", []byte(tc.toml))
-		if err == nil || !strings.Contains(err.Error(), "/code/shop/portby.toml") || !strings.Contains(err.Error(), tc.want) {
+		_, err := config.ParseLayer("/code/shop/laneway.toml", []byte(tc.toml))
+		if err == nil || !strings.Contains(err.Error(), "/code/shop/laneway.toml") || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: err = %v, want one naming the file and %q", tc.toml, err, tc.want)
 		}
 	}

@@ -48,12 +48,12 @@ func writeStartErrorPage(w http.ResponseWriter, domain string, e *StartError) {
 	if e.TimedOut {
 		status = http.StatusGatewayTimeout
 	}
-	title, what, retry := "The Primary Process didn't start", "Portby couldn't start the Process",
+	title, what, retry := "The Primary Process didn't start", "Laneway couldn't start the Process",
 		"Fix the problem, then reload this page to start it again."
 	if e.Crashed {
 		title, what, retry = "The Primary Process crashed", "The Process crashed",
-			"Portby restarts a crashed Process after a short wait, unless it has crashed too often: then fix the problem "+
-				"and run <code>portby restart</code>. Reload this page once it is running again."
+			"Laneway restarts a crashed Process after a short wait, unless it has crashed too often: then fix the problem "+
+				"and run <code>lane restart</code>. Reload this page once it is running again."
 	}
 	paragraphs := []string{
 		fmt.Sprintf("%s <code>%s</code> serving <code>%s</code>:",
@@ -83,7 +83,7 @@ func writePreparingPage(w http.ResponseWriter, domain string) {
 	writePage(w, http.StatusServiceUnavailable, "Preparing…",
 		fmt.Sprintf("The Worktree served at <code>%s</code> is being prepared. "+
 			"Its Processes start once it is Ready.", html.EscapeString(domain)),
-		"This page reloads by itself. Run <code>portby worktree ready</code> in the Worktree to wait for it there.")
+		"This page reloads by itself. Run <code>lane worktree ready</code> in the Worktree to wait for it there.")
 }
 
 // writePreparationErrorPage explains why preparing the Domain's Worktree
@@ -98,7 +98,7 @@ func writePreparationErrorPage(w http.ResponseWriter, domain string, e *Preparat
 		paragraphs = append(paragraphs, fmt.Sprintf("Its last %d lines of output:", len(e.Output)),
 			"<pre>"+html.EscapeString(strings.Join(e.Output, "\n"))+"\n</pre>")
 	}
-	paragraphs = append(paragraphs, "Fix the problem, then run <code>portby worktree ready --retry</code> "+
+	paragraphs = append(paragraphs, "Fix the problem, then run <code>lane worktree ready --retry</code> "+
 		"in the Worktree and reload this page.")
 	writePage(w, http.StatusBadGateway, "Preparation failed", paragraphs...)
 }

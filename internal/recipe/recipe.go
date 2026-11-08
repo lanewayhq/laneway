@@ -1,5 +1,5 @@
 // Package recipe is the Recipe Resolver: a pure function from a Project
-// directory and its config layers to everything Portby runs for the Project.
+// directory and its config layers to everything Laneway runs for the Project.
 // The daemon reads config only through it.
 package recipe
 
@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/config"
-	"github.com/mrsafalpiya/portby.dev/internal/runtimes"
-	"github.com/mrsafalpiya/portby.dev/internal/service"
+	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/runtimes"
+	"github.com/lanewayhq/laneway/internal/service"
 )
 
 // Input is what Resolve works from.
@@ -21,7 +21,7 @@ type Input struct {
 	// Dir is the Project directory Recipes detect from.
 	Dir string
 	// Layers are applied over the Recipe's defaults in order, later
-	// winning: normally portby.toml, then portby.local.toml.
+	// winning: normally laneway.toml, then laneway.local.toml.
 	Layers []config.Layer
 	// Recipes are the candidates; the first one to detect the Project
 	// supplies the defaults.
@@ -100,7 +100,7 @@ type Resolved struct {
 	// OnRemove are the shell commands run in the main Worktree when a
 	// Worktree is removed, merged like OnCreate.
 	OnRemove []string
-	// WorktreeRoot is where `portby worktree add` creates worktrees, as
+	// WorktreeRoot is where `lane worktree add` creates worktrees, as
 	// configured (maybe relative to the main Worktree); "" means the
 	// default, see DefaultWorktreeRoot.
 	WorktreeRoot string
@@ -141,7 +141,7 @@ type Process struct {
 	// StartMode says when the Process runs.
 	StartMode StartMode
 	// StaticDir is the directory, relative to the Worktree, whose existing
-	// files Portby serves itself instead of sending the request to this
+	// files Laneway serves itself instead of sending the request to this
 	// HTTP Process; "" for none.
 	StaticDir string
 }
@@ -160,7 +160,7 @@ const (
 	// Always Processes start with the daemon and are never stopped by
 	// Idle.
 	Always StartMode = "always"
-	// Manual Processes only start through `portby up <process>`.
+	// Manual Processes only start through `lane up <process>`.
 	Manual StartMode = "manual"
 )
 
@@ -217,7 +217,7 @@ func (r Resolved) EnvFor(main bool) map[string]string {
 // database.worktree says otherwise: as a copy of the main Worktree's.
 const DefaultDatabaseMode = "clone"
 
-// Layer is r as a config layer: what `portby init` writes to portby.toml.
+// Layer is r as a config layer: what `lane init` writes to laneway.toml.
 // Every enabled Process is written with its command, the Primary Process is
 // marked explicitly, and disabled Processes stay disabled.
 func (r Resolved) Layer() config.Layer {
@@ -295,7 +295,7 @@ func (r Resolved) Layer() config.Layer {
 	return l
 }
 
-// DefaultWorktreeRoot is where `portby worktree add` creates worktrees unless
+// DefaultWorktreeRoot is where `lane worktree add` creates worktrees unless
 // worktree.root says otherwise: a directory next to the main Worktree named
 // after it, such as ../shop.worktrees for a main Worktree at shop. Worktrees
 // stay out of the repository, so nothing needs ignoring and tools scanning the
@@ -304,7 +304,7 @@ func DefaultWorktreeRoot(mainDir string) string {
 	return filepath.Join(filepath.Dir(mainDir), filepath.Base(mainDir)+".worktrees")
 }
 
-// WorktreeRootOf is the absolute directory `portby worktree add` creates the
+// WorktreeRootOf is the absolute directory `lane worktree add` creates the
 // worktrees of the Project whose main Worktree is mainDir in.
 func (r Resolved) WorktreeRootOf(mainDir string) string {
 	switch {
@@ -317,11 +317,11 @@ func (r Resolved) WorktreeRootOf(mainDir string) string {
 	}
 }
 
-// Builtin are the Recipes Portby ships, in detection order.
+// Builtin are the Recipes Laneway ships, in detection order.
 var Builtin = []Recipe{Laravel{}}
 
-// ResolveDir resolves the Project in dir from its portby.toml and
-// portby.local.toml with the Builtin Recipes, checking the Runtimes found
+// ResolveDir resolves the Project in dir from its laneway.toml and
+// laneway.local.toml with the Builtin Recipes, checking the Runtimes found
 // for dir if any are given. It is how the daemon reads config, every time it
 // is about to start a Worktree's Processes.
 func ResolveDir(dir string, found ...runtimes.Runtime) (Resolved, error) {

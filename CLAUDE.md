@@ -1,10 +1,10 @@
-# portby.dev
+# laneway
 
 ## Agent skills
 
 ### Issue tracker
 
-Issues are tracked in GitHub Issues for mrsafalpiya/portby.dev, using the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues are tracked in GitHub Issues for lanewayhq/laneway, using the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

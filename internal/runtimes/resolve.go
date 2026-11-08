@@ -43,7 +43,7 @@ const versionTimeout = 10 * time.Second
 // Environ resolves the environment for commands run in dir, starting from
 // base (normally the daemon's or the CLI's own environment). mise is looked
 // up on base's PATH and asked for dir's environment with `mise env --json`.
-// mise is told not to install anything: Portby never installs Runtimes.
+// mise is told not to install anything: Laneway never installs Runtimes.
 func Environ(ctx context.Context, dir string, base []string) Environment {
 	e := Environment{Dir: dir, Vars: slices.Clone(base), basePath: getenv(base, "PATH")}
 	mise, err := lookPath("mise", e.basePath)
@@ -87,7 +87,7 @@ func missingTools(dir, stderr string) []Warning {
 			name, _, _ := strings.Cut(tool, "@")
 			warnings = append(warnings, Warning{Runtime: name,
 				Message: fmt.Sprintf("mise config for %s asks for %s, but it isn't installed", dir, tool),
-				Fix:     "run `mise install` in " + dir + " (Portby never installs Runtimes)",
+				Fix:     "run `mise install` in " + dir + " (Laneway never installs Runtimes)",
 			})
 		}
 	}

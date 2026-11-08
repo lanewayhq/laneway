@@ -4,14 +4,14 @@ import (
 	"cmp"
 	"context"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
-	"github.com/mrsafalpiya/portby.dev/internal/service"
-	"github.com/mrsafalpiya/portby.dev/internal/supervisor"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/service"
+	"github.com/lanewayhq/laneway/internal/supervisor"
 )
 
 // info is everything about the Worktree containing dir, which must be inside
-// a Linked Project: the body of GET /v1/info and `portby info --json`.
+// a Linked Project: the body of GET /v1/info and `lane info --json`.
 func (d *Daemon) info(ctx context.Context, dir string) (api.Info, error) {
 	wt, err := d.worktreeInfo(ctx, dir)
 	if err != nil {
@@ -87,7 +87,7 @@ func processInfo(declared []recipe.Process, runs []supervisor.Status, primaryDom
 	return out
 }
 
-// infoServices are services as `portby info` shows them. A Service not
+// infoServices are services as `lane info` shows them. A Service not
 // served yet is stopped, at the port it would be given.
 func (d *Daemon) infoServices(services []recipe.Service) []api.InfoService {
 	out := []api.InfoService{}

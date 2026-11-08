@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/pgwire"
+	"github.com/lanewayhq/laneway/internal/pgwire"
 )
 
 // TestPostgresDatabasesOnARealContainerEngine is the slow tier for Postgres:
@@ -54,7 +54,7 @@ func TestPostgresDatabasesOnARealContainerEngine(t *testing.T) {
 				}
 				copied.Close()
 
-				// The data is in Portby's volume: it survives the container
+				// The data is in Laneway's volume: it survives the container
 				// stopping.
 				d.MustRunCLI(d.Home, "services", "down", "postgres:"+version.version)
 				again := dialPostgres(t, d, port, db)

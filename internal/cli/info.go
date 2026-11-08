@@ -11,18 +11,18 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/client"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/client"
 )
 
-// infoNotServed is `portby info`'s exit code when the directory isn't in a
-// Linked Project's git repository or no daemon is running, so Portby has
-// nothing to say about it (the same as `portby worktree ready`'s 3). Agents
+// infoNotServed is `lane info`'s exit code when the directory isn't in a
+// Linked Project's git repository or no daemon is running, so Laneway has
+// nothing to say about it (the same as `lane worktree ready`'s 3). Agents
 // and scripts depend on it, so it doesn't change. Other errors exit 1, usage
 // errors 2.
 const infoNotServed = 3
 
-// runInfo is `portby info [--json]`: everything about the current Worktree.
+// runInfo is `lane info [--json]`: everything about the current Worktree.
 // With --json it prints api.Info, the stable contract agents and scripts
 // read; without it, the same for people.
 func runInfo(ctx context.Context, env Env, args []string) error {
@@ -60,7 +60,7 @@ func printInfo(env Env, info api.Info) error {
 	fmt.Fprintf(env.Stdout, "%s of %q\n", worktree, info.Project.Name)
 	tw := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintf(tw, "  Path\t%s\n", info.Worktree.Path)
-	fmt.Fprintf(tw, "  URL\t%s\n", cmp.Or(info.URL, "- (Portby hasn't discovered this Worktree yet)"))
+	fmt.Fprintf(tw, "  URL\t%s\n", cmp.Or(info.URL, "- (Laneway hasn't discovered this Worktree yet)"))
 	if info.Domain != "" && len(info.Aliases) > 0 {
 		// The URL is the newest Alias's; the Domain still identifies the
 		// Worktree.
@@ -77,7 +77,7 @@ func printInfo(env Env, info api.Info) error {
 		state := s.State
 		switch {
 		case s.State == api.SetupFailed:
-			state = fmt.Sprintf("preparing it failed at step %q: %s (run `portby worktree ready --retry` once it is fixed)", s.Step, s.Error)
+			state = fmt.Sprintf("preparing it failed at step %q: %s (run `lane worktree ready --retry` once it is fixed)", s.Step, s.Error)
 		case s.Step != "":
 			state += ": " + s.Step
 		}

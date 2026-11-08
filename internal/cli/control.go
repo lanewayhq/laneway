@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
+	"github.com/lanewayhq/laneway/internal/api"
 )
 
-// control returns the run func of `portby up`, `down` or `restart`.
+// control returns the run func of `lane up`, `down` or `restart`.
 func control(action string) func(ctx context.Context, env Env, args []string) error {
 	return func(ctx context.Context, env Env, args []string) error {
 		fs := newFlags(env, action+" [process]")

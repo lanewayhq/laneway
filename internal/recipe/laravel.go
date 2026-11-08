@@ -8,9 +8,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/mrsafalpiya/portby.dev/internal/config"
-	"github.com/mrsafalpiya/portby.dev/internal/dotenv"
-	"github.com/mrsafalpiya/portby.dev/internal/service"
+	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/dotenv"
+	"github.com/lanewayhq/laneway/internal/service"
 )
 
 // Laravel is the Laravel Recipe: a Project with an artisan file. Its
@@ -29,14 +29,14 @@ func (Laravel) Detect(dir string) bool {
 }
 
 // webCommand serves the app with PHP's built-in server and 8 workers, which
-// spike #4 found matches PHP-FPM once Portby serves public/ itself (see
+// spike #4 found matches PHP-FPM once Laneway serves public/ itself (see
 // StaticDir). Laravel ignores PHP_CLI_SERVER_WORKERS without --no-reload, so
-// artisan doesn't restart itself when .env changes: Portby restarts the
+// artisan doesn't restart itself when .env changes: Laneway restarts the
 // Worktree's Processes when it changes .env. --no-reload is also what lets
-// PHP_INI_SCAN_DIR reach the server, adding Portby's PHP ini
+// PHP_INI_SCAN_DIR reach the server, adding Laneway's PHP ini
 // ({php_ini_dir}: no OPcache revalidation delay, so an edited Blade view
 // shows on the next request, spike #2; and $_SERVER['HTTPS'] set, so the app
-// builds https:// URLs behind Portby's proxy without trusting it).
+// builds https:// URLs behind Laneway's proxy without trusting it).
 const webCommand = "PHP_INI_SCAN_DIR=$PHP_INI_SCAN_DIR:{php_ini_dir} PHP_CLI_SERVER_WORKERS=8 php artisan serve --host=127.0.0.1 --port={port} --no-reload"
 
 func (Laravel) Defaults(dir string) (config.Layer, error) {
@@ -115,7 +115,7 @@ func laravelServices(l *config.Layer, env laravelEnv) {
 	l.Env["MAIL_PORT"] = "{mailpit_port}"
 }
 
-// laravelConnections maps the Laravel DB_CONNECTION values Portby has a
+// laravelConnections maps the Laravel DB_CONNECTION values Laneway has a
 // database engine (database.Engines) for to that engine.
 var laravelConnections = map[string]string{"sqlite": "sqlite", "pgsql": "postgres", "mysql": "mysql"}
 
@@ -127,9 +127,9 @@ func laravelDatabase(l *config.Layer, dir string, env laravelEnv) {
 	engine, ok := laravelConnections[connection]
 	if !ok {
 		known := slices.Sorted(maps.Keys(laravelConnections))
-		l.Warnings = append(l.Warnings, fmt.Sprintf("%s: DB_CONNECTION is %q, which Portby has no database for "+
+		l.Warnings = append(l.Warnings, fmt.Sprintf("%s: DB_CONNECTION is %q, which Laneway has no database for "+
 			"(it knows %s and %s), so the Project's DB_ settings are left alone; "+
-			"set [database] in %s to use one of Portby's", l.Source, connection,
+			"set [database] in %s to use one of Laneway's", l.Source, connection,
 			strings.Join(known[:len(known)-1], ", "), known[len(known)-1], config.FileName))
 		return
 	}
@@ -167,7 +167,7 @@ func sqlitePath(dir string, env laravelEnv) string {
 // laravelEnv is the settings the Recipe reads from the Project's env file.
 type laravelEnv struct{ f *dotenv.File }
 
-// readLaravelEnv reads dir's .env or, before there is one (Portby creates it
+// readLaravelEnv reads dir's .env or, before there is one (Laneway creates it
 // from .env.example), its .env.example. With neither, every setting is
 // Laravel's default.
 func readLaravelEnv(dir string) laravelEnv {

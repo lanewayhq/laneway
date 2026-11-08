@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // The Laravel Recipe's vite Process through Seam 1: the Laravel-shaped
@@ -84,7 +84,7 @@ func TestALaravelAppUsingLaravelVitePluginServesViteAtViteDotItsDomain(t *testin
 	path, config := viteConfig(t, d, "vite.lara-vite.localhost")
 
 	if strings.HasPrefix(path, repo.Dir) {
-		t.Errorf("the vite config is %s, inside the Worktree; want it outside, in Portby's state", path)
+		t.Errorf("the vite config is %s, inside the Worktree; want it outside, in Laneway's state", path)
 	}
 	_, proxyPort, _ := net.SplitHostPort(d.ProxyAddr())
 	for _, want := range []string{
@@ -136,7 +136,7 @@ func TestAVitePrimaryProcessGetsLiveReloadAtTheDomainItself(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	vite := testkit.WriteExecutable(t, gitfixture.TempDir(t), "vite", `exec `+testkit.TestServer(t)+` --name "vite $*"`+"\n")
 	repo := gitfixture.New(t, "vite-primary").
-		WriteFile("portby.toml", "[processes.web]\ncommand = \""+vite+" --config {vite_config}\"\n").
+		WriteFile("laneway.toml", "[processes.web]\ncommand = \""+vite+" --config {vite_config}\"\n").
 		Commit("a Vite app")
 	d.MustRunCLI(repo.Dir, "link")
 
@@ -154,7 +154,7 @@ func TestViteLiveReloadMovesToThePrimaryDomainWhenTheProcessRestarts(t *testing.
 	server := testkit.TestServer(t)
 	vite := testkit.WriteExecutable(t, gitfixture.TempDir(t), "vite", `exec `+server+` --name "vite $*"`+"\n")
 	repo := gitfixture.New(t, "vite-moves").
-		WriteFile("portby.toml", processConfig(server+" --name web")+
+		WriteFile("laneway.toml", processConfig(server+" --name web")+
 			"\n[processes.vite]\ncommand = \""+vite+" --config {vite_config}\"\nhttp = true\n").
 		Commit("a web and a vite Process")
 	d.MustRunCLI(repo.Dir, "link")
@@ -216,7 +216,7 @@ func TestAStartWaitsForTheWorktreesOtherHTTPProcesses(t *testing.T) {
 	files := gitfixture.TempDir(t)
 	webUp, viteGo := filepath.Join(files, "web-up"), filepath.Join(files, "vite-go")
 	repo := gitfixture.New(t, "start-waits-vite").
-		WriteFile("portby.toml", fmt.Sprintf("[processes.web]\ncommand = %q\nprimary = true\n\n[processes.vite]\ncommand = %q\nhttp = true\n",
+		WriteFile("laneway.toml", fmt.Sprintf("[processes.web]\ncommand = %q\nprimary = true\n\n[processes.vite]\ncommand = %q\nhttp = true\n",
 			"exec "+server+" --name web --ready-file "+webUp,
 			"until [ -e "+viteGo+" ]; do sleep 0.01; done; exec "+server+" --name vite")).
 		Commit("web and a vite that waits")
@@ -243,7 +243,7 @@ func TestAnotherHTTPProcessThatExitsDoesNotFailTheStart(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	server := testkit.TestServer(t)
 	repo := gitfixture.New(t, "start-vite-exits").
-		WriteFile("portby.toml", fmt.Sprintf("[processes.web]\ncommand = %q\nprimary = true\n\n[processes.vite]\ncommand = %q\nhttp = true\n",
+		WriteFile("laneway.toml", fmt.Sprintf("[processes.web]\ncommand = %q\nprimary = true\n\n[processes.vite]\ncommand = %q\nhttp = true\n",
 			"exec "+server+" --name web", "echo no node_modules; exit 1")).
 		Commit("web and a vite that can't run")
 	d.MustRunCLI(repo.Dir, "link")

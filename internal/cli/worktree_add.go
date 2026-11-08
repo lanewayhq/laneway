@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitrepo"
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/gitrepo"
+	"github.com/lanewayhq/laneway/internal/recipe"
 )
 
 // runWorktreeAdd creates a git worktree under the Project's worktree root
@@ -23,7 +23,7 @@ func runWorktreeAdd(ctx context.Context, env Env, args []string) error {
 		return parseFlags(fs, args)
 	}
 	if fs.NArg() == 0 {
-		return usageError{"missing the Worktree name, such as `portby worktree add feature-x`"}
+		return usageError{"missing the Worktree name, such as `lane worktree add feature-x`"}
 	}
 	name := fs.Arg(0)
 	if err := parseFlags(fs, fs.Args()[1:]); err != nil {
@@ -37,7 +37,7 @@ func runWorktreeAdd(ctx context.Context, env Env, args []string) error {
 	}
 	checkout, err := gitrepo.Resolve(ctx, env.Dir)
 	if errors.Is(err, gitrepo.ErrNotGitRepo) {
-		return fmt.Errorf("%s is not inside a git repository; run `portby worktree add` in a Project", env.Dir)
+		return fmt.Errorf("%s is not inside a git repository; run `lane worktree add` in a Project", env.Dir)
 	}
 	if err != nil {
 		return err
@@ -51,6 +51,6 @@ func runWorktreeAdd(ctx context.Context, env Env, args []string) error {
 		return err
 	}
 	fmt.Fprintf(env.Stdout, "Created Worktree %q on branch %s at %s\n", name, *branch, dir)
-	fmt.Fprintf(env.Stdout, "Portby sets it up once it finds it; run `portby worktree ready` there to wait.\n")
+	fmt.Fprintf(env.Stdout, "Laneway sets it up once it finds it; run `lane worktree ready` there to wait.\n")
 	return nil
 }

@@ -14,7 +14,7 @@ import (
 
 // scramMechanism is the SASL mechanism Postgres uses for password_encryption
 // = scram-sha-256 (the default since Postgres 14). Channel binding isn't
-// used: Portby talks to its Service over loopback without TLS.
+// used: Laneway talks to its Service over loopback without TLS.
 const scramMechanism = "SCRAM-SHA-256"
 
 // scram is one SCRAM-SHA-256 exchange (RFC 5802, RFC 7677).

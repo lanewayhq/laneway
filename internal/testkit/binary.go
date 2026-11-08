@@ -7,16 +7,16 @@ import (
 	"testing"
 )
 
-// BuildBinary compiles cmd/portby into a temporary directory and returns the
-// binary's path, for tests that need a real `portby` process (or one on PATH).
+// BuildBinary compiles cmd/lane into a temporary directory and returns the
+// binary's path, for tests that need a real `lane` process (or one on PATH).
 // Go's build cache keeps repeat builds cheap.
 func BuildBinary(t testing.TB) string {
 	t.Helper()
-	return build(t, "./cmd/portby", "portby")
+	return build(t, "./cmd/lane", "lane")
 }
 
 // TestServer compiles the test HTTP-server Process (package testserver) and
-// returns the binary's path, for use in a Process command in portby.toml. The
+// returns the binary's path, for use in a Process command in laneway.toml. The
 // server listens on --port, or on $PORT without it, answers every request
 // with a JSON testserver.Response and echoes bytes on a WebSocket at /ws.
 func TestServer(t testing.TB) string {

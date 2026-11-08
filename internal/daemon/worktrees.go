@@ -4,8 +4,8 @@ import (
 	"context"
 	"slices"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitrepo"
-	"github.com/mrsafalpiya/portby.dev/internal/registry"
+	"github.com/lanewayhq/laneway/internal/gitrepo"
+	"github.com/lanewayhq/laneway/internal/registry"
 )
 
 // worktreeDomain is a linked Worktree's Domain: <worktree>.<project>.localhost.
@@ -70,7 +70,7 @@ func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
 		return
 	}
 	// Setup begins once the Registry knows the Worktree, so its setup
-	// steps see it as `portby` reports it.
+	// steps see it as `lane` reports it.
 	for _, w := range changes.Added {
 		ref := linkedWorktreeRef(p, w)
 		d.reclaimOrphans(p, ref)

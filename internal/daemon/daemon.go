@@ -1,4 +1,4 @@
-// Package daemon is the long-running Portby process. It owns the Registry,
+// Package daemon is the long-running Laneway process. It owns the Registry,
 // serves the JSON API (see package api) over a Unix socket that only the user
 // can access, runs each Project's Processes and serves them at their Domains
 // through the HTTPS proxy.
@@ -19,21 +19,21 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/clock"
-	"github.com/mrsafalpiya/portby.dev/internal/container"
-	"github.com/mrsafalpiya/portby.dev/internal/dashboard"
-	"github.com/mrsafalpiya/portby.dev/internal/paths"
-	"github.com/mrsafalpiya/portby.dev/internal/platform"
-	"github.com/mrsafalpiya/portby.dev/internal/prepare"
-	"github.com/mrsafalpiya/portby.dev/internal/proxy"
-	"github.com/mrsafalpiya/portby.dev/internal/registry"
-	"github.com/mrsafalpiya/portby.dev/internal/service"
-	"github.com/mrsafalpiya/portby.dev/internal/supervisor"
-	"github.com/mrsafalpiya/portby.dev/internal/watcher"
+	"github.com/lanewayhq/laneway/internal/clock"
+	"github.com/lanewayhq/laneway/internal/container"
+	"github.com/lanewayhq/laneway/internal/dashboard"
+	"github.com/lanewayhq/laneway/internal/paths"
+	"github.com/lanewayhq/laneway/internal/platform"
+	"github.com/lanewayhq/laneway/internal/prepare"
+	"github.com/lanewayhq/laneway/internal/proxy"
+	"github.com/lanewayhq/laneway/internal/registry"
+	"github.com/lanewayhq/laneway/internal/service"
+	"github.com/lanewayhq/laneway/internal/supervisor"
+	"github.com/lanewayhq/laneway/internal/watcher"
 )
 
 // Config is everything the daemon needs from the outside world. Tests build
-// it through testkit; `portby daemon` builds it from the environment.
+// it through testkit; `lane daemon` builds it from the environment.
 //
 // The spec's Seam 1 swaps exactly two things in tests: the clock and the
 // container engine. Both are interface-typed fields with real defaults filled
@@ -53,7 +53,7 @@ type Config struct {
 	// HTTPAddr is where plain HTTP is redirected to HTTPS from,
 	// DefaultHTTPAddr if empty. It must be a loopback address; tests use
 	// port 0. If it can't be bound the daemon logs why and runs without
-	// it (`portby doctor` reports the port's holder).
+	// it (`lane doctor` reports the port's holder).
 	HTTPAddr string
 	// Env is the environment Processes start from, before their Worktree's
 	// Runtimes are resolved into it (package runtimes): its PATH is where
@@ -72,7 +72,7 @@ type Config struct {
 	// DefaultServiceHosts. The first is the host clients are given.
 	ServiceHosts []string
 	// ContainerPrefix starts the names of Services' containers and
-	// volumes; "portby" if empty.
+	// volumes; "laneway" if empty.
 	ContainerPrefix string
 	// Platform tells who holds a port a Service can't listen on. Nil
 	// means the real one for this machine.
@@ -356,7 +356,7 @@ func (d *Daemon) portHolders(port int) string {
 }
 
 // discoverEngine is the container engine found through the platform layer
-// (the same sockets `portby doctor` checks), looked up on first use.
+// (the same sockets `lane doctor` checks), looked up on first use.
 func discoverEngine(env []string) container.Engine {
 	getenv := getenvOf(env)
 	return &container.Discovered{Find: func(ctx context.Context) (string, error) {
@@ -377,7 +377,7 @@ func listen(socket string) (net.Listener, error) {
 	}
 	if conn, err := net.Dial("unix", socket); err == nil {
 		conn.Close()
-		return nil, fmt.Errorf("a Portby daemon is already running on %s", socket)
+		return nil, fmt.Errorf("a Laneway daemon is already running on %s", socket)
 	}
 	// Nothing is listening, so any file left here is a stale socket from a
 	// daemon that didn't shut down cleanly.

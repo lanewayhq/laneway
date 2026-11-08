@@ -156,7 +156,7 @@ func registryNames(commonDir string) (map[string]string, error) {
 }
 
 // gitCommand runs git in dir. Variables that would point git at another
-// repository (set when Portby itself runs inside a git hook) are removed.
+// repository (set when Laneway itself runs inside a git hook) are removed.
 func gitCommand(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir

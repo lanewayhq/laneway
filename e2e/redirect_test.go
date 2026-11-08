@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 func TestAPageLoadOnAWorktreesDomainGoesToItsPrimaryDomain(t *testing.T) {

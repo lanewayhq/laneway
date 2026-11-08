@@ -5,8 +5,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 func TestOpenOpensTheWorktreeDomainInTheBrowser(t *testing.T) {
@@ -34,7 +34,7 @@ func TestOpenOutsideALinkedRepositoryFails(t *testing.T) {
 	if res.ExitCode == 0 {
 		t.Fatalf("open in an unlinked repository succeeded:\n%s", res.Output())
 	}
-	assertContains(t, res.Stderr, "portby link")
+	assertContains(t, res.Stderr, "lane link")
 	if got := d.Platform.OpenedURLs(); len(got) != 0 {
 		t.Fatalf("opened %q, want nothing", got)
 	}

@@ -17,7 +17,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
-// Two small Caddy modules connect the fixed Caddy config to Portby: a handler
+// Two small Caddy modules connect the fixed Caddy config to Laneway: a handler
 // that asks the Router where each request goes, and a permission check for
 // on-demand certificates.
 
@@ -26,7 +26,7 @@ func init() {
 	caddy.RegisterModule(certPermission{})
 }
 
-// routeHandler (http.handlers.portby) runs before reverse_proxy. It answers
+// routeHandler (http.handlers.laneway) runs before reverse_proxy. It answers
 // requests for unknown Domains itself, and otherwise tells reverse_proxy which
 // upstream to dial.
 type routeHandler struct {
@@ -37,7 +37,7 @@ type routeHandler struct {
 }
 
 func (routeHandler) CaddyModule() caddy.ModuleInfo {
-	return caddy.ModuleInfo{ID: "http.handlers.portby", New: func() caddy.Module { return new(routeHandler) }}
+	return caddy.ModuleInfo{ID: "http.handlers.laneway", New: func() caddy.Module { return new(routeHandler) }}
 }
 
 func (h *routeHandler) Provision(caddy.Context) error {
@@ -73,12 +73,12 @@ func (h *routeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 		return nil
 	case errors.Is(err, ErrUnknownDomain):
 		writePage(w, http.StatusNotFound, "Nothing is served here",
-			fmt.Sprintf("Portby doesn't serve anything at <code>%s</code>.", html.EscapeString(domain)),
-			"Run <code>portby status</code> to see the Linked Projects and their Domains.")
+			fmt.Sprintf("Laneway doesn't serve anything at <code>%s</code>.", html.EscapeString(domain)),
+			"Run <code>lane status</code> to see the Linked Projects and their Domains.")
 		return nil
 	case err != nil:
 		writePage(w, http.StatusBadGateway, "Can't reach this Domain's Process",
-			fmt.Sprintf("Portby couldn't forward the request for <code>%s</code>:", html.EscapeString(domain)),
+			fmt.Sprintf("Laneway couldn't forward the request for <code>%s</code>:", html.EscapeString(domain)),
 			"<pre>"+html.EscapeString(err.Error())+"</pre>")
 		return nil
 	}
@@ -127,21 +127,21 @@ func writePage(w http.ResponseWriter, status int, title string, paragraphs ...st
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
-	fmt.Fprintf(w, "<!doctype html>\n<html><head><meta charset=\"utf-8\"><title>%s · Portby</title></head><body>\n<h1>%s</h1>\n",
+	fmt.Fprintf(w, "<!doctype html>\n<html><head><meta charset=\"utf-8\"><title>%s · Laneway</title></head><body>\n<h1>%s</h1>\n",
 		html.EscapeString(title), html.EscapeString(title))
 	for _, p := range paragraphs {
 		fmt.Fprintf(w, "<p>%s</p>\n", p)
 	}
-	fmt.Fprint(w, "<p><small>Portby</small></p>\n</body></html>\n")
+	fmt.Fprint(w, "<p><small>Laneway</small></p>\n</body></html>\n")
 }
 
-// certPermission (tls.permission.portby) allows on-demand certificates for
+// certPermission (tls.permission.laneway) allows on-demand certificates for
 // localhost and its subdomains only. Unknown *.localhost names get a
 // certificate too, so they can be shown the "nothing is served here" page.
 type certPermission struct{}
 
 func (certPermission) CaddyModule() caddy.ModuleInfo {
-	return caddy.ModuleInfo{ID: "tls.permission.portby", New: func() caddy.Module { return new(certPermission) }}
+	return caddy.ModuleInfo{ID: "tls.permission.laneway", New: func() caddy.Module { return new(certPermission) }}
 }
 
 func (certPermission) CertificateAllowed(_ context.Context, name string) error {

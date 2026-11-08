@@ -4,12 +4,12 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/recipe"
 )
 
 // viteCommand is the Laravel Recipe's vite Process: Vite run with the
-// config Portby generates around the Project's (spike #2), on the port
-// Portby picked, after removing a public/hot an unclean exit left behind.
+// config Laneway generates around the Project's (spike #2), on the port
+// Laneway picked, after removing a public/hot an unclean exit left behind.
 const viteCommand = "rm -f public/hot; LARAVEL_BYPASS_ENV_CHECK=1 node_modules/.bin/vite --config {vite_config} --host 127.0.0.1 --port {port} --strictPort"
 
 func TestALaravelProjectUsingLaravelVitePluginGetsALazyViteProcessServedAtItsOwnDomain(t *testing.T) {

@@ -14,22 +14,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/daemon"
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/daemon"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // Every daemon in this test binary serves a Dashboard, and Caddy's
 // certificate cache is shared by name (see "Serving Domains in tests"), so
-// only TestTheDashboardIsServedAtPortbyLocalhost uses the default Domain;
+// only TestTheDashboardIsServedAtLanewayLocalhost uses the default Domain;
 // the other tests give theirs a unique one with dashboardDaemon.
 
-func TestTheDashboardIsServedAtPortbyLocalhost(t *testing.T) {
+func TestTheDashboardIsServedAtLanewayLocalhost(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 
-	page := d.Navigate("https://portby.localhost/")
+	page := d.Navigate("https://laneway.localhost/")
 
 	if page.StatusCode != http.StatusOK {
 		t.Fatalf("status %d, want 200:\n%s", page.StatusCode, page.Body)
@@ -37,7 +37,7 @@ func TestTheDashboardIsServedAtPortbyLocalhost(t *testing.T) {
 	if ct := page.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
 		t.Fatalf("Content-Type %q, want HTML", ct)
 	}
-	if !strings.Contains(page.Body, "<title>Portby</title>") {
+	if !strings.Contains(page.Body, "<title>Laneway</title>") {
 		t.Fatalf("not the Dashboard:\n%s", page.Body)
 	}
 }
@@ -451,7 +451,7 @@ func logStream(t *testing.T, d *testkit.Daemon, url string) <-chan api.LogLine {
 
 // waitForLogLines reads lines until every one of want ("<process> | <text>")
 // has arrived, in any order (the output of several Processes is in the order
-// Portby read it), failing the test if they don't within a few seconds.
+// Laneway read it), failing the test if they don't within a few seconds.
 func waitForLogLines(t *testing.T, lines <-chan api.LogLine, want ...string) {
 	t.Helper()
 	missing := map[string]bool{}
@@ -491,7 +491,7 @@ func logsProject(t *testing.T, name string) *gitfixture.Repo {
 	t.Helper()
 	server := testkit.TestServer(t)
 	return gitfixture.New(t, name).
-		WriteFile("portby.toml", "[processes.web]\nprimary = true\ncommand = \"echo web started; exec "+server+"\"\n"+
+		WriteFile("laneway.toml", "[processes.web]\nprimary = true\ncommand = \"echo web started; exec "+server+"\"\n"+
 			"[processes.worker]\ncommand = \"echo worker ready; while [ ! -e go ]; do sleep 0.01; done; echo worker went; exec sleep 600\"\n").
 		Commit("declare web and worker")
 }

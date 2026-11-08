@@ -13,18 +13,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/platform"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/platform"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
-// serviceProject is a repo whose portby.toml declares the Services in
+// serviceProject is a repo whose laneway.toml declares the Services in
 // services (TOML lines for the [services] table, such as `redis = "7"`),
 // after config.
 func serviceProject(t *testing.T, name, services, config string) *gitfixture.Repo {
 	t.Helper()
 	return gitfixture.New(t, name).
-		WriteFile("portby.toml", config+"[services]\n"+services+"\n").
+		WriteFile("laneway.toml", config+"[services]\n"+services+"\n").
 		Commit("declare Services")
 }
 
@@ -98,7 +98,7 @@ func TestTheFirstConnectionToAServiceStartsItAndIsForwardedOnceItIsReady(t *test
 
 	release := d.Engine.HoldStarts()
 	c := dialRedis(t, d, 6379)
-	c.send("AUTH", "portby")
+	c.send("AUTH", "laneway")
 	eventually(t, "the container to be started", func() bool { return containsCall(d.Engine.Calls(), "start") })
 	c.conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 	if n, _ := c.r.Peek(1); len(n) > 0 {
@@ -135,7 +135,7 @@ func TestConcurrentFirstConnectionsShareOneStart(t *testing.T) {
 	var conns []*redisConn
 	for range 5 {
 		c := dialRedis(t, d, 6379)
-		c.send("AUTH", "portby")
+		c.send("AUTH", "laneway")
 		conns = append(conns, c)
 	}
 	eventually(t, "the container to be started", func() bool { return containsCall(d.Engine.Calls(), "start") })
@@ -161,7 +161,7 @@ func countCalls(calls []string, prefix string) int {
 	return n
 }
 
-// serviceState is the state `portby services` shows for the Service of
+// serviceState is the state `lane services` shows for the Service of
 // engine at version.
 func serviceState(t *testing.T, d *testkit.Daemon, engine, version string) string {
 	t.Helper()
@@ -171,7 +171,7 @@ func serviceState(t *testing.T, d *testkit.Daemon, engine, version string) strin
 			return f[4]
 		}
 	}
-	t.Fatalf("`portby services` doesn't list %s:%s", engine, version)
+	t.Fatalf("`lane services` doesn't list %s:%s", engine, version)
 	return ""
 }
 
@@ -186,7 +186,7 @@ func TestAServiceWithNoConnectionsStopsAfterItsIdleTimeout(t *testing.T) {
 	repo := serviceProject(t, "svc-idle", `redis = "7"`, "")
 	d.MustRunCLI(repo.Dir, "link")
 	c := dialRedis(t, d, 6379)
-	if got := c.do("AUTH", "portby"); got != "+OK" {
+	if got := c.do("AUTH", "laneway"); got != "+OK" {
 		t.Fatalf("AUTH = %q", got)
 	}
 	c.do("SET", "greeting", "hello")
@@ -198,12 +198,12 @@ func TestAServiceWithNoConnectionsStopsAfterItsIdleTimeout(t *testing.T) {
 	clk.Advance(15 * time.Minute)
 
 	waitForServiceState(t, d, "redis", "7", "idle")
-	if d.Engine.IsRunning("portby-redis-7") {
+	if d.Engine.IsRunning("laneway-redis-7") {
 		t.Fatal("the container is still running")
 	}
 	// The next connection starts it again, with its data.
 	c = dialRedis(t, d, 6379)
-	c.do("AUTH", "portby")
+	c.do("AUTH", "laneway")
 	if got := c.do("GET", "greeting"); got != "hello" {
 		t.Fatalf("GET after Idle = %q, want the value set before", got)
 	}
@@ -218,7 +218,7 @@ func TestAnOpenConnectionKeepsAServiceRunning(t *testing.T) {
 	repo := serviceProject(t, "svc-open", `redis = "7"`, "")
 	d.MustRunCLI(repo.Dir, "link")
 	c := dialRedis(t, d, 6379)
-	c.do("AUTH", "portby")
+	c.do("AUTH", "laneway")
 
 	clk.Advance(time.Hour)
 
@@ -242,7 +242,7 @@ func TestAServiceStaysUpWhileAWorktreeUsingItRuns(t *testing.T) {
 	d.GetServer("https://svc-used.localhost/")
 	waitForPID(t, pidFile)
 	c := dialRedis(t, d, 6379)
-	c.do("AUTH", "portby")
+	c.do("AUTH", "laneway")
 	c.conn.Close()
 
 	// Only the Worktree's own idle timeout is pending: the Service waits
@@ -272,7 +272,7 @@ func alwaysServiceProject(t *testing.T, name, webMode string) (repo *gitfixture.
 	dir := gitfixture.TempDir(t)
 	webPID, workerPID = filepath.Join(dir, "web.pid"), filepath.Join(dir, "worker.pid")
 	repo = gitfixture.New(t, name).
-		WriteFile("portby.toml", fmt.Sprintf("idle_timeout = \"1h\"\n[services]\nredis = \"7\"\n"+
+		WriteFile("laneway.toml", fmt.Sprintf("idle_timeout = \"1h\"\n[services]\nredis = \"7\"\n"+
 			"[processes.web]\ncommand = %q\nprimary = true\nstart_mode = %q\n"+
 			"[processes.worker]\ncommand = %q\nstart_mode = \"always\"\n",
 			"echo $$ > "+webPID+"; exec "+testkit.TestServer(t), webMode,
@@ -313,7 +313,7 @@ func TestAServiceStaysUpWhileAnIdleWorktreesAlwaysProcessesRun(t *testing.T) {
 	web := waitForPID(t, webPID)
 	waitForPID(t, workerPID)
 	c := dialRedis(t, d, 6379)
-	c.do("AUTH", "portby")
+	c.do("AUTH", "laneway")
 	c.conn.Close()
 
 	if delay := waitForTimer(t, clk); delay != time.Hour {
@@ -339,7 +339,7 @@ func TestDownReleasesTheWorktreesServices(t *testing.T) {
 	d.GetServer("https://svc-down.localhost/")
 	waitForPID(t, pidFile)
 	c := dialRedis(t, d, 6379)
-	c.do("AUTH", "portby")
+	c.do("AUTH", "laneway")
 	c.conn.Close()
 
 	d.MustRunCLI(repo.Dir, "down")
@@ -353,7 +353,7 @@ func TestDownReleasesTheWorktreesServices(t *testing.T) {
 	waitForServiceState(t, d, "redis", "7", "idle")
 }
 
-// serviceRow is the `portby services` row of engine at version: ENGINE
+// serviceRow is the `lane services` row of engine at version: ENGINE
 // VERSION HOST PORT STATE.
 func serviceRow(t *testing.T, d *testkit.Daemon, engine, version string) []string {
 	t.Helper()
@@ -362,7 +362,7 @@ func serviceRow(t *testing.T, d *testkit.Daemon, engine, version string) []strin
 			return f
 		}
 	}
-	t.Fatalf("`portby services` doesn't list %s:%s", engine, version)
+	t.Fatalf("`lane services` doesn't list %s:%s", engine, version)
 	return nil
 }
 
@@ -382,16 +382,16 @@ func TestTheDefaultVersionGetsTheStandardPortAndOthersAStableDerivedOne(t *testi
 		}
 	}
 	c := dialRedis(t, d, 63762)
-	c.do("AUTH", "portby")
+	c.do("AUTH", "laneway")
 	if got := c.do("PING"); got != "+PONG" {
 		t.Fatalf("PING on the derived port = %q", got)
 	}
-	if !d.Engine.IsRunning("portby-redis-6.2") || d.Engine.IsRunning("portby-redis-7") {
-		t.Fatalf("containers %v: want only portby-redis-6.2 running", d.Engine.Containers())
+	if !d.Engine.IsRunning("laneway-redis-6.2") || d.Engine.IsRunning("laneway-redis-7") {
+		t.Fatalf("containers %v: want only laneway-redis-6.2 running", d.Engine.Containers())
 	}
 
 	d.Restart()
-	if d.Engine.IsRunning("portby-redis-6.2") {
+	if d.Engine.IsRunning("laneway-redis-6.2") {
 		t.Fatal("the daemon stopping left its Service running")
 	}
 	for version, row := range want {
@@ -400,7 +400,7 @@ func TestTheDefaultVersionGetsTheStandardPortAndOthersAStableDerivedOne(t *testi
 		}
 	}
 	c = dialRedis(t, d, 63762)
-	c.do("AUTH", "portby")
+	c.do("AUTH", "laneway")
 	if got := c.do("PING"); got != "+PONG" {
 		t.Fatalf("PING on the derived port after a restart = %q", got)
 	}
@@ -413,15 +413,15 @@ func TestServicesUpAndDownStartAndStopAService(t *testing.T) {
 
 	out := d.MustRunCLI(d.Home, "services", "up", "redis").Stdout
 	assertContains(t, out, "redis:7 is running at "+d.ServiceHost()+":6379")
-	if !d.Engine.IsRunning("portby-redis-7") {
+	if !d.Engine.IsRunning("laneway-redis-7") {
 		t.Fatal("`services up` didn't start the container")
 	}
 	c := dialRedis(t, d, 6379)
-	c.do("AUTH", "portby")
+	c.do("AUTH", "laneway")
 
 	out = d.MustRunCLI(d.Home, "services", "down", "redis:7").Stdout
 	assertContains(t, out, "redis:7 is stopped")
-	if d.Engine.IsRunning("portby-redis-7") {
+	if d.Engine.IsRunning("laneway-redis-7") {
 		t.Fatal("`services down` didn't stop the container")
 	}
 	c.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
@@ -431,7 +431,7 @@ func TestServicesUpAndDownStartAndStopAService(t *testing.T) {
 
 	// The next connection starts it again.
 	c = dialRedis(t, d, 6379)
-	c.do("AUTH", "portby")
+	c.do("AUTH", "laneway")
 	if got := c.do("PING"); got != "+PONG" {
 		t.Fatalf("PING after down = %q", got)
 	}
@@ -478,12 +478,12 @@ func TestServiceHostPortAndPasswordAreEnvPatchVariables(t *testing.T) {
 	d.MustRunCLI(repo.Dir, "link", "--yes")
 
 	env := readFile(t, filepath.Join(repo.Dir, ".env"))
-	for _, line := range []string{"REDIS_HOST=" + d.ServiceHost(), "REDIS_PORT=63762", "REDIS_PASSWORD=portby"} {
+	for _, line := range []string{"REDIS_HOST=" + d.ServiceHost(), "REDIS_PORT=63762", "REDIS_PASSWORD=laneway"} {
 		assertContains(t, env, line+"\n")
 	}
 	// What the Env Patch says is what works.
 	c := dialRedis(t, d, 63762)
-	if got := c.do("AUTH", "portby"); got != "+OK" {
+	if got := c.do("AUTH", "laneway"); got != "+OK" {
 		t.Fatalf("AUTH with the Env Patch's password = %q", got)
 	}
 }
@@ -492,7 +492,7 @@ func TestAServiceVariableNeedsTheServiceDeclared(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "svc-env-undeclared").
-		WriteFile("portby.toml", "[env]\nREDIS_PORT = \"{redis_port}\"\n").
+		WriteFile("laneway.toml", "[env]\nREDIS_PORT = \"{redis_port}\"\n").
 		Commit("use redis without declaring it")
 
 	res := d.RunCLI(repo.Dir, "link", "--yes")
@@ -511,7 +511,7 @@ func TestLinkRejectsAnUnknownServiceNamingTheFileAndKey(t *testing.T) {
 	if res.ExitCode == 0 {
 		t.Fatalf("link succeeded:\n%s", res.Output())
 	}
-	assertContains(t, res.Stderr, filepath.Join(repo.Dir, "portby.toml")+`: services.memcached: Portby has no Service "memcached"`)
+	assertContains(t, res.Stderr, filepath.Join(repo.Dir, "laneway.toml")+`: services.memcached: Laneway has no Service "memcached"`)
 }
 
 func TestAServiceWhosePortIsTakenSaysSo(t *testing.T) {
@@ -526,23 +526,23 @@ func TestAServiceWhosePortIsTakenSaysSo(t *testing.T) {
 	d.MustRunCLI(serviceProject(t, "svc-port-taken", `redis = "7"`, "").Dir, "link")
 
 	out := d.MustRunCLI(d.Home, "services").Stdout
-	assertContains(t, out, "redis:7: Portby can't listen on port 6379")
+	assertContains(t, out, "redis:7: Laneway can't listen on port 6379")
 	assertContains(t, out, "address already in use")
 	assertContains(t, out, "in use by redis-server (pid 4545)")
 }
 
-func TestAServiceStoppedBehindPortbysBackStartsOnTheNextConnection(t *testing.T) {
+func TestAServiceStoppedBehindLanewaysBackStartsOnTheNextConnection(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	d.MustRunCLI(serviceProject(t, "svc-killed", `redis = "7"`, "").Dir, "link")
 	c := dialRedis(t, d, 6379)
-	c.do("AUTH", "portby")
+	c.do("AUTH", "laneway")
 	c.conn.Close()
 
-	d.Engine.Kill("portby-redis-7")
+	d.Engine.Kill("laneway-redis-7")
 
 	c = dialRedis(t, d, 6379)
-	c.do("AUTH", "portby")
+	c.do("AUTH", "laneway")
 	if got := c.do("PING"); got != "+PONG" {
 		t.Fatalf("PING after the container was stopped = %q", got)
 	}
@@ -567,7 +567,7 @@ func TestDeclaringAServicePullsItsImageAheadOfTheFirstConnection(t *testing.T) {
 func TestTheServiceIdleTimeoutComesFromTheGlobalConfig(t *testing.T) {
 	t.Parallel()
 	d, clk := idleDaemon(t)
-	global := filepath.Join(d.Home, ".config", "portby", "config.toml")
+	global := filepath.Join(d.Home, ".config", "laneway", "config.toml")
 	if err := os.MkdirAll(filepath.Dir(global), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -576,7 +576,7 @@ func TestTheServiceIdleTimeoutComesFromTheGlobalConfig(t *testing.T) {
 	}
 	d.MustRunCLI(serviceProject(t, "svc-global-idle", `redis = "7"`, "").Dir, "link")
 	c := dialRedis(t, d, 6379)
-	c.do("AUTH", "portby")
+	c.do("AUTH", "laneway")
 	c.conn.Close()
 
 	if delay := waitForTimer(t, clk); delay != time.Hour {

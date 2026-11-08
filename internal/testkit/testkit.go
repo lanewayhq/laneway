@@ -1,4 +1,4 @@
-// Package testkit is Seam 1 from the spec: it runs a real Portby daemon in a
+// Package testkit is Seam 1 from the spec: it runs a real Laneway daemon in a
 // temporary home directory so tests can drive it through its API and the CLI,
 // and observe only what is visible from outside the daemon.
 //
@@ -17,14 +17,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/cli"
-	"github.com/mrsafalpiya/portby.dev/internal/client"
-	"github.com/mrsafalpiya/portby.dev/internal/clock"
-	"github.com/mrsafalpiya/portby.dev/internal/container"
-	"github.com/mrsafalpiya/portby.dev/internal/container/containertest"
-	"github.com/mrsafalpiya/portby.dev/internal/daemon"
-	"github.com/mrsafalpiya/portby.dev/internal/paths"
-	"github.com/mrsafalpiya/portby.dev/internal/platform/platformtest"
+	"github.com/lanewayhq/laneway/internal/cli"
+	"github.com/lanewayhq/laneway/internal/client"
+	"github.com/lanewayhq/laneway/internal/clock"
+	"github.com/lanewayhq/laneway/internal/container"
+	"github.com/lanewayhq/laneway/internal/container/containertest"
+	"github.com/lanewayhq/laneway/internal/daemon"
+	"github.com/lanewayhq/laneway/internal/paths"
+	"github.com/lanewayhq/laneway/internal/platform/platformtest"
 )
 
 // Option adjusts the daemon's Config before every start, including restarts.
@@ -53,7 +53,7 @@ type Daemon struct {
 	Home string
 	// Paths is where the daemon keeps its state and socket.
 	Paths paths.Paths
-	// Platform is what the CLI uses instead of the real machine, so `portby
+	// Platform is what the CLI uses instead of the real machine, so `lane
 	// install`, `doctor` and `open` never run sudo, touch a trust store or
 	// systemd, or open a browser. Tests set it up and inspect it.
 	Platform *platformtest.Fake
@@ -87,13 +87,13 @@ func StartDaemon(t testing.TB, opts ...Option) *Daemon {
 	}
 	// Unix socket paths are limited to ~108 bytes, and t.TempDir() paths can
 	// exceed that, so the runtime dir gets a short name of its own.
-	runtimeDir, err := os.MkdirTemp("", "portby-test-")
+	runtimeDir, err := os.MkdirTemp("", "laneway-test-")
 	if err != nil {
 		t.Fatalf("testkit: %v", err)
 	}
 	t.Cleanup(func() { os.RemoveAll(runtimeDir) })
 
-	bin := filepath.Join(home, ".portby-test", "bin")
+	bin := filepath.Join(home, ".laneway-test", "bin")
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		t.Fatalf("testkit: %v", err)
 	}
@@ -200,10 +200,10 @@ func (r CLIResult) Output() string {
 }
 
 // cliTimeout bounds one CLI invocation, so a command that wrongly blocks
-// (such as a second `portby daemon` that started) fails instead of hanging.
+// (such as a second `lane daemon` that started) fails instead of hanging.
 const cliTimeout = 15 * time.Second
 
-// RunCLI runs `portby <args...>` in-process with dir as its working directory
+// RunCLI runs `lane <args...>` in-process with dir as its working directory
 // and the daemon's home as its environment.
 func (d *Daemon) RunCLI(dir string, args ...string) CLIResult {
 	d.t.Helper()
@@ -248,7 +248,7 @@ func (d *Daemon) MustRunCLI(dir string, args ...string) CLIResult {
 	d.t.Helper()
 	res := d.RunCLI(dir, args...)
 	if res.ExitCode != 0 {
-		d.t.Fatalf("portby %s exited %d\nstdout:\n%s\nstderr:\n%s",
+		d.t.Fatalf("lane %s exited %d\nstdout:\n%s\nstderr:\n%s",
 			strings.Join(args, " "), res.ExitCode, res.Stdout, res.Stderr)
 	}
 	return res

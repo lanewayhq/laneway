@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/daemon"
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/daemon"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 func TestLogsShowAProcessOutput(t *testing.T) {
@@ -19,7 +19,7 @@ func TestLogsShowAProcessOutput(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	server := testkit.TestServer(t)
 	repo := gitfixture.New(t, "logs-show").
-		WriteFile("portby.toml", processConfig("echo hello from web; echo oops >&2; exec "+server)).
+		WriteFile("laneway.toml", processConfig("echo hello from web; echo oops >&2; exec "+server)).
 		Commit("declare web Process")
 
 	d.MustRunCLI(repo.Dir, "link")
@@ -29,13 +29,13 @@ func TestLogsShowAProcessOutput(t *testing.T) {
 	assertLines(t, out, "hello from web", "oops")
 }
 
-// waitForLogs runs `portby <args>` in dir until its output contains want,
+// waitForLogs runs `lane <args>` in dir until its output contains want,
 // because Process output reaches the daemon asynchronously. It returns the
 // last stdout.
 func waitForLogs(t *testing.T, d *testkit.Daemon, dir string, args []string, want string) string {
 	t.Helper()
 	var out string
-	testkit.WaitUntil(t, 10*time.Second, fmt.Sprintf("`portby %s` to show %q", strings.Join(args, " "), want), func() bool {
+	testkit.WaitUntil(t, 10*time.Second, fmt.Sprintf("`lane %s` to show %q", strings.Join(args, " "), want), func() bool {
 		out = d.MustRunCLI(dir, args...).Stdout
 		return strings.Contains(out, want)
 	})
@@ -55,12 +55,12 @@ func TestLogsWithoutAProcessInterleaveAllOfThemWithNamePrefixes(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	// Two Processes take turns writing. Each line waits for a file the test
-	// creates once Portby shows the line before it: Portby orders lines as
+	// creates once Laneway shows the line before it: Laneway orders lines as
 	// it reads them from each Process's pipe, which can't tell which of two
 	// Processes wrote first when they write within moments of each other.
 	waitFor := func(file string) string { return "while [ ! -e " + file + " ]; do sleep 0.01; done; " }
 	repo := gitfixture.New(t, "logs-interleave").
-		WriteFile("portby.toml", "[processes.web]\nprimary = true\ncommand = \""+
+		WriteFile("laneway.toml", "[processes.web]\nprimary = true\ncommand = \""+
 			"echo first; "+waitFor("3")+"echo third; exec sleep 600\"\n"+
 			"[processes.worker]\ncommand = \""+
 			waitFor("2")+"echo second; "+waitFor("4")+"echo fourth; exec sleep 600\"\n").
@@ -84,7 +84,7 @@ func TestLogsFollowPrintsNewOutputAsItIsWritten(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "logs-follow").
-		WriteFile("portby.toml", processConfig(
+		WriteFile("laneway.toml", processConfig(
 			"echo before; while [ ! -e go ]; do sleep 0.01; done; echo after; exec sleep 600")).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
@@ -98,7 +98,7 @@ func TestLogsFollowPrintsNewOutputAsItIsWritten(t *testing.T) {
 
 	res := follow.Stop()
 	if res.ExitCode != 0 {
-		t.Fatalf("portby logs -f exited %d:\n%s", res.ExitCode, res.Output())
+		t.Fatalf("lane logs -f exited %d:\n%s", res.ExitCode, res.Output())
 	}
 	assertLines(t, res.Stdout, "before", "after")
 }
@@ -107,7 +107,7 @@ func TestLogsFollowEndsWhenTheDaemonStops(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "logs-follow-stop").
-		WriteFile("portby.toml", processConfig("echo hello; exec sleep 600")).
+		WriteFile("laneway.toml", processConfig("echo hello; exec sleep 600")).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
 	startByBrowsing(t, d, "logs-follow-stop.localhost")
@@ -123,7 +123,7 @@ func TestFullOutputIsWrittenToALogFileInTheStateDirectory(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "logs-file").
-		WriteFile("portby.toml", processConfig("echo run; echo err >&2; exec sleep 600")).
+		WriteFile("laneway.toml", processConfig("echo run; echo err >&2; exec sleep 600")).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
 	startByBrowsing(t, d, "logs-file.localhost")
@@ -151,7 +151,7 @@ func TestLogFilesRotateAndKeepTheNewestOutput(t *testing.T) {
 	d := testkit.StartDaemon(t, func(c *daemon.Config) { c.LogFileMaxBytes = maxBytes })
 	// 100 lines of 50 bytes: five times what one file may hold.
 	repo := gitfixture.New(t, "logs-rotate").
-		WriteFile("portby.toml", processConfig(
+		WriteFile("laneway.toml", processConfig(
 			`for i in $(seq 100 199); do printf 'line %s ........................................\n' $i; done; echo done; exec sleep 600`)).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
@@ -196,7 +196,7 @@ func TestLogsForAnUnknownProcessListTheRealOnes(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "logs-unknown").
-		WriteFile("portby.toml", processConfig("exec sleep 600")).
+		WriteFile("laneway.toml", processConfig("exec sleep 600")).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
 	startByBrowsing(t, d, "logs-unknown.localhost")
@@ -204,7 +204,7 @@ func TestLogsForAnUnknownProcessListTheRealOnes(t *testing.T) {
 	res := d.RunCLI(repo.Dir, "logs", "wbe")
 
 	if res.ExitCode == 0 {
-		t.Fatalf("portby logs wbe succeeded:\n%s", res.Output())
+		t.Fatalf("lane logs wbe succeeded:\n%s", res.Output())
 	}
 	assertContains(t, res.Stderr, `no Process "wbe"`)
 	assertContains(t, res.Stderr, "web")
@@ -218,7 +218,7 @@ func TestLogsOutsideALinkedProjectFailClearly(t *testing.T) {
 	res := d.RunCLI(repo.Dir, "logs")
 
 	if res.ExitCode == 0 {
-		t.Fatalf("portby logs outside a Linked Project succeeded:\n%s", res.Output())
+		t.Fatalf("lane logs outside a Linked Project succeeded:\n%s", res.Output())
 	}
-	assertContains(t, res.Stderr, "portby link")
+	assertContains(t, res.Stderr, "lane link")
 }

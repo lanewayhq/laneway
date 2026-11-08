@@ -16,7 +16,7 @@ import (
 // The data directory is set explicitly (PGDATA) because the images moved it
 // in Postgres 18 (to /var/lib/postgresql/<major>/docker, with the volume at
 // /var/lib/postgresql): with PGDATA and the volume at the old place, every
-// version keeps its data in Portby's volume the same way.
+// version keeps its data in Laneway's volume the same way.
 var Postgres = &Engine{
 	Name:           "postgres",
 	DefaultVersion: "18",

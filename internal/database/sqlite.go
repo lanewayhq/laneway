@@ -71,7 +71,7 @@ func install(ctx context.Context, path string, mode fs.FileMode, write func(*os.
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".portby-*")
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".laneway-*")
 	if err != nil {
 		return err
 	}

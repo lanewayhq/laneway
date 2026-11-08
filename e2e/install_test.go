@@ -4,8 +4,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/platform/platformtest"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/platform/platformtest"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 func TestInstallSetsUpPortsServiceEngineAndCATrust(t *testing.T) {
@@ -20,7 +20,7 @@ func TestInstallSetsUpPortsServiceEngineAndCATrust(t *testing.T) {
 		t.Fatalf("install did %q, want %q", got, want)
 	}
 	if d.Platform.InstalledExecutable() == "" {
-		t.Fatal("the service was installed without the portby binary's path")
+		t.Fatal("the service was installed without the lane binary's path")
 	}
 	assertContains(t, res.Stdout, "sudo")
 }
@@ -68,5 +68,5 @@ func TestInstallOnWSL2TrustsTheCAInWindowsToo(t *testing.T) {
 		t.Fatalf("install did %q, want the Windows store trusted too", got)
 	}
 	// The store's own prompt is shown before the dialog appears.
-	assertContains(t, res.Stdout, "(fake) adding Portby's CA to the "+platformtest.WindowsStore)
+	assertContains(t, res.Stdout, "(fake) adding Laneway's CA to the "+platformtest.WindowsStore)
 }

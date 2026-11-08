@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
+	"github.com/lanewayhq/laneway/internal/api"
 )
 
 // routes is the single place API routes are registered. Handlers decode the

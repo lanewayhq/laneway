@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // sqliteProject is a Project whose database is the SQLite file
@@ -18,7 +18,7 @@ func sqliteProject(t *testing.T, name, database string) *gitfixture.Repo {
 	return gitfixture.New(t, name).
 		WriteFile(".gitignore", ".env\n*.sqlite\n").
 		WriteFile("database/.gitkeep", "").
-		WriteFile("portby.toml", "[database]\nengine = \"sqlite\"\npath = \"database/database.sqlite\"\n"+database+
+		WriteFile("laneway.toml", "[database]\nengine = \"sqlite\"\npath = \"database/database.sqlite\"\n"+database+
 			"\n[env]\nDB_DATABASE = \"{db}\"\n").
 		Commit("declare a SQLite database")
 }
@@ -87,7 +87,7 @@ func TestInSharedModeANewWorktreeUsesTheMainWorktreesSQLiteFile(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	out := filepath.Join(gitfixture.TempDir(t), "ran")
 	repo := sqliteProject(t, "db-shared", `worktree = "shared"`).
-		WriteFile("portby.local.toml", "[worktree]\non_create = "+tomlList(`echo "$PORTBY_DB" >> `+out)+"\n").
+		WriteFile("laneway.local.toml", "[worktree]\non_create = "+tomlList(`echo "$LANEWAY_DB" >> `+out)+"\n").
 		Commit("record the database setup sees")
 	writeTestFile(t, sqliteFile(repo.Dir), "main-data")
 	d.MustRunCLI(repo.Dir, "link", "--yes")
@@ -126,7 +126,7 @@ func TestRetryingSetupKeepsTheWorktreesDatabase(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	marker := filepath.Join(gitfixture.TempDir(t), "fixed")
 	repo := sqliteProject(t, "db-retry", "").
-		WriteFile("portby.local.toml", "[worktree]\non_create = "+tomlList("test -e "+marker)+"\n").
+		WriteFile("laneway.local.toml", "[worktree]\non_create = "+tomlList("test -e "+marker)+"\n").
 		Commit("a setup step that fails until fixed")
 	writeTestFile(t, sqliteFile(repo.Dir), "main-data")
 	writeTestFile(t, marker, "")

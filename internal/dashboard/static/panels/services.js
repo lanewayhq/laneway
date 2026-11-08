@@ -17,7 +17,7 @@ export default {
       if (list.services.length === 0) {
         el.replaceChildren(h("p", { class: "empty" },
           "No Services yet. Declare one in the ", h("code", {}, "[services]"), " table of ",
-          h("code", {}, "portby.toml"), ", such as ", h("code", {}, 'redis = "7"'), "."));
+          h("code", {}, "laneway.toml"), ", such as ", h("code", {}, 'redis = "7"'), "."));
         return;
       }
       el.replaceChildren(h("table", {},

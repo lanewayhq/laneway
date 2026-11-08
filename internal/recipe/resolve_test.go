@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/config"
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/recipe"
 )
 
 // resolveFixture loads testdata/<name>'s config layers and resolves them
@@ -317,7 +317,7 @@ func TestResolveDirReportsInvalidConfig(t *testing.T) {
 	}
 }
 
-// What `portby init` writes must mean the same thing as the config it was
+// What `lane init` writes must mean the same thing as the config it was
 // resolved from, whether or not the Recipe still detects the Project.
 func TestTheResolvedConfigWrittenAsALayerResolvesToItself(t *testing.T) {
 	for _, fixture := range []string{"committed-only", "local-overrides", "recipe-defaults", "recipe-reenabled", "primary-moved", "start-timeout", "env-layers", "no-http", "start-modes"} {

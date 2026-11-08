@@ -1,4 +1,4 @@
-// Package container is the container engine: the one way Portby runs
+// Package container is the container engine: the one way Laneway runs
 // containers (for Services). It is one of the two things the spec's Seam 1
 // lets tests swap; package containertest has the fake.
 //

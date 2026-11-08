@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // modesProject is a repo with a lazy Primary Process web and one more HTTP
@@ -28,7 +28,7 @@ func modesProject(t *testing.T, name, mode string) (repo *gitfixture.Repo, webPI
 		"echo $$ > "+webPID+"; exec "+server,
 		"echo $$ > "+otherPID+"; exec "+server+" --name other",
 		mode)
-	repo = gitfixture.New(t, name).WriteFile("portby.toml", config).Commit("declare Processes")
+	repo = gitfixture.New(t, name).WriteFile("laneway.toml", config).Commit("declare Processes")
 	return repo, webPID, otherPID
 }
 
@@ -92,7 +92,7 @@ func TestManualProcessesOnlyStartThroughUp(t *testing.T) {
 	if page.StatusCode != http.StatusBadGateway {
 		t.Fatalf("request to a manual Process that isn't running: status %d, want 502:\n%s", page.StatusCode, page.Body)
 	}
-	assertContains(t, page.Body, "portby up other")
+	assertContains(t, page.Body, "lane up other")
 
 	d.MustRunCLI(repo.Dir, "up", "other")
 	other := waitForPID(t, otherPID)
@@ -114,7 +114,7 @@ func TestAlwaysProcessesWaitForSetupAndStartOnceARetriedSetupIsReady(t *testing.
 	d := testkit.StartDaemon(t)
 	marker := filepath.Join(gitfixture.TempDir(t), "fixed")
 	repo, webPID, otherPID := modesProject(t, "mode-always-setup", "always")
-	repo.WriteFile("portby.local.toml", "[worktree]\non_create = "+tomlList("test -e "+marker+" || exit 4")+"\n")
+	repo.WriteFile("laneway.local.toml", "[worktree]\non_create = "+tomlList("test -e "+marker+" || exit 4")+"\n")
 	d.MustRunCLI(repo.Dir, "link")
 
 	if res := d.RunCLI(repo.Dir, "worktree", "ready"); res.ExitCode != 1 {

@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 func TestDownStopsTheWorktreeAndTheNextRequestStartsItAgain(t *testing.T) {
@@ -60,7 +60,7 @@ func TestLogsOfAStoppedProcessShowItsKeptOutput(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "ctl-logs").
-		WriteFile("portby.toml", processConfig("echo boot; exec "+testkit.TestServer(t))).
+		WriteFile("laneway.toml", processConfig("echo boot; exec "+testkit.TestServer(t))).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
 	startByBrowsing(t, d, "ctl-logs.localhost")

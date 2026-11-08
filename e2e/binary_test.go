@@ -10,27 +10,27 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/client"
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/client"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
-// TestBinary drives the compiled `portby` binary end to end: the daemon as a
+// TestBinary drives the compiled `lane` binary end to end: the daemon as a
 // subprocess, and the CLI as separate processes talking to it over its socket.
 func TestBinary(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
-		t.Skip("builds the portby binary")
+		t.Skip("builds the lane binary")
 	}
 	bin := testkit.BuildBinary(t)
 	home := gitfixture.TempDir(t)
-	runtimeDir, err := os.MkdirTemp("", "portby-test-")
+	runtimeDir, err := os.MkdirTemp("", "laneway-test-")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(runtimeDir) })
 	env := append(os.Environ(), "HOME="+home, "XDG_RUNTIME_DIR="+runtimeDir, "XDG_STATE_HOME=")
-	socket := filepath.Join(runtimeDir, "portby", "portby.sock")
+	socket := filepath.Join(runtimeDir, "laneway", "laneway.sock")
 	repo := gitfixture.New(t, "shop")
 
 	startDaemon := func() *exec.Cmd {
@@ -56,24 +56,24 @@ func TestBinary(t *testing.T) {
 			t.Fatalf("socket still exists after shutdown: %v", err)
 		}
 	}
-	portby := func(dir string, args ...string) string {
+	lane := func(dir string, args ...string) string {
 		t.Helper()
 		cmd := exec.Command(bin, args...)
 		cmd.Dir = dir
 		cmd.Env = env
 		out, err := cmd.CombinedOutput()
 		if err != nil {
-			t.Fatalf("portby %v: %v\n%s", args, err, out)
+			t.Fatalf("lane %v: %v\n%s", args, err, out)
 		}
 		return string(out)
 	}
 
 	daemon := startDaemon()
-	assertContains(t, portby(repo.Dir, "link"), `Linked Project "shop"`)
+	assertContains(t, lane(repo.Dir, "link"), `Linked Project "shop"`)
 	stopDaemon(daemon)
 
 	startDaemon()
-	assertStatusRows(t, portby(home, "status"), [][2]string{{"shop", repo.Dir}})
+	assertStatusRows(t, lane(home, "status"), [][2]string{{"shop", repo.Dir}})
 }
 
 func waitForDaemon(t *testing.T, socket string) {

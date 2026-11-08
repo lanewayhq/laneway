@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
-// eventuallyContains waits until the file at path contains want: Portby
+// eventuallyContains waits until the file at path contains want: Laneway
 // re-applies the Env Patch for a moved Primary Domain in the background.
 func eventuallyContains(t *testing.T, path, want string) {
 	t.Helper()
@@ -27,7 +27,7 @@ func appURLProject(t *testing.T, name string) (repo *gitfixture.Repo, log string
 	command, log := startCounting(t, testkit.TestServer(t)+` --name "$(sed -n 's/^APP_URL=//p' .env)"`)
 	repo = gitfixture.New(t, name).
 		WriteFile(".gitignore", ".env\n").
-		WriteFile("portby.toml", "[env]\nAPP_URL = \"{url}\"\n\n"+processConfig(command)).
+		WriteFile("laneway.toml", "[env]\nAPP_URL = \"{url}\"\n\n"+processConfig(command)).
 		Commit("declare a Process that reads APP_URL")
 	return repo, log
 }
@@ -79,7 +79,7 @@ func TestTheEnvTestingFollowsThePrimaryDomainAndDatabaseNamesStay(t *testing.T) 
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "primary-tdb").
 		WriteFile(".gitignore", ".env\n.env.testing\n").
-		WriteFile("portby.toml", "[database]\nengine = \"postgres\"\ntest = \"on\"\n\n"+
+		WriteFile("laneway.toml", "[database]\nengine = \"postgres\"\ntest = \"on\"\n\n"+
 			"[env]\nAPP_URL = \"{url}\"\nDB_DATABASE = \"{db}\"\n").
 		Commit("declare a Postgres database with Test Databases").
 		WriteFile(".env.testing", "APP_ENV=testing\n")

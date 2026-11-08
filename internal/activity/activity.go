@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/clock"
+	"github.com/lanewayhq/laneway/internal/clock"
 )
 
 // Tracker decides when one subject is Idle. It is safe for concurrent use.

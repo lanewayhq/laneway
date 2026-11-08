@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/proxy"
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/proxy"
+	"github.com/lanewayhq/laneway/internal/recipe"
 )
 
-// control carries out `portby up`, `down` or `restart` (action) on the
+// control carries out `lane up`, `down` or `restart` (action) on the
 // Worktree req names, or on one of its Processes, and returns the Worktree
 // afterwards.
 func (d *Daemon) control(ctx context.Context, action string, req api.ControlRequest) (api.Worktree, error) {
@@ -106,7 +106,7 @@ func (d *Daemon) up(ctx context.Context, s *served, proc *recipe.Process) error 
 			what = "didn't accept connections in time"
 		}
 		return &api.Error{Code: api.CodeStartFailed, Message: fmt.Sprintf(
-			"the Primary Process %q %s (%v); see its output with `portby logs %s`", se.Process, what, se.Err, se.Process)}
+			"the Primary Process %q %s (%v); see its output with `lane logs %s`", se.Process, what, se.Err, se.Process)}
 	}
 	if st.err != nil {
 		return &api.Error{Code: api.CodeStartFailed, Message: st.err.Error()}

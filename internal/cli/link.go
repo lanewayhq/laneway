@@ -9,13 +9,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/dotenv"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/dotenv"
 )
 
 func runLink(ctx context.Context, env Env, args []string) error {
 	fs := newFlags(env, "link")
-	name := fs.String("name", "", "Project name, instead of `name` in portby.toml or the directory name")
+	name := fs.String("name", "", "Project name, instead of `name` in laneway.toml or the directory name")
 	yes := fs.Bool("yes", false, "apply the Env Patch to the Worktrees' .env files without asking")
 	if err := parseFlags(fs, args); err != nil {
 		return err
@@ -34,7 +34,7 @@ func runLink(ctx context.Context, env Env, args []string) error {
 		if len(preview.EnvPatch) > 0 {
 			printEnvPatch(env.Stdout, preview.EnvPatch)
 			if !confirm(env, "Apply these changes? [y/N] ") {
-				return errors.New("nothing was changed; run `portby link --yes` to apply the Env Patch without asking")
+				return errors.New("nothing was changed; run `lane link --yes` to apply the Env Patch without asking")
 			}
 		}
 		req.Preview = false
@@ -60,7 +60,7 @@ func runLink(ctx context.Context, env Env, args []string) error {
 }
 
 // printEnvPatch shows how each env file changes, as a diff of the keys
-// Portby owns.
+// Laneway owns.
 func printEnvPatch(w io.Writer, patches []api.EnvFilePatch) {
 	for _, p := range patches {
 		worktree := "the main Worktree"

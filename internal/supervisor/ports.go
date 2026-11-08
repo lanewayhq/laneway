@@ -25,17 +25,17 @@ var ports = struct {
 	held map[int]*os.File
 }{held: map[int]*os.File{}}
 
-// portLockDir is where every Portby on the machine (the daemon, test suites
+// portLockDir is where every Laneway on the machine (the daemon, test suites
 // running alongside it) reserves the ports it gives to runs: it holds an
 // flock on <portLockDir>/<port> until the run exits. Without it, two of them
 // can give the same port to Processes that boot at the same time, and one
 // sees the other's Process as its own. The kernel drops the lock when its
 // holder dies, so a crashed daemon's ports become free again.
-var portLockDir = filepath.Join(os.TempDir(), "portby-ports")
+var portLockDir = filepath.Join(os.TempDir(), "laneway-ports")
 
-// freePort picks a random loopback port in the range that no Portby has
+// freePort picks a random loopback port in the range that no Laneway has
 // reserved and that is free now, and reserves it. A program other than
-// Portby could still take it before the Process binds it, but a fresh one
+// Laneway could still take it before the Process binds it, but a fresh one
 // is picked on every start.
 //
 // The check binds without SO_REUSEADDR (net.Listen sets it), as some
@@ -79,7 +79,7 @@ func freePort() (int, error) {
 }
 
 // reservePort takes the lock reserving port. It returns nil, nil if another
-// Portby holds it.
+// Laneway holds it.
 func reservePort(port int) (*os.File, error) {
 	// Read-only is enough for flock, and lets another user's daemon lock a
 	// file this one created.

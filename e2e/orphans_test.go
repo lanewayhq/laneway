@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/clock"
-	"github.com/mrsafalpiya/portby.dev/internal/daemon"
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/clock"
+	"github.com/lanewayhq/laneway/internal/daemon"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // orphanEpoch is when the fake clock of Orphan tests starts.
@@ -166,7 +166,7 @@ func TestAWorktreeRemovedBeforeItHadADatabaseLeavesNoOrphans(t *testing.T) {
 	t.Parallel()
 	d, _ := orphanDaemon(t)
 	repo := postgresProject(t, "orphan-early", `test = "on"`).
-		WriteFile("portby.toml", "[database]\nengine = \"postgres\"\ntest = \"on\"\n").
+		WriteFile("laneway.toml", "[database]\nengine = \"postgres\"\ntest = \"on\"\n").
 		Commit("no Env Patch")
 	d.MustRunCLI(repo.Dir, "link", "--yes")
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
@@ -262,7 +262,7 @@ func TestGcAsksOnATerminalAndOtherwiseDropsOrphansAndLeftoverParallelTestCopies(
 		// (one removed while the daemon was down, say).
 		"orphan_gc__old_test_test_1", "orphan_gc__old_test_test_2",
 		// Copies of existing Worktrees' Test Databases, and databases
-		// Portby didn't make.
+		// Laneway didn't make.
 		"orphan_gc_test_test_1", "orphan_gc__kept_test_test_1", "orphan_gc__old_test_test_x", "elsewhere_test_test_1")
 	untouched := []string{"orphan_gc", "orphan_gc_test", "orphan_gc__kept", "orphan_gc__kept_test",
 		"orphan_gc_test_test_1", "orphan_gc__kept_test_test_1", "orphan_gc__old_test_test_x", "elsewhere_test_test_1"}
@@ -322,7 +322,7 @@ func servedPostgresProject(t *testing.T, name string) *gitfixture.Repo {
 	server := testkit.TestServer(t)
 	return gitfixture.New(t, name).
 		WriteFile(".gitignore", ".env\n").
-		WriteFile("portby.toml", processConfig(server+` --name "$(basename "$(pwd)")"`)+
+		WriteFile("laneway.toml", processConfig(server+` --name "$(basename "$(pwd)")"`)+
 			"\n[database]\nengine = \"postgres\"\ntest = \"on\"\n\n[env]\nDB_DATABASE = \"{db}\"\n").
 		Commit("declare web and a Postgres database")
 }
@@ -370,7 +370,7 @@ func TestUnlinkStopsTheProjectAndTurnsAllItsDatabasesIntoOrphansLeavingEnvFilesA
 		if got := readFile(t, filepath.Join(dir, ".env")); got != before {
 			t.Errorf("unlink changed %s/.env:\n%s\nwas\n%s", dir, got, before)
 		}
-		assertNoFile(t, filepath.Join(dir, ".env.portby.bak"))
+		assertNoFile(t, filepath.Join(dir, ".env.laneway.bak"))
 	}
 	if res := d.RunCLI(repo.Dir, "unlink"); res.ExitCode == 0 {
 		t.Errorf("unlinking again exited 0:\n%s", res.Output())

@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/mrsafalpiya/portby.dev/internal/container"
+	"github.com/lanewayhq/laneway/internal/container"
 )
 
 // mailbox is the Volume list Mailpit keeps messages in.

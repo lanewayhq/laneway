@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/mysqlwire"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/mysqlwire"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // waitForSetup waits for the Worktree at dir to be set up, for longer than
-// `portby worktree ready` gets in tests: MySQL's first start initialises
+// `lane worktree ready` gets in tests: MySQL's first start initialises
 // its data directory, which can take 20 s.
 func waitForSetup(t *testing.T, d *testkit.Daemon, dir string) *api.Setup {
 	t.Helper()
@@ -119,7 +119,7 @@ func TestMySQLDatabasesOnARealContainerEngine(t *testing.T) {
 					t.Fatalf("the retried copy's view shows %q, want the main Worktree's notes", got)
 				}
 
-				// The data is in Portby's volume: it survives the container
+				// The data is in Laneway's volume: it survives the container
 				// stopping.
 				d.MustRunCLI(d.Home, "services", "down", "mysql:"+version.version)
 				again := dialMySQL(t, d, port, db)

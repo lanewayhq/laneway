@@ -1,10 +1,10 @@
 // Package service is the Service Manager (ADR-0001, ADR-0005): Services are
 // shared containers, one per engine and version (redis:7), started on the
-// first connection to the port Portby listens on for them and stopped once
+// first connection to the port Laneway listens on for them and stopped once
 // they have had no connections and no running Worktree depending on them
 // for the Service idle timeout.
 //
-// Engines lists the Service engines Portby knows. Adding one (Postgres,
+// Engines lists the Service engines Laneway knows. Adding one (Postgres,
 // MySQL, Mailpit) is adding an *Engine there: its image, port, command and
 // a readiness Probe. See the notes in architecture.md.
 package service
@@ -22,8 +22,8 @@ import (
 // User and Password are the shared local credentials of every Service, so
 // every env file and GUI client uses the same ones.
 const (
-	User     = "portby"
-	Password = "portby"
+	User     = "laneway"
+	Password = "laneway"
 )
 
 // Engine is a kind of Service, such as Redis. A Service is an Engine at a
@@ -61,7 +61,7 @@ type Engine struct {
 	Probe func(ctx context.Context, conn net.Conn) error
 }
 
-// Engines are the Service engines Portby can run.
+// Engines are the Service engines Laneway can run.
 var Engines = []*Engine{Redis, Mailpit, Postgres, MySQL}
 
 // Lookup returns the Engine called name.

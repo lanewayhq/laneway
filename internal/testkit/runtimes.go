@@ -55,7 +55,7 @@ func WriteExecutable(t testing.TB, dir, name, script string) string {
 }
 
 // StubPHP writes a fake `php` into dir. Asked for its version and
-// extensions the way Portby asks (`php -r …`), it reports version and
+// extensions the way Laneway asks (`php -r …`), it reports version and
 // extensions (as PHP names them, such as "Zend OPcache"). Run any other way,
 // it prints "PHP <version> (stub) <args>".
 func StubPHP(t testing.TB, dir, version string, extensions ...string) string {

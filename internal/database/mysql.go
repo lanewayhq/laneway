@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/mysqlwire"
-	"github.com/mrsafalpiya/portby.dev/internal/naming"
+	"github.com/lanewayhq/laneway/internal/mysqlwire"
+	"github.com/lanewayhq/laneway/internal/naming"
 )
 
 // MySQLMaxName is the longest a MySQL database name may be.
@@ -15,9 +15,9 @@ const MySQLMaxName = 64
 
 // copyMarker is a table Clone puts in the database it is building and drops
 // last. MySQL can't create a database and its contents all at once, so a
-// database that still has it is a copy cut short (Portby was killed half
+// database that still has it is a copy cut short (Laneway was killed half
 // way): Exists says it doesn't exist, and Create and Clone drop it first.
-const copyMarker = "portby_copy_in_progress"
+const copyMarker = "laneway_copy_in_progress"
 
 // MySQL is the Engine of databases in the MySQL Service at Server. Database
 // names don't need the Server, so the zero MySQL names them.
@@ -64,7 +64,7 @@ func (m MySQL) Create(ctx context.Context, db string) error {
 }
 
 // Clone creates to as a copy of from by dump and restore, done by the server
-// itself rather than through Portby: every table's definition (SHOW CREATE
+// itself rather than through Laneway: every table's definition (SHOW CREATE
 // TABLE) and rows (INSERT … SELECT), then its routines, views and triggers,
 // like mysqldump --routines (events aren't copied: they would run on the
 // copy too). Each table is read as one consistent snapshot without locking

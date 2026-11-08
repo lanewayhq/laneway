@@ -11,18 +11,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/container"
-	"github.com/mrsafalpiya/portby.dev/internal/daemon"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/container"
+	"github.com/lanewayhq/laneway/internal/daemon"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // realEngines are the container engines the slow tier runs against: each
-// Docker Engine API socket that answers. Without PORTBY_SLOW=1 the slow tier
+// Docker Engine API socket that answers. Without LANEWAY_SLOW=1 the slow tier
 // is skipped; an engine that doesn't answer is skipped on its own.
 func realEngines(t *testing.T) map[string]*container.Docker {
 	t.Helper()
-	if os.Getenv("PORTBY_SLOW") == "" {
-		t.Skip("slow tier: set PORTBY_SLOW=1 to run against real container engines")
+	if os.Getenv("LANEWAY_SLOW") == "" {
+		t.Skip("slow tier: set LANEWAY_SLOW=1 to run against real container engines")
 	}
 	sockets := map[string]string{"docker": "/var/run/docker.sock"}
 	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
@@ -45,7 +45,7 @@ func realEngineDaemon(t *testing.T, engine *container.Docker, opts ...testkit.Op
 	if err := engine.Ping(ctx); err != nil {
 		t.Skipf("no container engine at %s: %v", engine.Socket, err)
 	}
-	prefix := fmt.Sprintf("portby-test-%08x", rand.Uint32())
+	prefix := fmt.Sprintf("laneway-test-%08x", rand.Uint32())
 	opts = append([]testkit.Option{testkit.WithContainerEngine(engine),
 		func(c *daemon.Config) { c.ContainerPrefix = prefix }}, opts...)
 	d := testkit.StartDaemon(t, opts...)
@@ -74,7 +74,7 @@ func TestRedisStartsLazilyAndStopsOnARealContainerEngine(t *testing.T) {
 			d.MustRunCLI(serviceProject(t, "svc-real-"+name, `redis = "7"`, "").Dir, "link")
 
 			c := dialRedis(t, d, 6379)
-			if got := c.do("AUTH", "portby"); got != "+OK" {
+			if got := c.do("AUTH", "laneway"); got != "+OK" {
 				t.Fatalf("AUTH = %q, want +OK", got)
 			}
 			if got := c.do("SET", "greeting", "hello"); got != "+OK" {
@@ -94,7 +94,7 @@ func TestRedisStartsLazilyAndStopsOnARealContainerEngine(t *testing.T) {
 			// It starts again on the next connection, with its data (the
 			// volume).
 			c = dialRedis(t, d, 6379)
-			c.do("AUTH", "portby")
+			c.do("AUTH", "laneway")
 			if got := c.do("GET", "greeting"); got != "hello" {
 				t.Fatalf("GET after a restart = %q, want hello", got)
 			}
@@ -114,7 +114,7 @@ func TestMailpitCatchesMailAndServesItsInboxOnARealContainerEngine(t *testing.T)
 			inbox := "https://mail." + dash
 
 			// Any login is accepted, so apps may use the shared credentials.
-			sendMailAs(t, dialMail(t, d, 1025), "Welcome", smtp.PlainAuth("", "portby", "portby", "localhost"))
+			sendMailAs(t, dialMail(t, d, 1025), "Welcome", smtp.PlainAuth("", "laneway", "laneway", "localhost"))
 			if subjects := inboxSubjects(t, d, inbox); !slices.Equal(subjects, []string{"Welcome"}) {
 				t.Fatalf("the inbox lists %q, want the message just sent", subjects)
 			}

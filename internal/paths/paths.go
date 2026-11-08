@@ -20,29 +20,29 @@ type Paths struct {
 
 // FromEnv resolves Paths from environment variables read through getenv:
 //
-//   - state:  $XDG_STATE_HOME/portby, else $HOME/.local/state/portby
-//   - socket: $XDG_RUNTIME_DIR/portby/portby.sock, else <state>/run/portby.sock
-//   - config: $XDG_CONFIG_HOME/portby, else $HOME/.config/portby
+//   - state:  $XDG_STATE_HOME/laneway, else $HOME/.local/state/laneway
+//   - socket: $XDG_RUNTIME_DIR/laneway/laneway.sock, else <state>/run/laneway.sock
+//   - config: $XDG_CONFIG_HOME/laneway, else $HOME/.config/laneway
 func FromEnv(getenv func(string) string) (Paths, error) {
 	home := getenv("HOME")
 	stateHome := getenv("XDG_STATE_HOME")
 	if stateHome == "" {
 		if home == "" {
-			return Paths{}, errors.New("cannot find Portby's state directory: neither XDG_STATE_HOME nor HOME is set")
+			return Paths{}, errors.New("cannot find Laneway's state directory: neither XDG_STATE_HOME nor HOME is set")
 		}
 		stateHome = filepath.Join(home, ".local", "state")
 	}
-	p := Paths{StateDir: filepath.Join(stateHome, "portby")}
+	p := Paths{StateDir: filepath.Join(stateHome, "laneway")}
 	if configHome := getenv("XDG_CONFIG_HOME"); configHome != "" {
-		p.ConfigDir = filepath.Join(configHome, "portby")
+		p.ConfigDir = filepath.Join(configHome, "laneway")
 	} else if home != "" {
-		p.ConfigDir = filepath.Join(home, ".config", "portby")
+		p.ConfigDir = filepath.Join(home, ".config", "laneway")
 	}
 
 	if runtimeDir := getenv("XDG_RUNTIME_DIR"); runtimeDir != "" {
-		p.Socket = filepath.Join(runtimeDir, "portby", "portby.sock")
+		p.Socket = filepath.Join(runtimeDir, "laneway", "laneway.sock")
 	} else {
-		p.Socket = filepath.Join(p.StateDir, "run", "portby.sock")
+		p.Socket = filepath.Join(p.StateDir, "run", "laneway.sock")
 	}
 	return p, nil
 }
@@ -52,14 +52,14 @@ func (p Paths) Registry() string {
 	return filepath.Join(p.StateDir, "registry.json")
 }
 
-// CertStorage is the directory the proxy keeps Portby's local CA and every
+// CertStorage is the directory the proxy keeps Laneway's local CA and every
 // issued certificate in.
 func (p Paths) CertStorage() string {
 	return filepath.Join(p.StateDir, "certs")
 }
 
-// CARootCert is Portby's local root CA certificate (PEM), the one file a
-// browser or client needs to trust Portby's Domains.
+// CARootCert is Laneway's local root CA certificate (PEM), the one file a
+// browser or client needs to trust Laneway's Domains.
 func (p Paths) CARootCert() string {
 	return filepath.Join(p.CertStorage(), "pki", "authorities", "local", "root.crt")
 }

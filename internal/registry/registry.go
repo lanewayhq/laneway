@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/naming"
-	"github.com/mrsafalpiya/portby.dev/internal/service"
+	"github.com/lanewayhq/laneway/internal/naming"
+	"github.com/lanewayhq/laneway/internal/service"
 )
 
 // Project is a Linked git repository.
@@ -394,7 +394,7 @@ func (r *Registry) RemoveAlias(a Alias) error {
 	return nil
 }
 
-// Service is a Service and the port Portby listens on for it. Once a
+// Service is a Service and the port Laneway listens on for it. Once a
 // Service has a port it keeps it, so connection settings never change.
 type Service struct {
 	service.Ref

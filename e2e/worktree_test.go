@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // discoveryTimeout is how long a Worktree may take to appear or disappear:
@@ -27,7 +27,7 @@ func worktreeProject(t *testing.T, name string) *gitfixture.Repo {
 	t.Helper()
 	server := testkit.TestServer(t)
 	return gitfixture.New(t, name).
-		WriteFile("portby.toml", processConfig(server+` --name "$(basename "$(pwd)")"`)).
+		WriteFile("laneway.toml", processConfig(server+` --name "$(basename "$(pwd)")"`)).
 		Commit("declare web Process")
 }
 
@@ -233,7 +233,7 @@ func TestEachWorktreeHasItsOwnProcessStatesAndLogs(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "wt-logs").
-		WriteFile("portby.toml", processConfig(`echo "boot $(basename "$(pwd)")"; exec sleep 600`)).
+		WriteFile("laneway.toml", processConfig(`echo "boot $(basename "$(pwd)")"; exec sleep 600`)).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
 	wt := repo.AddWorktree("feature-y")

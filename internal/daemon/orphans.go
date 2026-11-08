@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/database"
-	"github.com/mrsafalpiya/portby.dev/internal/naming"
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
-	"github.com/mrsafalpiya/portby.dev/internal/registry"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/database"
+	"github.com/lanewayhq/laneway/internal/naming"
+	"github.com/lanewayhq/laneway/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/registry"
 )
 
 // OrphanGrace is how long an Orphan is kept before it is dropped, so that a
@@ -20,7 +20,7 @@ import (
 // at once.
 const OrphanGrace = 24 * time.Hour
 
-// OrphanRetry is how long Portby waits to try again after Orphans that are
+// OrphanRetry is how long Laneway waits to try again after Orphans that are
 // due could not be dropped (no container engine, say).
 const OrphanRetry = time.Hour
 
@@ -119,7 +119,7 @@ func (d *Daemon) addOrphans(orphans []registry.Orphan) {
 // went before setup made it) is forgotten, and the parallel test copies of
 // an Orphan Test Database become Orphans too, since the same time. It
 // starts the Services to look. If it can't, the records stay as they are:
-// dropping a database that doesn't exist is fine, and `portby gc` finds
+// dropping a database that doesn't exist is fine, and `lane gc` finds
 // leftover copies.
 func (d *Daemon) checkOrphans(ctx context.Context, orphans []registry.Orphan) {
 	for _, batch := range byService(orphans) {
@@ -316,7 +316,7 @@ func (d *Daemon) dropper(ctx context.Context, svc recipe.Service) (e database.Dr
 	e, ok := databaseEngine(recipe.Database{Engine: svc.Engine}, server).(database.Dropper)
 	if !ok {
 		release()
-		return nil, nil, fmt.Errorf("Portby can't drop %s databases", svc.Engine)
+		return nil, nil, fmt.Errorf("Laneway can't drop %s databases", svc.Engine)
 	}
 	return e, release, nil
 }

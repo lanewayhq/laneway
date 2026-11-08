@@ -31,7 +31,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/clock"
+	"github.com/lanewayhq/laneway/internal/clock"
 )
 
 // Spec says how to run one Process.
@@ -51,7 +51,7 @@ type Spec struct {
 	// Process. Nil means
 	// the Supervisor's own.
 	Env []string
-	// Notes are written to the Process's output, each prefixed "portby: ",
+	// Notes are written to the Process's output, each prefixed "laneway: ",
 	// once before it first starts (such as Runtime warnings).
 	Notes []string
 }
@@ -288,7 +288,7 @@ func (s *Supervisor) start(group string, spec Spec) (*Process, error) {
 	s.outputOf(group, spec.Name).setFile(spec.LogFile, s.opts)
 	s.outMu.Unlock()
 	for _, note := range spec.Notes {
-		s.writeLine(group, spec.Name, "portby: "+note)
+		s.writeLine(group, spec.Name, "laneway: "+note)
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -391,7 +391,7 @@ func (p *Process) crashed(what string) {
 	if len(p.crashes) >= MaxCrashes {
 		p.state = StateFailed
 		p.note("%s and has crashed %d times within %g minutes, so it won't be restarted "+
-			"until `portby up` or `portby restart`", what, len(p.crashes), CrashWindow.Minutes())
+			"until `lane up` or `lane restart`", what, len(p.crashes), CrashWindow.Minutes())
 		return
 	}
 	delay := backoff(len(p.crashes))
@@ -413,9 +413,9 @@ func (p *Process) restart() {
 	}
 }
 
-// note adds a line from Portby itself to the Process's output.
+// note adds a line from Laneway itself to the Process's output.
 func (p *Process) note(format string, args ...any) {
-	p.s.writeLine(p.group, p.spec.Name, fmt.Sprintf("portby: Process %q ", p.spec.Name)+fmt.Sprintf(format, args...))
+	p.s.writeLine(p.group, p.spec.Name, fmt.Sprintf("laneway: Process %q ", p.spec.Name)+fmt.Sprintf(format, args...))
 }
 
 // State is what the Process is doing.
@@ -455,7 +455,7 @@ func (p *Process) WaitUp(ctx context.Context) error {
 		p.mu.Unlock()
 		switch {
 		case state == StateFailed:
-			return fmt.Errorf("Process %q has failed: it crashed %d times within %g minutes; see its output with `portby logs %s`",
+			return fmt.Errorf("Process %q has failed: it crashed %d times within %g minutes; see its output with `lane logs %s`",
 				p.spec.Name, MaxCrashes, CrashWindow.Minutes(), p.spec.Name)
 		case r == nil:
 			return fmt.Errorf("Process %q is %s", p.spec.Name, state)

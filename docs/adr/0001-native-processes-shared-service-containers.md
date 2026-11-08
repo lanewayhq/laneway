@@ -6,5 +6,5 @@ We picked this to avoid DDEV's per-project container cost. Apps run natively bec
 
 ## Consequences
 
-- Portby does not give a team reproducible system libraries. A Project that depends on host libraries (libvips, ImageMagick, etc.) relies on the developer's machine having them.
+- Laneway does not give a team reproducible system libraries. A Project that depends on host libraries (libvips, ImageMagick, etc.) relies on the developer's machine having them.
 - A container engine (Podman or Docker) is required as soon as a Project uses a Service.

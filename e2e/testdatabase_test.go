@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/pgwire"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/pgwire"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // assertEmptyPostgresDatabase fails the test unless the database db exists
@@ -80,7 +80,7 @@ func TestTheTestDbVariableNamesTheWorktreesTestDatabaseCutToPostgresLimit(t *tes
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "tdb-long").
 		WriteFile(".gitignore", ".env\n").
-		WriteFile("portby.toml", "[database]\nengine = \"postgres\"\ntest = \"on\"\n\n"+
+		WriteFile("laneway.toml", "[database]\nengine = \"postgres\"\ntest = \"on\"\n\n"+
 			"[env]\nDB_DATABASE = \"{db}\"\nDB_TEST_DATABASE = \"{test_db}\"\n").
 		Commit("declare a Postgres database with Test Databases")
 	d.MustRunCLI(repo.Dir, "link", "--yes")
@@ -129,7 +129,7 @@ func TestEachWorktreeGetsTheMainWorktreesEnvTestingPointedAtItsTestDatabase(t *t
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "tdb-env").
 		WriteFile(".gitignore", ".env\n.env.testing\n").
-		WriteFile("portby.toml", "[database]\nengine = \"postgres\"\ntest = \"on\"\n\n"+
+		WriteFile("laneway.toml", "[database]\nengine = \"postgres\"\ntest = \"on\"\n\n"+
 			"[env]\nDB_HOST = \"{db_host}\"\nDB_DATABASE = \"{db}\"\n").
 		Commit("declare a Postgres database with Test Databases").
 		WriteFile(".env.testing", "APP_ENV=testing\n# the tests' database\nDB_DATABASE=laravel_testing\n")
@@ -210,12 +210,12 @@ func TestSetupStepsKnowTheWorktreesTestDatabase(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := postgresProject(t, "tdb-steps", `test = "on"`).
-		WriteFile("portby.local.toml", "[worktree]\non_create = [\"echo \\\"$PORTBY_TEST_DB\\\" > test-db.txt\"]\n")
+		WriteFile("laneway.local.toml", "[worktree]\non_create = [\"echo \\\"$LANEWAY_TEST_DB\\\" > test-db.txt\"]\n")
 	d.MustRunCLI(repo.Dir, "link", "--yes")
 
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
 
 	if got := readFile(t, filepath.Join(repo.Dir, "test-db.txt")); got != "tdb_steps_test\n" {
-		t.Fatalf("PORTBY_TEST_DB in a setup step = %q, want tdb_steps_test", got)
+		t.Fatalf("LANEWAY_TEST_DB in a setup step = %q, want tdb_steps_test", got)
 	}
 }

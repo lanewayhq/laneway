@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/envpatch"
-	"github.com/mrsafalpiya/portby.dev/internal/gitrepo"
-	"github.com/mrsafalpiya/portby.dev/internal/naming"
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
-	"github.com/mrsafalpiya/portby.dev/internal/registry"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/envpatch"
+	"github.com/lanewayhq/laneway/internal/gitrepo"
+	"github.com/lanewayhq/laneway/internal/naming"
+	"github.com/lanewayhq/laneway/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/registry"
 )
 
 // link registers the repository containing req.Dir as a Project.
@@ -24,7 +24,7 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 		return api.LinkResponse{}, &api.Error{
 			Code: api.CodeNotGitRepo,
 			Message: fmt.Sprintf("%s is not inside a git repository; "+
-				"run `portby link` from a git repository (or `git init` one first)", req.Dir),
+				"run `lane link` from a git repository (or `git init` one first)", req.Dir),
 		}
 	}
 	if err != nil {

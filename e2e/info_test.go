@@ -6,18 +6,18 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
-// infoJSON runs `portby info --json` in dir and decodes its output without
-// Portby's own types, so the test sees the keys an agent sees.
+// infoJSON runs `lane info --json` in dir and decodes its output without
+// Laneway's own types, so the test sees the keys an agent sees.
 func infoJSON(t *testing.T, d *testkit.Daemon, dir string) map[string]any {
 	t.Helper()
 	res := d.MustRunCLI(dir, "info", "--json")
 	var info map[string]any
 	if err := json.Unmarshal([]byte(res.Stdout), &info); err != nil {
-		t.Fatalf("`portby info --json` printed something that isn't a JSON object: %v\n%s", err, res.Stdout)
+		t.Fatalf("`lane info --json` printed something that isn't a JSON object: %v\n%s", err, res.Stdout)
 	}
 	return info
 }
@@ -153,11 +153,11 @@ func TestInfoJSONReportsSetupAndWhyItFailed(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "info-setup").
-		WriteFile("portby.toml", "[worktree]\non_create = "+tomlList("echo checking >&2; exit 3")+"\n").
+		WriteFile("laneway.toml", "[worktree]\non_create = "+tomlList("echo checking >&2; exit 3")+"\n").
 		Commit("declare a failing setup step")
 	d.MustRunCLI(repo.Dir, "link")
 	if res := d.RunCLI(repo.Dir, "worktree", "ready"); res.ExitCode != 1 {
-		t.Fatalf("`portby worktree ready` exited %d, want 1 (setup failed):\n%s", res.ExitCode, res.Output())
+		t.Fatalf("`lane worktree ready` exited %d, want 1 (setup failed):\n%s", res.ExitCode, res.Output())
 	}
 
 	info := infoJSON(t, d, repo.Dir)
@@ -184,7 +184,7 @@ func TestInfoJSONGivesEachWorktreesDatabasesAndHowToReachItsServices(t *testing.
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "info-db").
-		WriteFile("portby.toml", "[database]\nengine = \"postgres\"\ntest = \"on\"\n\n[services]\nredis = \"7\"\n").
+		WriteFile("laneway.toml", "[database]\nengine = \"postgres\"\ntest = \"on\"\n\n[services]\nredis = \"7\"\n").
 		Commit("declare a Postgres database with Test Databases, and Redis")
 	d.MustRunCLI(repo.Dir, "link")
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
@@ -212,15 +212,15 @@ func TestInfoJSONGivesEachWorktreesDatabasesAndHowToReachItsServices(t *testing.
 	assertAt(t, pg, "18", "version")
 	assertAt(t, pg, d.ServiceHost(), "host")
 	assertAt(t, pg, 5432.0, "port")
-	assertAt(t, pg, "portby", "user")
-	assertAt(t, pg, "portby", "password")
+	assertAt(t, pg, "laneway", "user")
+	assertAt(t, pg, "laneway", "password")
 	assertAt(t, pg, "running", "state") // setup started it
 	assertAt(t, pg, "", "error")
 	redis := infoService(t, info, "redis:7")
 	assertAt(t, redis, d.ServiceHost(), "host")
 	assertAt(t, redis, 6379.0, "port")
 	assertAt(t, redis, "", "user")
-	assertAt(t, redis, "portby", "password")
+	assertAt(t, redis, "laneway", "password")
 	assertAt(t, redis, "stopped", "state") // nothing has connected
 }
 
@@ -249,16 +249,16 @@ func TestInfoJSONSaysWhyItCantListProcessesOfABrokenConfig(t *testing.T) {
 	repo := routedProject(t, "info-broken")
 	d.MustRunCLI(repo.Dir, "link")
 	assertAt(t, infoJSON(t, d, repo.Dir), "", "configError")
-	writeTestFile(t, filepath.Join(repo.Dir, "portby.local.toml"), "[processes.web]\nstart_mode = \"sometimes\"\n")
+	writeTestFile(t, filepath.Join(repo.Dir, "laneway.local.toml"), "[processes.web]\nstart_mode = \"sometimes\"\n")
 
 	info := infoJSON(t, d, repo.Dir)
-	assertContains(t, at(t, info, "configError").(string), "portby.local.toml")
+	assertContains(t, at(t, info, "configError").(string), "laneway.local.toml")
 	assertContains(t, at(t, info, "configError").(string), "start_mode")
 	assertLen(t, info, 0, "processes")
 	assertAt(t, info, "https://info-broken.localhost/", "url")
 }
 
-// infoSchema is `portby info --json`'s schema version 1, as documented for
+// infoSchema is `lane info --json`'s schema version 1, as documented for
 // agents and scripts: every key of every object, with its JSON type
 // ("object?" may be null). Adding a key means adding it here and to the
 // documented contract; removing or renaming one, or changing its type,
@@ -343,7 +343,7 @@ func TestInfoJSONHasEveryDocumentedKeyAndNoOthers(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	server := testkit.TestServer(t)
 	repo := gitfixture.New(t, "info-schema").
-		WriteFile("portby.toml", processConfig(server+" --name web")+
+		WriteFile("laneway.toml", processConfig(server+" --name web")+
 			"\n[database]\nengine = \"postgres\"\ntest = \"on\"\n\n[services]\nredis = \"7\"\n").
 		Commit("declare everything info shows")
 	d.MustRunCLI(repo.Dir, "link")
@@ -363,7 +363,7 @@ func TestInfoJSONHasEveryDocumentedKeyAndNoOthers(t *testing.T) {
 	assertAt(t, info, nil, "database")
 }
 
-func TestInfoExitsWith3WhenPortbyDoesntServeTheDirectory(t *testing.T) {
+func TestInfoExitsWith3WhenLanewayDoesntServeTheDirectory(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	unlinked := gitfixture.New(t, "info-unlinked")
@@ -374,7 +374,7 @@ func TestInfoExitsWith3WhenPortbyDoesntServeTheDirectory(t *testing.T) {
 		t.Helper()
 		res := d.RunCLI(dir, "info", "--json")
 		if res.ExitCode != 3 || res.Stdout != "" || res.Stderr == "" {
-			t.Fatalf("`portby info --json` %s exited %d, want 3 with only a message on stderr:\n%s", what, res.ExitCode, res.Output())
+			t.Fatalf("`lane info --json` %s exited %d, want 3 with only a message on stderr:\n%s", what, res.ExitCode, res.Output())
 		}
 	}
 	assertExit3("outside a git repository", gitfixture.TempDir(t))
@@ -406,7 +406,7 @@ func TestInfoPrintsTheSameDetailsForPeople(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	server := testkit.TestServer(t)
 	repo := gitfixture.New(t, "info-text").
-		WriteFile("portby.toml", processConfig(server+" --name web")+
+		WriteFile("laneway.toml", processConfig(server+" --name web")+
 			"\n[processes.vite]\ncommand = \""+server+" --name vite\"\nhttp = true\nstart_mode = \"manual\"\n"+
 			"\n[database]\nengine = \"postgres\"\ntest = \"on\"\n\n[services]\nredis = \"7\"\n").
 		Commit("declare everything info shows")
@@ -431,8 +431,8 @@ func TestInfoPrintsTheSameDetailsForPeople(t *testing.T) {
 	assertLineWith(t, out, "web", "lazy", "stopped", "https://api.info-text.localhost/", "(primary)")
 	assertLineWith(t, out, "Database", "postgres", "info_text__feature", "on", "postgres:18")
 	assertLineWith(t, out, "Test", "Database", "info_text__feature_test")
-	assertLineWith(t, out, "postgres:18", d.ServiceHost()+":5432", "portby", "portby", "running")
-	assertLineWith(t, out, "redis:7", d.ServiceHost()+":6379", "-", "portby", "stopped")
+	assertLineWith(t, out, "postgres:18", d.ServiceHost()+":5432", "laneway", "laneway", "running")
+	assertLineWith(t, out, "redis:7", d.ServiceHost()+":6379", "-", "laneway", "stopped")
 }
 
 func TestInfoJSONsURLIsTheWorktreesPrimaryDomain(t *testing.T) {

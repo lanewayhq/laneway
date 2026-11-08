@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // startCounting wraps command so every start of the Process appends a line to
@@ -46,7 +46,7 @@ func TestLinkStartsNothingUntilTheFirstRequest(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	command, log := startCounting(t, testkit.TestServer(t))
 	repo := gitfixture.New(t, "lazy-first").
-		WriteFile("portby.toml", processConfig(command)).
+		WriteFile("laneway.toml", processConfig(command)).
 		Commit("declare web Process")
 
 	d.MustRunCLI(repo.Dir, "link")
@@ -70,7 +70,7 @@ func TestSimultaneousFirstRequestsStartTheWorktreeOnce(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	command, log := startCounting(t, testkit.TestServer(t)+" --delay 1s")
 	repo := gitfixture.New(t, "lazy-once").
-		WriteFile("portby.toml", processConfig(command)).
+		WriteFile("laneway.toml", processConfig(command)).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
 
@@ -102,7 +102,7 @@ func TestABrowserPageLoadIsHeldUntilTheAppIsUp(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "lazy-page").
-		WriteFile("portby.toml", processConfig(testkit.TestServer(t)+" --name web --delay 2s")).
+		WriteFile("laneway.toml", processConfig(testkit.TestServer(t)+" --name web --delay 2s")).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
 	// Until then a page load gets the Preparing page (#15).
@@ -128,7 +128,7 @@ func TestHeldRequestFailsWithGatewayTimeoutAfterTheStartTimeout(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "lazy-timeout").
-		WriteFile("portby.toml", "start_timeout = \"1s\"\n"+processConfig(testkit.TestServer(t)+" --bind-only")).
+		WriteFile("laneway.toml", "start_timeout = \"1s\"\n"+processConfig(testkit.TestServer(t)+" --bind-only")).
 		Commit("declare a web Process that never listens")
 	d.MustRunCLI(repo.Dir, "link")
 
@@ -154,7 +154,7 @@ func TestAnotherProgramOnThePrimaryProcessPortIsNotMistakenForIt(t *testing.T) {
 	// the port would.
 	command := "setsid " + testkit.TestServer(t) + " --name intruder & echo $! > " + pidFile + "; exec sleep 600"
 	repo := gitfixture.New(t, "lazy-intruder").
-		WriteFile("portby.toml", "start_timeout = \"1s\"\n"+processConfig(command)).
+		WriteFile("laneway.toml", "start_timeout = \"1s\"\n"+processConfig(command)).
 		Commit("declare a web Process whose port another program takes")
 	d.MustRunCLI(repo.Dir, "link")
 
@@ -185,7 +185,7 @@ func TestBrowserGetsAnErrorPageWhenThePrimaryProcessExitsWhileStarting(t *testin
 	d := testkit.StartDaemon(t)
 	command := "for i in $(seq 1 60); do echo line-$i; done; echo to-stderr >&2; exit 3"
 	repo := gitfixture.New(t, "lazy-exit").
-		WriteFile("portby.toml", processConfig(command)).
+		WriteFile("laneway.toml", processConfig(command)).
 		Commit("declare a web Process that crashes")
 	d.MustRunCLI(repo.Dir, "link")
 
@@ -194,10 +194,10 @@ func TestBrowserGetsAnErrorPageWhenThePrimaryProcessExitsWhileStarting(t *testin
 	if page.StatusCode != http.StatusBadGateway {
 		t.Fatalf("status %d, want 502:\n%s", page.StatusCode, page.Body)
 	}
-	assertContains(t, page.Body, "Portby")
+	assertContains(t, page.Body, "Laneway")
 	assertContains(t, page.Body, html.EscapeString(command))
 	// The last 50 lines of output, from both stdout and stderr. The last
-	// may be Portby's own note that the Process exited.
+	// may be Laneway's own note that the Process exited.
 	assertContains(t, page.Body, "line-13\n")
 	assertContains(t, page.Body, "line-60\n")
 	assertContains(t, page.Body, "to-stderr")
@@ -211,7 +211,7 @@ func TestBrowserGetsAnErrorPageWhenThePrimaryProcessTimesOutWhileStarting(t *tes
 	d := testkit.StartDaemon(t)
 	command := "echo still-booting; exec " + testkit.TestServer(t) + " --bind-only"
 	repo := gitfixture.New(t, "lazy-slow").
-		WriteFile("portby.toml", "start_timeout = \"1s\"\n"+processConfig(command)).
+		WriteFile("laneway.toml", "start_timeout = \"1s\"\n"+processConfig(command)).
 		Commit("declare a web Process that never listens")
 	d.MustRunCLI(repo.Dir, "link")
 
@@ -237,7 +237,7 @@ func TestReloadingTheErrorPageStartsTheWorktreeAgain(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	command := crashOnceCommand(t)
 	repo := gitfixture.New(t, "lazy-retry").
-		WriteFile("portby.toml", processConfig(command)).
+		WriteFile("laneway.toml", processConfig(command)).
 		Commit("declare a web Process that crashes once")
 	d.MustRunCLI(repo.Dir, "link")
 
@@ -256,7 +256,7 @@ func TestRequestingAgainAfterAFailedStartStartsTheWorktreeAgain(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	command := crashOnceCommand(t)
 	repo := gitfixture.New(t, "lazy-retry-curl").
-		WriteFile("portby.toml", processConfig(command)).
+		WriteFile("laneway.toml", processConfig(command)).
 		Commit("declare a web Process that crashes once")
 	d.MustRunCLI(repo.Dir, "link")
 
@@ -276,7 +276,7 @@ func TestSimultaneousRequestsShareAFailedStartAndRetryItOnce(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	command, log := startCounting(t, "sleep 1; exit 1")
 	repo := gitfixture.New(t, "lazy-fail-once").
-		WriteFile("portby.toml", processConfig(command)).
+		WriteFile("laneway.toml", processConfig(command)).
 		Commit("declare a web Process that always crashes")
 	d.MustRunCLI(repo.Dir, "link")
 
@@ -326,7 +326,7 @@ func TestStoppingTheDaemonEndsAStartInProgress(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	pidFile := filepath.Join(gitfixture.TempDir(t), "pid")
 	repo := gitfixture.New(t, "lazy-shutdown").
-		WriteFile("portby.toml", processConfig("echo $$ > "+pidFile+"; exec "+testkit.TestServer(t)+" --bind-only")).
+		WriteFile("laneway.toml", processConfig("echo $$ > "+pidFile+"; exec "+testkit.TestServer(t)+" --bind-only")).
 		Commit("declare a web Process that never listens")
 	d.MustRunCLI(repo.Dir, "link")
 	client := d.HTTPS()
@@ -390,11 +390,11 @@ func loadInBackground(t *testing.T, d *testkit.Daemon, url string) {
 
 // startByBrowsing starts the Worktree served at domain the way a browser
 // visiting it does, without waiting for its Primary Process to come up, and
-// waits until `portby status` shows its Processes running.
+// waits until `lane status` shows its Processes running.
 func startByBrowsing(t *testing.T, d *testkit.Daemon, domain string) {
 	t.Helper()
 	loadInBackground(t, d, "https://"+domain+"/")
-	testkit.WaitUntil(t, 10*time.Second, "`portby status` to show "+domain+"'s Processes running", func() bool {
+	testkit.WaitUntil(t, 10*time.Second, "`lane status` to show "+domain+"'s Processes running", func() bool {
 		for line := range strings.Lines(d.MustRunCLI(d.Home, "status").Stdout) {
 			if slices.Contains(strings.Fields(line), domain) && strings.Contains(line, ":running") {
 				return true
@@ -409,7 +409,7 @@ func TestRemovingAWorktreeEndsAStartInProgress(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	pids := gitfixture.TempDir(t)
 	repo := gitfixture.New(t, "lazy-removed").
-		WriteFile("portby.toml", processConfig(
+		WriteFile("laneway.toml", processConfig(
 			`echo $$ > `+pids+`/"$(basename "$(pwd)")"; exec `+testkit.TestServer(t)+" --bind-only")).
 		Commit("declare a web Process that never listens")
 	d.MustRunCLI(repo.Dir, "link")

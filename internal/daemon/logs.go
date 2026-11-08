@@ -10,10 +10,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/gitrepo"
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
-	"github.com/mrsafalpiya/portby.dev/internal/registry"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/gitrepo"
+	"github.com/lanewayhq/laneway/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/registry"
 )
 
 // worktreeAt finds the Linked Project containing dir, and the Worktree dir is
@@ -36,7 +36,7 @@ func (d *Daemon) worktreeAt(ctx context.Context, dir string) (registry.Project, 
 	if !ok {
 		return registry.Project{}, gitrepo.Checkout{}, &api.Error{
 			Code:    api.CodeNotLinked,
-			Message: fmt.Sprintf("%s is not Linked; run `portby link` there first", checkout.MainDir),
+			Message: fmt.Sprintf("%s is not Linked; run `lane link` there first", checkout.MainDir),
 		}
 	}
 	return p, checkout, nil

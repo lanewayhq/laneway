@@ -26,7 +26,7 @@ var MySQL = &Engine{
 	// one writes the script, then runs the entrypoint with mysqld.
 	Cmd: func(string) []string {
 		return []string{"sh", "-c", `printf '%s\n' "GRANT ALL PRIVILEGES ON *.* TO '` + User +
-			`'@'%' WITH GRANT OPTION;" > /docker-entrypoint-initdb.d/portby.sql && exec docker-entrypoint.sh mysqld`}
+			`'@'%' WITH GRANT OPTION;" > /docker-entrypoint-initdb.d/laneway.sql && exec docker-entrypoint.sh mysqld`}
 	},
 	Probe: probeMySQL,
 }

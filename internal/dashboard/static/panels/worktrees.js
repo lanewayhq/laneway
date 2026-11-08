@@ -15,7 +15,7 @@ export default {
       last = list;
       if (list.projects.length === 0) {
         el.replaceChildren(h("p", { class: "empty" },
-          "No Projects are Linked. Run ", h("code", {}, "portby link"), " in a git repository."));
+          "No Projects are Linked. Run ", h("code", {}, "lane link"), " in a git repository."));
         return;
       }
       el.replaceChildren(...list.projects.map((p) => project(p)));
@@ -79,7 +79,7 @@ export default {
         return details(`${key}:setup`, h("span", {}, badge("failed"), " preparing at ", h("code", {}, s.step)),
           h("p", {}, s.error),
           s.output?.length ? h("pre", {}, s.output.join("\n")) : "",
-          h("p", {}, "Fix it, then run ", h("code", {}, "portby worktree ready --retry"), " in the Worktree."));
+          h("p", {}, "Fix it, then run ", h("code", {}, "lane worktree ready --retry"), " in the Worktree."));
       }
       if (s.state === "preparing") {
         return h("span", {}, badge("preparing"), " ", h("code", {}, s.step ?? ""));

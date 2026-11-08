@@ -13,17 +13,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/daemon"
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/paths"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/daemon"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/paths"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // Caddy's in-memory certificate cache is shared by every daemon in the test
 // process, so tests running in parallel must not serve the same Domain: give
 // each test's Project its own name.
 
-// processConfig is a portby.toml declaring one Primary Process.
+// processConfig is a laneway.toml declaring one Primary Process.
 func processConfig(command string) string {
 	return fmt.Sprintf("[processes.web]\ncommand = %q\nprimary = true\n", command)
 }
@@ -33,7 +33,7 @@ func TestLinkedProjectIsServedAtItsDomainOverHTTPS(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	server := testkit.TestServer(t)
 	repo := gitfixture.New(t, "serve-basic").
-		WriteFile("portby.toml", processConfig(server+" --name web")).
+		WriteFile("laneway.toml", processConfig(server+" --name web")).
 		Commit("declare web Process")
 
 	d.MustRunCLI(repo.Dir, "link")
@@ -49,7 +49,7 @@ func TestProcessGetsItsPortThroughPlaceholderAndEnv(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	server := testkit.TestServer(t)
 	repo := gitfixture.New(t, "serve-port").
-		WriteFile("portby.toml", processConfig(server+" --port={port}")).
+		WriteFile("laneway.toml", processConfig(server+" --port={port}")).
 		Commit("declare web Process")
 
 	d.MustRunCLI(repo.Dir, "link")
@@ -65,7 +65,7 @@ func TestProcessGetsAFreshPortOnEveryStart(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	server := testkit.TestServer(t)
 	repo := gitfixture.New(t, "serve-fresh-port").
-		WriteFile("portby.toml", processConfig(server)).
+		WriteFile("laneway.toml", processConfig(server)).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
 	first := d.GetServer("https://serve-fresh-port.localhost/")
@@ -85,7 +85,7 @@ func TestProcessGetsAFreshPortOnEveryStart(t *testing.T) {
 	}
 }
 
-func TestUnknownDomainGetsPortbyNotFoundPage(t *testing.T) {
+func TestUnknownDomainGetsLanewayNotFoundPage(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 
@@ -94,9 +94,9 @@ func TestUnknownDomainGetsPortbyNotFoundPage(t *testing.T) {
 	if res.StatusCode != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404:\n%s", res.StatusCode, res.Body)
 	}
-	assertContains(t, res.Body, "Portby")
+	assertContains(t, res.Body, "Laneway")
 	assertContains(t, res.Body, "serve-nothing-here.localhost")
-	assertContains(t, res.Body, "portby status")
+	assertContains(t, res.Body, "lane status")
 }
 
 func TestProxyForwardsWebSockets(t *testing.T) {
@@ -104,7 +104,7 @@ func TestProxyForwardsWebSockets(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	server := testkit.TestServer(t)
 	repo := gitfixture.New(t, "serve-ws").
-		WriteFile("portby.toml", processConfig(server)).
+		WriteFile("laneway.toml", processConfig(server)).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
 
@@ -177,14 +177,14 @@ func nonLoopbackIP(t *testing.T) net.IP {
 func TestDaemonRefusesANonLoopbackProxyAddress(t *testing.T) {
 	t.Parallel()
 	home := gitfixture.TempDir(t)
-	runtimeDir, err := os.MkdirTemp("", "portby-test-")
+	runtimeDir, err := os.MkdirTemp("", "laneway-test-")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(runtimeDir) })
 
 	_, err = daemon.Start(daemon.Config{
-		Paths:     paths.Paths{StateDir: home, Socket: filepath.Join(runtimeDir, "portby.sock")},
+		Paths:     paths.Paths{StateDir: home, Socket: filepath.Join(runtimeDir, "laneway.sock")},
 		ProxyAddr: "0.0.0.0:0",
 	})
 

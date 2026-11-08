@@ -84,7 +84,7 @@ const OutputLines = 50
 var ErrForgotten = errors.New("the Worktree was removed")
 
 // ErrClosed is returned by Wait once the Preparer is closed.
-var ErrClosed = errors.New("the Portby daemon is shutting down")
+var ErrClosed = errors.New("the Laneway daemon is shutting down")
 
 // Preparer runs and records setup for Worktrees, keyed by directory.
 type Preparer struct {

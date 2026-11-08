@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // routedProject is a repo with a Primary Process `web` and an HTTP Process
@@ -19,7 +19,7 @@ func routedProject(t *testing.T, name string) *gitfixture.Repo {
 		return fmt.Sprintf(`%s --name "%s@$(basename "$(pwd)")"`, server, process)
 	}
 	return gitfixture.New(t, name).
-		WriteFile("portby.toml", fmt.Sprintf(
+		WriteFile("laneway.toml", fmt.Sprintf(
 			"[processes.web]\ncommand = %q\nprimary = true\n\n"+
 				"[processes.vite]\ncommand = %q\nhttp = true\n\n"+
 				"[processes.queue]\ncommand = %q\n",
@@ -59,7 +59,7 @@ func TestConfigWithHTTPProcessesButNoPrimaryProcessIsRejected(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "routes-noprimary").
-		WriteFile("portby.toml", "[processes.web]\ncommand = \"serve\"\n\n"+
+		WriteFile("laneway.toml", "[processes.web]\ncommand = \"serve\"\n\n"+
 			"[processes.vite]\ncommand = \"vite\"\nhttp = true\n").
 		Commit("declare two Processes, neither Primary")
 
@@ -68,7 +68,7 @@ func TestConfigWithHTTPProcessesButNoPrimaryProcessIsRejected(t *testing.T) {
 	if res.ExitCode == 0 {
 		t.Fatalf("link succeeded without a Primary Process:\n%s", res.Output())
 	}
-	assertContains(t, res.Stderr, "portby.toml")
+	assertContains(t, res.Stderr, "laneway.toml")
 	assertContains(t, res.Stderr, "processes.vite.http")
 	assertContains(t, res.Stderr, "Primary Process")
 }

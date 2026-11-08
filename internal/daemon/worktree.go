@@ -3,9 +3,9 @@ package daemon
 import (
 	"context"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/gitrepo"
-	"github.com/mrsafalpiya/portby.dev/internal/registry"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/gitrepo"
+	"github.com/lanewayhq/laneway/internal/registry"
 )
 
 // worktreeInfo describes the Worktree containing dir, which must be inside a
@@ -33,7 +33,7 @@ func (d *Daemon) worktreeInfo(ctx context.Context, dir string) (api.WorktreeInfo
 }
 
 // domainURL is the URL of the page served at domain, as the API and
-// `portby info` give it: "https://shop.localhost/".
+// `lane info` give it: "https://shop.localhost/".
 func domainURL(domain string) string {
 	return "https://" + domain + "/"
 }

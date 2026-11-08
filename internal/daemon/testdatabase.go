@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/database"
-	"github.com/mrsafalpiya/portby.dev/internal/prepare"
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
-	"github.com/mrsafalpiya/portby.dev/internal/registry"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/database"
+	"github.com/lanewayhq/laneway/internal/prepare"
+	"github.com/lanewayhq/laneway/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/registry"
 )
 
 // worktreeTestDatabase is the Test Database of the Worktree w, which the Env
@@ -40,7 +40,7 @@ func (d *Daemon) testDatabaseStep(p registry.Project, w worktreeRef, cfg recipe.
 		name, ok := worktreeTestDatabase(p, w, cfg)
 		svc, inService := cfg.DatabaseService()
 		if !ok || !inService {
-			return fmt.Errorf("Portby can't make Test Databases of %s databases; set database.test to off", cfg.Database.Engine)
+			return fmt.Errorf("Laneway can't make Test Databases of %s databases; set database.test to off", cfg.Database.Engine)
 		}
 		server, release, err := d.databaseServer(ctx, svc, out)
 		if err != nil {

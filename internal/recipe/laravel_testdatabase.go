@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitrepo"
+	"github.com/lanewayhq/laneway/internal/gitrepo"
 )
 
 // testEnvFile is the env file Laravel loads instead of .env when APP_ENV is
@@ -35,8 +35,8 @@ func (Laravel) AutoTestDatabase(dir string) bool {
 }
 
 // TestDatabaseWarnings warns when the Project's PHPUnit configuration sets
-// DB_DATABASE: it wins over .env.testing, which Portby points at the
-// Worktree's Test Database, and Portby never edits it.
+// DB_DATABASE: it wins over .env.testing, which Laneway points at the
+// Worktree's Test Database, and Laneway never edits it.
 func (Laravel) TestDatabaseWarnings(dir string) []string {
 	p := readPHPUnit(dir)
 	database, ok := p.setting("DB_DATABASE")
@@ -45,7 +45,7 @@ func (Laravel) TestDatabaseWarnings(dir string) []string {
 	}
 	return []string{fmt.Sprintf("%s sets DB_DATABASE to %q, so the Project's tests use that database "+
 		"instead of the Worktree's Test Database; remove DB_DATABASE from %s and let %s set it "+
-		"(Portby patches %s, but never edits %s)", p.file, database, p.file, testEnvFile, testEnvFile, p.file)}
+		"(Laneway patches %s, but never edits %s)", p.file, database, p.file, testEnvFile, testEnvFile, p.file)}
 }
 
 // phpunit is what the Recipe reads of a Project's PHPUnit configuration: the

@@ -15,10 +15,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/clock"
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/clock"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // idleDaemon starts a daemon on a fake clock, so tests move time past the
@@ -31,12 +31,12 @@ func idleDaemon(t *testing.T) (*testkit.Daemon, *clock.Fake) {
 
 // pidProject is a repo whose web Process writes its pid to a file outside
 // the repo before serving, and the file's path. config is put before the
-// Process in portby.toml.
+// Process in laneway.toml.
 func pidProject(t *testing.T, name, config string) (*gitfixture.Repo, string) {
 	t.Helper()
 	pidFile := filepath.Join(gitfixture.TempDir(t), "pid")
 	repo := gitfixture.New(t, name).
-		WriteFile("portby.toml", config+processConfig("echo $$ > "+pidFile+"; exec "+testkit.TestServer(t))).
+		WriteFile("laneway.toml", config+processConfig("echo $$ > "+pidFile+"; exec "+testkit.TestServer(t))).
 		Commit("declare web Process")
 	return repo, pidFile
 }
@@ -214,7 +214,7 @@ func TestTheIdleTimeoutIsFifteenMinutesByDefault(t *testing.T) {
 func TestTheGlobalIdleTimeoutAppliesUnlessTheProjectSetsItsOwn(t *testing.T) {
 	t.Parallel()
 	d, clk := idleDaemon(t)
-	global := filepath.Join(d.Home, ".config", "portby", "config.toml")
+	global := filepath.Join(d.Home, ".config", "laneway", "config.toml")
 	if err := os.MkdirAll(filepath.Dir(global), 0o755); err != nil {
 		t.Fatal(err)
 	}

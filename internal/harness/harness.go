@@ -1,10 +1,10 @@
-// Package harness holds the Harness Generators behind `portby harness add`:
+// Package harness holds the Harness Generators behind `lane harness add`:
 // they merge config into a Worktree's files so that a Harness (Claude Code,
 // T3 Code) waits until its Worktree is Ready, and so that agents know how to
 // find its URL and run commands in it.
 //
 // Generated files are committed, so everything generated must be harmless for
-// teammates without Portby (see ReadyCommand) and must never overwrite
+// teammates without Laneway (see ReadyCommand) and must never overwrite
 // anyone's own config: JSON files are merged structurally, keeping every
 // existing entry in its place; Markdown files are merged between markers.
 // Running a generator again changes nothing.
@@ -20,18 +20,18 @@ import (
 	"sort"
 )
 
-// ReadyCommand is the shell command Harness hooks run: `portby worktree
-// ready`, guarded so that it succeeds quietly when `portby` isn't installed
+// ReadyCommand is the shell command Harness hooks run: `lane worktree
+// ready`, guarded so that it succeeds quietly when `lane` isn't installed
 // or there is nothing to wait for (exit 3: not a Linked repository, or no
 // daemon). It still fails when setup Failed (1) or waiting gave up (4).
 // It runs under `sh` because T3 Code types its scripts into the developer's
 // interactive shell, which may not be POSIX and where `exit` would close the
 // terminal.
-const ReadyCommand = `sh -c 'command -v portby >/dev/null 2>&1 || exit 0; portby worktree ready || [ $? -eq 3 ]'`
+const ReadyCommand = `sh -c 'command -v lane >/dev/null 2>&1 || exit 0; lane worktree ready || [ $? -eq 3 ]'`
 
 // readyTimeout is how long a Harness may let ReadyCommand run, in seconds.
-// It is longer than `portby worktree ready`'s own 10 minute timeout, so that
-// Portby gives up first and says why.
+// It is longer than `lane worktree ready`'s own 10 minute timeout, so that
+// Laneway gives up first and says why.
 const readyTimeout = 660
 
 // A generator returns the files it changes in the Worktree at root.

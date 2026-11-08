@@ -9,7 +9,7 @@ import (
 const pollInterval = 20 * time.Millisecond
 
 // WaitUntil checks cond until it holds, failing the test after timeout with
-// "timed out after <timeout> waiting for <what>". It is for state Portby
+// "timed out after <timeout> waiting for <what>". It is for state Laneway
 // reaches asynchronously (output read, a Worktree discovered, a Process up);
 // never use it, or a sleep, to show that something did NOT happen: assert
 // observable state instead ("Writing reliable e2e tests" in the notes).

@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// runUnlink is `portby unlink`: Unlink the Project the current directory is
+// runUnlink is `lane unlink`: Unlink the Project the current directory is
 // in (or whose Worktree --worktree names). Its databases become Orphans, so it can be undone by linking again
 // within the grace period.
 func runUnlink(ctx context.Context, env Env, args []string) error {
@@ -27,7 +27,7 @@ func runUnlink(ctx context.Context, env Env, args []string) error {
 	if len(res.Orphans) == 0 {
 		return nil
 	}
-	fmt.Fprintln(env.Stdout, "Its databases are Orphans now and will be dropped in 24 hours. Link the Project again before then to keep them, or run `portby gc` to drop them now:")
+	fmt.Fprintln(env.Stdout, "Its databases are Orphans now and will be dropped in 24 hours. Link the Project again before then to keep them, or run `lane gc` to drop them now:")
 	printOrphans(env.Stdout, res.Orphans)
 	return nil
 }

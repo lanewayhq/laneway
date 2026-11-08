@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // Runtimes in these tests are stub executables (testkit.StubPHP and
@@ -18,7 +18,7 @@ func TestProcessesRunWithTheRuntimeOnPathWithoutMise(t *testing.T) {
 	d := testkit.StartDaemon(t)
 	testkit.StubPHP(t, d.Bin, "8.3.4")
 	repo := gitfixture.New(t, "runtime-path").
-		WriteFile("portby.toml", processConfig("php --version; exec sleep 600")).
+		WriteFile("laneway.toml", processConfig("php --version; exec sleep 600")).
 		Commit("declare web Process")
 
 	d.MustRunCLI(repo.Dir, "link")
@@ -38,7 +38,7 @@ func TestProcessesRunWithTheRuntimesMiseResolvesForTheWorktree(t *testing.T) {
 		"FROM_MISE_TOML": "yes",
 	})
 	repo := gitfixture.New(t, "runtime-mise").
-		WriteFile("portby.toml", processConfig("php --version; echo from-mise=$FROM_MISE_TOML; exec sleep 600")).
+		WriteFile("laneway.toml", processConfig("php --version; echo from-mise=$FROM_MISE_TOML; exec sleep 600")).
 		Commit("declare web Process")
 
 	d.MustRunCLI(repo.Dir, "link")
@@ -56,17 +56,17 @@ func TestAWorktreeStartReportsRuntimeMismatchesInItsOutput(t *testing.T) {
 	repo := gitfixture.New(t, "runtime-mismatch").
 		WriteFile("composer.json", `{"require": {"php": "^8.3", "ext-intl": "*", "ext-mbstring": "*"}}`).
 		WriteFile("package.json", `{"engines": {"node": ">=22"}}`).
-		WriteFile("portby.toml", processConfig("echo booted; exec sleep 600")).
+		WriteFile("laneway.toml", processConfig("echo booted; exec sleep 600")).
 		Commit("a PHP and Node Project")
 
 	d.MustRunCLI(repo.Dir, "link")
 	startByBrowsing(t, d, "runtime-mismatch.localhost")
 
 	out := waitForLogs(t, d, repo.Dir, []string{"logs", "web"}, "booted")
-	assertContains(t, out, `portby: Runtime warning: PHP 8.2.10 doesn't satisfy require.php "^8.3" in composer.json`)
+	assertContains(t, out, `laneway: Runtime warning: PHP 8.2.10 doesn't satisfy require.php "^8.3" in composer.json`)
 	assertContains(t, out, "mise use php@8.3")
 	assertContains(t, out, "doesn't load intl")
-	assertContains(t, out, `portby: Runtime warning: Node 20.11.1 doesn't satisfy engines.node ">=22" in package.json`)
+	assertContains(t, out, `laneway: Runtime warning: Node 20.11.1 doesn't satisfy engines.node ">=22" in package.json`)
 }
 
 func TestAWorktreeStartReportsAMissingRuntimeWithHowToInstallItWithMise(t *testing.T) {
@@ -75,7 +75,7 @@ func TestAWorktreeStartReportsAMissingRuntimeWithHowToInstallItWithMise(t *testi
 	testkit.StubMise(t, d.Bin, map[string]string{"PATH": d.Path}, "php@8.4.1")
 	repo := gitfixture.New(t, "runtime-missing").
 		WriteFile("composer.json", `{"require": {"php": "^8.4"}}`).
-		WriteFile("portby.toml", processConfig("echo booted; exec sleep 600")).
+		WriteFile("laneway.toml", processConfig("echo booted; exec sleep 600")).
 		Commit("a PHP Project")
 
 	d.MustRunCLI(repo.Dir, "link")
@@ -85,5 +85,5 @@ func TestAWorktreeStartReportsAMissingRuntimeWithHowToInstallItWithMise(t *testi
 	assertContains(t, out, "php@8.4.1, but it isn't installed; run `mise install`")
 	assertContains(t, out, "PHP was not found through mise or on PATH")
 	assertContains(t, out, "`mise use php@8.4`")
-	assertContains(t, out, "Portby never installs Runtimes")
+	assertContains(t, out, "Laneway never installs Runtimes")
 }

@@ -16,7 +16,7 @@ import (
 //
 // WaitUp asks this as well as connecting, because a connection succeeding
 // doesn't prove the Process is up: another program (such as another
-// Portby's Process) may hold the port, and on WSL2 in mirrored networking
+// Laneway's Process) may hold the port, and on WSL2 in mirrored networking
 // mode a connection to a loopback port nothing in Linux listens on is
 // sometimes accepted from outside Linux and then reset.
 func listening(port, pgid int) (bool, error) {

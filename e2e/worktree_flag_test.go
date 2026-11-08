@@ -3,8 +3,8 @@ package e2e
 import (
 	"testing"
 
-	"github.com/mrsafalpiya/portby.dev/internal/gitfixture"
-	"github.com/mrsafalpiya/portby.dev/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/gitfixture"
+	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
 // Every command that acts on a Worktree acts on the current directory's
@@ -14,7 +14,7 @@ func TestCommandsActOnTheWorktreeNamedByTheWorktreeFlag(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	repo := gitfixture.New(t, "wt-flag").
-		WriteFile("portby.toml", processConfig("echo serving $PWD; exec "+testkit.TestServer(t))).
+		WriteFile("laneway.toml", processConfig("echo serving $PWD; exec "+testkit.TestServer(t))).
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
 	wt := repo.AddWorktree("feature-y")

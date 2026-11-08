@@ -1,7 +1,7 @@
-// Package platform is the thin layer between Portby and the operating system:
+// Package platform is the thin layer between Laneway and the operating system:
 // installing the daemon as a service, the permission to bind ports 80 and 443,
-// trusting Portby's local CA, opening a browser, and the machine facts
-// `portby doctor` reports. Only Linux and WSL2 are implemented (see Detect).
+// trusting Laneway's local CA, opening a browser, and the machine facts
+// `lane doctor` reports. Only Linux and WSL2 are implemented (see Detect).
 //
 // Everything that needs sudo, a trust store, systemd or a browser goes through
 // Platform, so tests swap it for platformtest.Fake and never touch the machine.
@@ -13,8 +13,8 @@ import (
 	"fmt"
 )
 
-// Platform is the OS-specific behaviour Portby needs. Methods that change the
-// machine return a short description of what they did, for `portby install`
+// Platform is the OS-specific behaviour Laneway needs. Methods that change the
+// machine return a short description of what they did, for `lane install`
 // to show.
 type Platform interface {
 	// Name is the platform shown to the user: "Linux" or "WSL2".
@@ -33,7 +33,7 @@ type Platform interface {
 	// as root, persistently. It may ask for the user's sudo password.
 	AllowPrivilegedPorts(ctx context.Context, exe string) (string, error)
 
-	// TrustStores are the certificate stores Portby's CA must be trusted in
+	// TrustStores are the certificate stores Laneway's CA must be trusted in
 	// for the user's browsers to accept its certificates.
 	TrustStores() []TrustStore
 
@@ -71,16 +71,16 @@ type TrustStore interface {
 	Trust(ctx context.Context, caFile string, ca *x509.Certificate) error
 }
 
-// ServiceStatus is the state of Portby's user service.
+// ServiceStatus is the state of Laneway's user service.
 type ServiceStatus struct {
-	// Unit is the service's name, such as "portby.service".
+	// Unit is the service's name, such as "laneway.service".
 	Unit      string
 	Installed bool
 	Enabled   bool
 	Active    bool
 }
 
-// PortPermission says whether Portby may bind ports 80 and 443 and how.
+// PortPermission says whether Laneway may bind ports 80 and 443 and how.
 type PortPermission struct {
 	Allowed bool
 	// Persisted is true if the permission survives a reboot (and, for a
@@ -104,7 +104,7 @@ type Holder struct {
 func (h Holder) String() string {
 	program := h.Program
 	if program == "" {
-		program = "a process Portby can't see (another user's)"
+		program = "a process Laneway can't see (another user's)"
 	}
 	if h.Windows {
 		program = "Windows program " + program

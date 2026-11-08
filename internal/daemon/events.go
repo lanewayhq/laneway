@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/mrsafalpiya/portby.dev/internal/api"
-	"github.com/mrsafalpiya/portby.dev/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/recipe"
 )
 
 // eventsInterval is how often GET /v1/events looks for changes. It is

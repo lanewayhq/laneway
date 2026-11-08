@@ -153,7 +153,7 @@ func (e *Docker) pull(ctx context.Context, image string) error {
 	return sc.Err()
 }
 
-// inspected is the part of a container inspection Portby reads.
+// inspected is the part of a container inspection Laneway reads.
 type inspected struct {
 	State struct {
 		Running bool
@@ -230,7 +230,7 @@ func (e *Docker) Start(ctx context.Context, spec Spec) (string, error) {
 }
 
 func (e *Docker) create(ctx context.Context, spec Spec) error {
-	// Loopback only, on ports the engine picks: Portby owns the Service's
+	// Loopback only, on ports the engine picks: Laneway owns the Service's
 	// real port and forwards to this one.
 	bindings, exposed := map[string]any{}, map[string]any{}
 	for _, p := range append([]int{spec.Port}, spec.ExtraPorts...) {
@@ -265,7 +265,7 @@ func (e *Docker) Stop(ctx context.Context, name string) error {
 }
 
 // Remove deletes the named container, stopping it first, and its named
-// volume (if any). Portby itself never removes Services; tests clean up with
+// volume (if any). Laneway itself never removes Services; tests clean up with
 // it.
 func (e *Docker) Remove(ctx context.Context, name, volume string) error {
 	err := e.do(ctx, http.MethodDelete, "/containers/"+url.PathEscape(name), url.Values{"force": {"1"}, "v": {"1"}}, nil, nil)

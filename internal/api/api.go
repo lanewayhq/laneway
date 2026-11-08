@@ -13,7 +13,7 @@
 //	                    its Env Patch; with preview, only report the Env Patch)
 //	GET  /v1/worktree?dir=<abs path> -> WorktreeInfo  (the Worktree containing dir)
 //	GET  /v1/info?dir=<abs path> -> Info  (everything about the Worktree containing
-//	                    dir: the stable contract `portby info --json` prints)
+//	                    dir: the stable contract `lane info --json` prints)
 //	GET  /v1/daemon     -> DaemonInfo
 //	GET  /v1/logs?dir=&process=&follow=  -> stream of LogLine, one JSON object per line
 //	POST /v1/worktree/up       ControlRequest -> Worktree  (start it, or one Process)
@@ -69,7 +69,7 @@ type Worktree struct {
 	Main bool   `json:"main"`
 	// Domain is the hostname the Worktree is served at.
 	Domain string `json:"domain,omitempty"`
-	// PrimaryDomain is the Domain Portby gives out for the Worktree: its
+	// PrimaryDomain is the Domain Laneway gives out for the Worktree: its
 	// newest Alias, or Domain if it has none. Empty with Domain.
 	PrimaryDomain string `json:"primaryDomain,omitempty"`
 	// State is one of the Worktree* run states. Only GET /v1/projects
@@ -105,7 +105,7 @@ type DeclaredProcess struct {
 // Worktree run states: whether a Worktree's Processes run.
 const (
 	// WorktreeStopped: nothing has started it, its last start failed, or
-	// `portby down` stopped it.
+	// `lane down` stopped it.
 	WorktreeStopped  = "stopped"
 	WorktreeStarting = "starting"
 	WorktreeRunning  = "running"
@@ -177,7 +177,7 @@ type LinkRequest struct {
 	// Dir is an absolute path anywhere inside the repository to Link,
 	// including inside one of its linked worktrees.
 	Dir string `json:"dir"`
-	// Name overrides the Project name from portby.toml or the directory name.
+	// Name overrides the Project name from laneway.toml or the directory name.
 	Name string `json:"name,omitempty"`
 	// Preview asks what Linking would do to the Worktrees' env files
 	// (LinkResponse.EnvPatch) without Linking or changing anything, so it
@@ -198,14 +198,14 @@ type LinkResponse struct {
 }
 
 // EnvFilePatch is how the Env Patch changes one Worktree's env file. Only the
-// keys Portby owns ever change.
+// keys Laneway owns ever change.
 type EnvFilePatch struct {
 	Worktree Worktree `json:"worktree"`
 	// Path is the env file, such as <worktree>/.env.
 	Path string `json:"path"`
 	// Create is true when the file doesn't exist yet. It is created as a
 	// copy of CopyFrom (the main Worktree's .env, or .env.example), or with
-	// only Portby's keys when CopyFrom is empty.
+	// only Laneway's keys when CopyFrom is empty.
 	Create   bool   `json:"create,omitempty"`
 	CopyFrom string `json:"copyFrom,omitempty"`
 	// Backup is where the original is copied before its first patch.
@@ -213,7 +213,7 @@ type EnvFilePatch struct {
 	Changes []EnvChange `json:"changes"`
 }
 
-// EnvChange is one key Portby owns changing value.
+// EnvChange is one key Laneway owns changing value.
 type EnvChange struct {
 	Key string `json:"key"`
 	// Old is "" when Added.
@@ -306,11 +306,11 @@ const (
 	CodeAliasTaken     = "alias_taken"
 	CodeUnknownAlias   = "unknown_alias"
 	CodeInternal       = "internal"
-	// CodeStartFailed: `portby up` or `restart` started the Worktree, but its
+	// CodeStartFailed: `lane up` or `restart` started the Worktree, but its
 	// Primary Process exited or never accepted connections.
 	CodeStartFailed = "start_failed"
 
-	// CodeInvalidConfig: portby.toml or portby.local.toml can't be used.
+	// CodeInvalidConfig: laneway.toml or laneway.local.toml can't be used.
 	// The message names the file and the key.
 	CodeInvalidConfig = "invalid_config"
 
@@ -344,12 +344,12 @@ type Service struct {
 	// State is "stopped", "starting", "running" or "idle" (stopped after
 	// its idle timeout; the next connection starts it).
 	State string `json:"state"`
-	// Error says why the Service can't be used (Portby can't listen on
+	// Error says why the Service can't be used (Laneway can't listen on
 	// its port, or its last start failed).
 	Error string `json:"error,omitempty"`
 }
 
-// ServiceList is every Service Portby serves, sorted by name.
+// ServiceList is every Service Laneway serves, sorted by name.
 type ServiceList struct {
 	Services []Service `json:"services"`
 }
@@ -362,7 +362,7 @@ type ServiceRequest struct {
 }
 
 // Orphan is a database left behind by a removed Worktree or an unlinked
-// Project. It is kept for a grace period (24 hours), then dropped; `portby
+// Project. It is kept for a grace period (24 hours), then dropped; `lane
 // gc` drops it at once.
 type Orphan struct {
 	// Database is the database's name in its Service.
@@ -379,7 +379,7 @@ type Orphan struct {
 	// made by a parallel test run, <test database>_test_<n>).
 	Kind string `json:"kind"`
 	// Since is when it became an Orphan and Expires when it is dropped.
-	// Both are unset for a parallel test copy `portby gc` found that was
+	// Both are unset for a parallel test copy `lane gc` found that was
 	// never recorded as an Orphan.
 	Since   time.Time `json:"since,omitzero"`
 	Expires time.Time `json:"expires,omitzero"`

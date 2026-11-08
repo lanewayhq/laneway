@@ -158,7 +158,7 @@ func engineSocket(t *testing.T, path string) {
 // shortDir is a temp dir with a path short enough for Unix sockets.
 func shortDir(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "portby-test-")
+	dir, err := os.MkdirTemp("", "laneway-test-")
 	if err != nil {
 		t.Fatal(err)
 	}
