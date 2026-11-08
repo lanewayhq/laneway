@@ -1,4 +1,4 @@
-# laneway.dev
+# laneway
 
 ## Agent skills
 

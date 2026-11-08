@@ -12,7 +12,7 @@ import (
 // Go's build cache keeps repeat builds cheap.
 func BuildBinary(t testing.TB) string {
 	t.Helper()
-	return build(t, "./cmd/lane", "laneway")
+	return build(t, "./cmd/lane", "lane")
 }
 
 // TestServer compiles the test HTTP-server Process (package testserver) and

@@ -27,7 +27,7 @@ var laneBin = sync.OnceValues(func() (string, error) {
 		return "", err
 	}
 	builtBinDir.Store(dir)
-	cmd := exec.Command("go", "build", "-o", filepath.Join(dir, "laneway"), "./cmd/lane")
+	cmd := exec.Command("go", "build", "-o", filepath.Join(dir, "lane"), "./cmd/lane")
 	cmd.Dir = filepath.Dir(strings.TrimSpace(string(out)))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return "", errors.New(string(out))

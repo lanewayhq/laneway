@@ -10,7 +10,7 @@ import (
 // needed it.
 var builtBinDir atomic.Value
 
-// TestMain removes what tests shared across the whole run: the laneway
+// TestMain removes what tests shared across the whole run: the lane
 // binary the Harness tests build (laneBin), ~70 MB in the temp dir.
 func TestMain(m *testing.M) {
 	code := m.Run()

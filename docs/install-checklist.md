@@ -8,7 +8,7 @@ Record each result as pass/fail, plus anything surprising, in the table at the e
 
 - [ ] Build the binary to where it will stay. The service runs this exact path, and the setcap fallback is tied to it. Don't use `go run`.
       `go build -o ~/.local/bin/lane ./cmd/lane`
-- [ ] No other Laneway daemon is running (`pgrep -a laneway`), and nothing is listening on 443 (`ss -ltnp 'sport = :443'`; on WSL2 also `powershell.exe "Get-NetTCPConnection -State Listen -LocalPort 443"`).
+- [ ] No other Laneway daemon is running (`pgrep -ax lane`), and nothing is listening on 443 (`ss -ltnp 'sport = :443'`; on WSL2 also `powershell.exe "Get-NetTCPConnection -State Listen -LocalPort 443"`).
 - [ ] WSL2 only: systemd is on (`/etc/wsl.conf` has `[boot]` and `systemd=true`), and note the networking mode (`wslinfo --networking-mode`).
 - [ ] `lane doctor` lists `FAIL` for the service, port permission and CA, and exits 1.
 
