@@ -14,7 +14,7 @@ _Avoid_: Add, register, park
 
 **Worktree**:
 One checkout of a Project. The main checkout is a Worktree like any other, with no special status.
-_Avoid_: Instance, environment, branch
+_Avoid_: Instance, environment, branch, lane
 
 **Env Patch**:
 The set of env file keys Portby owns and writes for each Worktree, such as its URL, database name and Service ports. Every other key in the file belongs to the developer and is never touched. Portby re-applies it whenever its inputs change, such as when the Worktree's URL changes.
