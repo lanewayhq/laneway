@@ -1,0 +1,11 @@
+# box: a test Engine that speaks Redis's protocol, from the toolbox Plugin.
+# Tests make the fake container engine serve its image with
+# containertest.Redis.
+name = "box"
+default_version = "1"
+image = "example.test/box"
+port = 7390
+data_dir = "/data"
+
+[[ready]]
+kind = "redis-ping"

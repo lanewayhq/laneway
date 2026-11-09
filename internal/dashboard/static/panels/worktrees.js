@@ -1,7 +1,10 @@
 // The Worktrees panel: every Project with its Worktrees, their readiness
 // (Preparing, Ready, Failed) and run states, Domains, Aliases and Processes, with start/stop/restart buttons.
-// It re-renders on every `projects` event.
+// Projects and Worktrees also show the links, badges and actions of the
+// Plugins they use (see pluginitems.js). It re-renders on every `projects`
+// event.
 import { h } from "../dom.js";
+import { pluginActions, pluginBadges, pluginLinks } from "../pluginitems.js";
 
 export default {
   id: "worktrees",
@@ -54,7 +57,9 @@ export default {
     const extra = (key, actions) => actions.map(({ label, run }) => button(`${key}:${label}`, label, run));
 
     const project = (p) => h("article", { class: "project" },
-      h("header", {}, h("h3", {}, p.name), h("span", { class: "path" }, p.path)),
+      h("header", {}, h("h3", {}, p.name), h("span", { class: "path" }, p.path),
+        ...pluginBadges(p), ...pluginLinks(p),
+        ...extra(`${p.path}:project`, pluginActions(dash, p, p.path))),
       h("table", {},
         h("thead", {}, h("tr", {}, ...["Worktree", "Domain", "Readiness", "State", "Processes", ""].map((c) => h("th", {}, c)))),
         h("tbody", {}, ...p.worktrees.map((w) => worktree(p, w)))));
@@ -63,12 +68,12 @@ export default {
       const key = w.path;
       return h("tr", { "data-domain": w.domain ?? "" },
         h("td", {}, w.main ? h("span", {}, "main") : w.name),
-        h("td", {}, ...names(w)),
+        h("td", {}, ...names(w), plugins(w)),
         h("td", {}, setup(key, w.setup)),
         h("td", {}, badge(w.state ?? "-")),
         h("td", {}, processes(p, w)),
         h("td", { class: "actions" }, controls(key, w),
-          ...extra(key, dash.worktreeActions.flatMap((fn) => fn(w, p)))));
+          ...extra(key, [...pluginActions(dash, w, w.path), ...dash.worktreeActions.flatMap((fn) => fn(w, p))])));
     };
 
     const setup = (key, s) => {
@@ -120,6 +125,12 @@ export default {
 function names(w) {
   const others = [w.domain, ...(w.aliases ?? [])].filter((d) => d && d !== w.primaryDomain);
   return [link(w.primaryDomain), ...others.map((d) => h("div", { class: "alias" }, link(d)))];
+}
+
+// plugins are the badges and links of the Plugins the Worktree uses.
+function plugins(w) {
+  const items = [...pluginBadges(w), ...pluginLinks(w)];
+  return items.length ? h("div", { class: "plugin-items" }, ...items) : "";
 }
 
 function link(domain) {

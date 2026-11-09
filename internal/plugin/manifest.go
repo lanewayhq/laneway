@@ -53,6 +53,9 @@ type Manifest struct {
 	// EngineFiles are the Engines it adds: Engine manifests (TOML, read by
 	// engine.Parse), relative to its directory. An Engine needs no module.
 	EngineFiles []string `json:"engines,omitempty"`
+	// Dashboard is the links, badges and actions it shows on the
+	// Dashboard (see dashboard.go).
+	Dashboard Dashboard `json:"dashboard,omitzero"`
 	// Generators are the Generators it adds, run in this order by
 	// `lane generate <plugin>`.
 	Generators []GeneratorDecl `json:"generators,omitempty"`
@@ -197,6 +200,9 @@ func (m Manifest) validate() error {
 		return err
 	}
 	if err := m.validateCommands(); err != nil {
+		return err
+	}
+	if err := m.validateDashboard(); err != nil {
 		return err
 	}
 	if err := validateHooks(m.Hooks); err != nil {
