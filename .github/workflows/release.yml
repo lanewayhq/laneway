@@ -1,0 +1,57 @@
+name: Release
+
+# A tag vX.Y.Z publishes that release: `lane` for Linux (amd64 and arm64),
+# with the version stamped in, plus SHA256SUMS. Asset names carry no
+# version, so releases/latest/download/<asset> always points at the newest
+# release (install.sh relies on this).
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./... && go test -count=1 ./...
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: |
+          mkdir dist
+          for arch in amd64 arm64; do
+            dir="lane_linux_$arch"
+            mkdir "$dir"
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X github.com/lanewayhq/laneway/internal/cli.version=$GITHUB_REF_NAME" \
+              -o "$dir/lane" ./cmd/lane
+            cp README.md LICENSE "$dir/"
+            tar -czf "dist/$dir.tar.gz" "$dir"
+          done
+          (cd dist && sha256sum *.tar.gz > SHA256SUMS)
+          cat dist/SHA256SUMS
+      - name: Check the build reports its version
+        run: |
+          tar -xzf dist/lane_linux_amd64.tar.gz -C "$RUNNER_TEMP"
+          got=$("$RUNNER_TEMP/lane_linux_amd64/lane" version)
+          test "$got" = "lane $GITHUB_REF_NAME" || { echo "lane version printed '$got'"; exit 1; }
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --title "Laneway $GITHUB_REF_NAME" --generate-notes

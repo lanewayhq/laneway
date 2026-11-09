@@ -77,6 +77,7 @@ var commands = map[string]command{
 	"status":   {"List Linked Projects and their Processes", runStatus},
 	"unlink":   {"Unlink the current Project (its databases become Orphans)", runUnlink},
 	"up":       {"Start the current Worktree's Processes (or one Process)", control("up")},
+	"version":  {"Print which version of Laneway this is", runVersion},
 	"worktree": {"Manage Worktrees (add <name> [--branch], ready [--retry], alias <name> [--remove])", runWorktree},
 }
 

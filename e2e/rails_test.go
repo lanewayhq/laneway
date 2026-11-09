@@ -70,7 +70,7 @@ func railsStubs(t *testing.T, d *testkit.Daemon) {
 	rubyBin := filepath.Join(d.Home, "mise-installs", "ruby", "3.4.7", "bin")
 	testkit.WriteExecutable(t, rubyBin, "ruby", fmt.Sprintf(`case "$1 $2" in
 "-e "*) printf 3.4.7; exit 0 ;;
-*"/bin/rails server")
+"bin/rails server" | *"/bin/rails server")
 	shift 2
 	args="$*"
 	while [ $# -gt 0 ]; do case "$1" in -p) port="$2"; shift ;; esac; shift; done
