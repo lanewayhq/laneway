@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -280,4 +281,94 @@ func (e *Docker) Remove(ctx context.Context, name, volume string) error {
 		return nil
 	}
 	return err
+}
+
+// Exec creates an exec instance in the container, starts it attached and
+// reads its output, then asks the engine how it exited. Without a TTY the
+// engine sends stdout and stderr multiplexed on one stream (demux).
+func (e *Docker) Exec(ctx context.Context, name string, cmd []string) (Output, error) {
+	var created struct{ Id string }
+	err := e.do(ctx, http.MethodPost, "/containers/"+url.PathEscape(name)+"/exec", nil,
+		map[string]any{"Cmd": cmd, "AttachStdout": true, "AttachStderr": true}, &created)
+	if err != nil {
+		return Output{}, fmt.Errorf("running %s in container %s: %w", cmd[0], name, err)
+	}
+	body, err := json.Marshal(map[string]any{"Detach": false, "Tty": false})
+	if err != nil {
+		return Output{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		"http://engine/"+APIVersion+"/exec/"+url.PathEscape(created.Id)+"/start", bytes.NewReader(body))
+	if err != nil {
+		return Output{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := e.client().Do(req)
+	if err != nil {
+		return Output{}, fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		return Output{}, fmt.Errorf("running %s in container %s: %w", cmd[0], name,
+			&apiError{status: resp.StatusCode, message: strings.TrimSpace(string(data))})
+	}
+	var out Output
+	if err := demux(resp.Body, &out); err != nil {
+		return Output{}, fmt.Errorf("reading the output of %s in container %s: %w", cmd[0], name, err)
+	}
+	// The stream ends when the command exits, but the engine may record
+	// its exit code a moment later.
+	for {
+		var inspected struct {
+			Running  bool
+			ExitCode int
+		}
+		if err := e.do(ctx, http.MethodGet, "/exec/"+url.PathEscape(created.Id)+"/json", nil, nil, &inspected); err != nil {
+			return Output{}, err
+		}
+		if !inspected.Running {
+			out.ExitCode = inspected.ExitCode
+			return out, nil
+		}
+		select {
+		case <-ctx.Done():
+			return Output{}, ctx.Err()
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+// demux splits the engine's multiplexed stream into out's Stdout and
+// Stderr: frames of an 8-byte header (stream, three zero bytes, big-endian
+// length) and that many bytes.
+func demux(r io.Reader, out *Output) error {
+	br := bufio.NewReader(r)
+	var head [8]byte
+	for {
+		if _, err := io.ReadFull(br, head[:]); err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+		n := int64(binary.BigEndian.Uint32(head[4:]))
+		var dst *[]byte
+		switch head[0] {
+		case 1:
+			dst = &out.Stdout
+		case 2:
+			dst = &out.Stderr
+		default:
+			if _, err := io.CopyN(io.Discard, br, n); err != nil {
+				return err
+			}
+			continue
+		}
+		var buf bytes.Buffer
+		if _, err := io.CopyN(&buf, br, n); err != nil {
+			return err
+		}
+		*dst = append(*dst, buf.Bytes()...)
+	}
 }

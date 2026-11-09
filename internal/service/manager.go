@@ -257,6 +257,20 @@ func (m *Manager) Pull(ctx context.Context, name string) error {
 	return m.opts.Engine.Pull(ctx, s.spec.Image)
 }
 
+// Exec runs cmd inside the container of the Service called name, starting
+// it first if needed (like Up), and returns what it printed and how it
+// exited. Callers keep the Service from going Idle meanwhile with Use.
+func (m *Manager) Exec(ctx context.Context, name string, cmd []string) (container.Output, error) {
+	s, ok := m.lookup(name)
+	if !ok {
+		return container.Output{}, fmt.Errorf("no Service %s", name)
+	}
+	if _, err := s.ensure(ctx); err != nil {
+		return container.Output{}, err
+	}
+	return m.opts.Engine.Exec(ctx, s.spec.Name, cmd)
+}
+
 // Web starts the Service called name if needed, like Up, and returns the
 // host address its engine's web UI (Engine.WebPort) is published on, for
 // the proxy to forward to.

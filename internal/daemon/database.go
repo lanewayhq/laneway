@@ -7,6 +7,7 @@ import (
 	"net"
 	"strconv"
 
+	"github.com/lanewayhq/laneway/internal/container"
 	"github.com/lanewayhq/laneway/internal/database"
 	"github.com/lanewayhq/laneway/internal/prepare"
 	"github.com/lanewayhq/laneway/internal/recipe"
@@ -107,5 +108,8 @@ func (d *Daemon) databaseServer(ctx context.Context, svc recipe.Service, out io.
 		Addr:     net.JoinHostPort(d.serviceHost(), strconv.Itoa(rs.Port)),
 		User:     e.User,
 		Password: service.Password,
+		Exec: func(ctx context.Context, cmd []string) (container.Output, error) {
+			return d.services.Exec(ctx, name, cmd)
+		},
 	}, release, nil
 }

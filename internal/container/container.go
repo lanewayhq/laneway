@@ -31,6 +31,19 @@ type Engine interface {
 	// Running reports whether the named container exists and is running,
 	// and if so the host address its port is published on.
 	Running(ctx context.Context, name string, port int) (addr string, running bool, err error)
+	// Exec runs cmd (no shell: cmd[0] is the program) in the named running
+	// container, as the container's own user, and waits for it to exit.
+	// A command that runs and fails is not an error: its Output says how
+	// it exited. An error means it couldn't be run, such as the container
+	// not running.
+	Exec(ctx context.Context, name string, cmd []string) (Output, error)
+}
+
+// Output is what a command run in a container (Engine.Exec) printed, and
+// how it exited.
+type Output struct {
+	Stdout, Stderr []byte
+	ExitCode       int
 }
 
 // Spec describes a container.
