@@ -221,7 +221,7 @@ func (f *catalogFetch) enginePlugins(dir string) []string {
 				continue
 			}
 			by[e] = name
-			assumed = append(assumed, placeholderEngine(e))
+			assumed = append(assumed, engine.Assumed(e))
 		}
 	}
 	if len(by) == 0 {
@@ -249,13 +249,6 @@ func (f *catalogFetch) enginePlugins(dir string) []string {
 		}
 	}
 	return names
-}
-
-// placeholderEngine stands for a Catalog Engine not yet fetched: its name
-// alone, and anything config may ask of an Engine (users, databases), so
-// config naming it resolves until the real one is installed.
-func placeholderEngine(name string) *engine.Manifest {
-	return &engine.Manifest{Name: name, DefaultVersion: "latest", User: "placeholder", Database: &engine.Databases{}}
 }
 
 // error names the Plugins that couldn't be fetched, and why.

@@ -370,9 +370,16 @@ func checkPlaceholders(key string, args []string, allowed []string) error {
 }
 
 // Set is the Engines Laneway can run, in the order Names lists them: the
-// built-in Plugins' and the installed Plugins' (see plugin.Host.Engines).
-// Each has its own name.
+// installed Plugins' (see plugin.Host.Engines). Each has its own name.
 type Set []*Manifest
+
+// Assumed stands for an Engine known by its name alone, such as a Catalog
+// Engine not fetched yet: config naming it, and anything config may ask of
+// an Engine (users, databases), resolves as if it were installed. It can't
+// be run.
+func Assumed(name string) *Manifest {
+	return &Manifest{Name: name, DefaultVersion: "latest", User: "assumed", Database: &Databases{}}
+}
 
 // Lookup returns the Engine called name.
 func (s Set) Lookup(name string) (*Manifest, bool) {

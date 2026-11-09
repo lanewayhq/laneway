@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -219,12 +220,31 @@ func (o *layerOutput) check(source string, engines engine.Set, err error) {
 		*o = layerOutput{Detected: o.Detected, Error: err.Error()}
 		return
 	}
-	l, err := parseLayer(source, o.Layer, engines)
+	l, err := parseLayer(source, o.Layer, assumeServices(o.Layer, engines))
 	if err != nil {
 		o.Error = err.Error()
 		return
 	}
 	o.Warnings = append(o.Warnings, l.Warnings...)
+}
+
+// assumeServices is engines with an engine.Assumed for each Service the
+// layer raw names whose Engine isn't among them, such as one the Catalog
+// has but this machine hasn't fetched: what a Plugin returns doesn't depend
+// on the Engines installed where its tests run.
+func assumeServices(raw json.RawMessage, engines engine.Set) engine.Set {
+	var layer struct {
+		Services map[string]json.RawMessage `json:"services"`
+	}
+	if json.Unmarshal(raw, &layer) != nil {
+		return engines // parseLayer says why
+	}
+	for _, name := range slices.Sorted(maps.Keys(layer.Services)) {
+		if _, ok := engines.Lookup(name); !ok {
+			engines = append(slices.Clip(engines), engine.Assumed(name))
+		}
+	}
+	return engines
 }
 
 // checked is the effects a hook or Generator of p returned (or the error
