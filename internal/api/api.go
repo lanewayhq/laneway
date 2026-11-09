@@ -26,10 +26,10 @@
 //	GET  /v1/services   -> ServiceList
 //	POST /v1/services/up    ServiceRequest -> ServiceList  (start one Service, or every one)
 //	POST /v1/services/down  ServiceRequest -> ServiceList  (stop one Service, or every one)
-//	GET  /v1/orphans    -> OrphanList  (databases of removed Worktrees and unlinked
+//	GET  /v1/orphans    -> OrphanList  (databases and Buckets of removed Worktrees and unlinked
 //	                    Projects, waiting out their grace period)
 //	DELETE /v1/projects?dir=<abs path> -> UnlinkResponse  (Unlink the Project containing dir:
-//	                    stop it, turn its databases into Orphans, forget its Domains)
+//	                    stop it, turn its databases and Buckets into Orphans, forget its Domains)
 //	POST /v1/gc         GCRequest -> GCResponse  (drop Orphans and leftover parallel test
 //	                    copies now; with preview, only list them)
 //
@@ -411,9 +411,9 @@ type ServiceRequest struct {
 // Project. It is kept for a grace period (24 hours), then dropped; `lane
 // gc` drops it at once.
 type Orphan struct {
-	// Database is the database's name in its Service.
+	// Database is the database's name in its Service, or the Bucket's.
 	Database string `json:"database"`
-	// Service is the database Service it lives in, "<engine>:<version>",
+	// Service is the Service it lives in, "<engine>:<version>",
 	// such as postgres:18.
 	Service string `json:"service"`
 	// Project is the name of the Project it belonged to; Worktree is
@@ -422,7 +422,8 @@ type Orphan struct {
 	Worktree string `json:"worktree,omitempty"`
 	// Kind is "database" (the Worktree's database), "test database" (its
 	// Test Database) or "parallel test copy" (a copy of its Test Database
-	// made by a parallel test run, <test database>_test_<n>).
+	// made by a parallel test run, <test database>_test_<n>), or "bucket"
+	// (one of its Buckets).
 	Kind string `json:"kind"`
 	// Since is when it became an Orphan and Expires when it is dropped.
 	// Both are unset for a parallel test copy `lane gc` found that was
@@ -453,7 +454,7 @@ type GCRequest struct {
 	Databases []OrphanRef `json:"databases,omitempty"`
 }
 
-// OrphanRef names an Orphan: a database in a Service.
+// OrphanRef names an Orphan: a database, or a Bucket, in a Service.
 type OrphanRef struct {
 	Service  string `json:"service"`
 	Database string `json:"database"`

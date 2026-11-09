@@ -140,3 +140,37 @@ func TestProjectsWhoseBucketsWouldBeTheSameClash(t *testing.T) {
 		t.Error("my-app and my-shop clash")
 	}
 }
+
+// BucketOf knows a Worktree's Buckets by the naming rule alone, the ones
+// its Project declares included, so Laneway can find them in an object
+// storage Service's list.
+func TestABucketIsKnownAsAWorktreesByItsNameWhateverItsSuffix(t *testing.T) {
+	long := "add-the-very-long-feature-that-needs-a-long-branch-name-one"
+	tests := []struct {
+		name, project, worktree string
+		want                    bool
+	}{
+		{"shop--feature", "shop", "feature", true},
+		{"shop-public--feature", "shop", "feature", true},
+		{"shop-user-uploads--feature", "Shop", "feature", true},
+		{"my-shop--feature", "My Shop", "feature", true},
+		{"shop--a--b", "shop", "a--b", true},
+		{"shop", "shop", "", true},
+		{"shop-public", "shop", "", true},
+		{"shop--add-the-very-long-feature-that-needs-a-long-bran-a18bb037", "shop", long, true},
+		// Another Worktree's, the main Worktree's, or another Project's.
+		{"shop--feature-x", "shop", "feature", false},
+		{"shop--feature", "shop", "", false},
+		{"shop", "shop", "feature", false},
+		{"shopping--feature", "shop", "feature", false},
+		{"elsewhere--feature", "shop", "feature", false},
+		{"my-shop--feature", "shop", "feature", false},
+		{"shop-public--feature", "shop-public-assets", "feature", false},
+		{"shop--add-the-very-long-feature-that-needs-a-long-bran-00000000", "shop", long, false},
+	}
+	for _, tt := range tests {
+		if got := naming.BucketOf(tt.name, tt.project, tt.worktree); got != tt.want {
+			t.Errorf("BucketOf(%q, %q, %q) = %v, want %v", tt.name, tt.project, tt.worktree, got, tt.want)
+		}
+	}
+}

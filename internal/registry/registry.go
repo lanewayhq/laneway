@@ -458,12 +458,14 @@ func (r *Registry) planServiceLocked(ref service.Ref, candidates []int) (Service
 	return Service{}, false, fmt.Errorf("%s: %w", ref.Name(), ErrNoServicePort)
 }
 
-// Orphan is a database left behind by a removed Worktree or an unlinked
-// Project, recorded so it can be dropped once its grace period is over.
+// Orphan is a database or Bucket left behind by a removed Worktree or an
+// unlinked Project, recorded so it can be dropped once its grace period
+// is over.
 type Orphan struct {
-	// Ref is the database Service it lives in, such as postgres:18 (stored
+	// Ref is the Service it lives in, such as postgres:18 (stored
 	// as its engine and version).
 	service.Ref
+	// Database is its name: the database's, or the Bucket's (Kind bucket).
 	Database string `json:"database"`
 	// ProjectName is the name of the Project it belonged to, and Worktree
 	// git's name for its Worktree ("" for the main Worktree).
@@ -475,7 +477,7 @@ type Orphan struct {
 	Since time.Time `json:"since"`
 }
 
-// Same reports whether o and other are the same database.
+// Same reports whether o and other are the same database (or Bucket).
 func (o Orphan) Same(other Orphan) bool {
 	return o.Ref == other.Ref && o.Database == other.Database
 }

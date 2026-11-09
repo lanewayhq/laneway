@@ -18,7 +18,7 @@ import (
 // dropped.
 func runGC(ctx context.Context, env Env, args []string) error {
 	fs := newFlags(env, "gc")
-	yes := fs.Bool("yes", false, "drop the databases without asking")
+	yes := fs.Bool("yes", false, "drop the Orphans without asking")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -38,9 +38,10 @@ func runGC(ctx context.Context, env Env, args []string) error {
 		return nil
 	}
 	if !*yes && env.Terminal {
-		fmt.Fprintln(env.Stdout, "These databases will be dropped, and their data lost:")
+		what := orphansNoun(preview.Orphans)
+		fmt.Fprintf(env.Stdout, "These %s will be dropped, and their data lost:\n", what)
 		printOrphans(env.Stdout, preview.Orphans)
-		if !confirm(env, fmt.Sprintf("Drop these %d databases? [y/N] ", len(preview.Orphans))) {
+		if !confirm(env, fmt.Sprintf("Drop these %d %s? [y/N] ", len(preview.Orphans), what)) {
 			return errors.New("nothing was dropped; run `lane gc --yes` to drop them without asking")
 		}
 	}
@@ -59,6 +60,26 @@ func runGC(ctx context.Context, env Env, args []string) error {
 		return errors.New(strings.Join(res.Errors, "\nlane gc: "))
 	}
 	return nil
+}
+
+// orphansNoun is what orphans are: "databases", "Buckets" (their kind is
+// "bucket") or "databases and Buckets".
+func orphansNoun(orphans []api.Orphan) string {
+	var databases, buckets bool
+	for _, o := range orphans {
+		if o.Kind == "bucket" {
+			buckets = true
+		} else {
+			databases = true
+		}
+	}
+	switch {
+	case databases && buckets:
+		return "databases and Buckets"
+	case buckets:
+		return "Buckets"
+	}
+	return "databases"
 }
 
 // printOrphans shows Orphans as a table.
