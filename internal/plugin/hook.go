@@ -102,16 +102,20 @@ func (p Plugin) usedBy(res recipe.Resolved) bool {
 		slices.ContainsFunc(p.Integrations, func(i IntegrationDecl) bool { return slices.Contains(res.Integrations, i.Name) })
 }
 
+// HookSource names p's hook for event in errors and warnings, such as
+// "Plugin notify's Ready hook".
+func HookSource(p Plugin, event string) string {
+	return fmt.Sprintf("Plugin %s's %s hook", p.Name, EventTitle(event))
+}
+
 // Hook runs p's hook for ev, with the directory dir mounted as the Project,
-// and returns the effects to apply, in order. Effects p may not return are
-// left out, each with a warning saying why. Unlike a Recipe's, a hook's
-// call is never reused: every event runs it.
-func (h *Host) Hook(p Plugin, ev Event, dir string) (effects []Effect, warnings []string, err error) {
-	what := fmt.Sprintf("Plugin %s's %s hook", p.Name, EventTitle(ev.Name))
+// and returns the effects it asks for, in order. Like Command, it doesn't
+// check them against the manifest (see Plugin.CheckEffects). Unlike a
+// Recipe's, a hook's call is never reused: every event runs it.
+func (h *Host) Hook(p Plugin, ev Event, dir string) ([]Effect, error) {
 	var res hookResponse
-	if err := h.callFresh(p, what, request{Call: callHook, Name: ev.Name, Event: &ev}, dir, &res); err != nil {
-		return nil, nil, err
+	if err := h.callFresh(p, HookSource(p, ev.Name), request{Call: callHook, Name: ev.Name, Event: &ev}, dir, &res); err != nil {
+		return nil, err
 	}
-	effects, warnings = p.checkEffects(what, res.Effects)
-	return effects, warnings, nil
+	return res.Effects, nil
 }

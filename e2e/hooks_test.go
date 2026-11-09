@@ -88,7 +88,7 @@ func TestAFailingPreparingHookFailsSetupWithItsOutputAndCanBeRetried(t *testing.
 	marker := filepath.Join(gitfixture.TempDir(t), "fixed")
 	failing := "echo checking-deps; test -e " + marker + " || { echo missing-dep >&2; exit 3; }"
 	repo := hookedRepo(t, "hook-fail", hooksJSON(t, map[string]any{"preparing": map[string]any{"effects": []any{
-		map[string]any{"kind": "exec", "command": failing},
+		map[string]any{"kind": "exec", "command": []string{"sh", "-c", failing}},
 		map[string]any{"kind": "env", "env": map[string]string{"HOOK_DONE": "yes"}},
 	}}}))
 	d.MustRunCLI(repo.Dir, "link", "--yes")
@@ -99,7 +99,7 @@ func TestAFailingPreparingHookFailsSetupWithItsOutputAndCanBeRetried(t *testing.
 		t.Fatalf("worktree ready exited %d, want 1:\n%s", res.ExitCode, res.Output())
 	}
 	assertContains(t, res.Stderr, `failed at step "Preparing hook of Plugin hooked"`)
-	assertContains(t, res.Stderr, "exit status 3")
+	assertContains(t, res.Stderr, "exited with status 3")
 	assertContains(t, res.Stderr, "checking-deps")
 	assertContains(t, res.Stderr, "missing-dep")
 	assertSetupState(t, d, repo.Dir, "failed")
@@ -134,7 +134,7 @@ func TestAReadyHookRunsItsCommandsInTheWorktreeOnceItIsReady(t *testing.T) {
 	d := hookedDaemon(t)
 	ran := filepath.Join(gitfixture.TempDir(t), "ran")
 	repo := hookedRepo(t, "hook-ready", hooksJSON(t, map[string]any{"ready": map[string]any{"effects": []any{
-		map[string]any{"kind": "exec", "command": "echo {event} {worktree} $(pwd) $LANEWAY_DOMAIN >> " + ran},
+		map[string]any{"kind": "exec", "command": []string{"sh", "-c", "echo {event} {worktree} $(pwd) $LANEWAY_DOMAIN >> " + ran}},
 	}}}))
 	wt := repo.AddWorktree("feature")
 	d.MustRunCLI(repo.Dir, "link", "--yes")
@@ -149,7 +149,7 @@ func TestAFailingReadyHookIsAWarningAndTheWorktreeStaysReady(t *testing.T) {
 	t.Parallel()
 	d := hookedDaemon(t)
 	repo := hookedRepo(t, "hook-ready-fail", `{"ready": {"effects": [
-  {"kind": "exec", "command": "echo cannot-notify; exit 4"},
+  {"kind": "exec", "command": ["sh", "-c", "echo cannot-notify; exit 4"]},
   {"kind": "warning", "message": "{worktree_path} looks odd"}
 ]}}`)
 	d.MustRunCLI(repo.Dir, "link", "--yes")
@@ -158,10 +158,10 @@ func TestAFailingReadyHookIsAWarningAndTheWorktreeStaysReady(t *testing.T) {
 	var res testkit.CLIResult
 	testkit.WaitUntil(t, 10*time.Second, "the Ready hook's failure to show as a warning", func() bool {
 		res = d.MustRunCLI(repo.Dir, "worktree", "ready")
-		return strings.Contains(res.Stderr, "exit status 4")
+		return strings.Contains(res.Stderr, "exited with status 4")
 	})
 
-	assertContains(t, res.Stderr, "warning: Plugin hooked's Ready hook: the command \"echo cannot-notify; exit 4\" failed: exit status 4")
+	assertContains(t, res.Stderr, "warning: Plugin hooked's Ready hook: `sh -c echo cannot-notify; exit 4` exited with status 4")
 	assertContains(t, res.Stderr, "cannot-notify")
 	assertContains(t, res.Stdout, "is Ready")
 	assertSetupState(t, d, repo.Dir, "ready")
@@ -175,7 +175,7 @@ func TestAWorktreeRemovedHookRunsItsCommandsInTheMainWorktree(t *testing.T) {
 	d := hookedDaemon(t)
 	ran := filepath.Join(gitfixture.TempDir(t), "ran")
 	repo := hookedRepo(t, "hook-removed", hooksJSON(t, map[string]any{"worktree_removed": map[string]any{"effects": []any{
-		map[string]any{"kind": "exec", "command": "echo {event} {worktree} $(pwd) $LANEWAY_WORKTREE_PATH >> " + ran},
+		map[string]any{"kind": "exec", "command": []string{"sh", "-c", "echo {event} {worktree} $(pwd) $LANEWAY_WORKTREE_PATH >> " + ran}},
 	}}}))
 	wt := repo.AddWorktree("doomed")
 	d.MustRunCLI(repo.Dir, "link", "--yes")
@@ -200,15 +200,15 @@ func TestAnEffectTheManifestDoesNotDeclareIsRefusedWithAWarning(t *testing.T) {
 	d.MustRunCLI(d.Home, "plugin", "add", "--yes", plugin)
 	ran := filepath.Join(gitfixture.TempDir(t), "ran")
 	repo := hookedRepo(t, "hook-undeclared", hooksJSON(t, map[string]any{"preparing": map[string]any{"effects": []any{
-		map[string]any{"kind": "exec", "command": "touch " + ran},
+		map[string]any{"kind": "exec", "command": []string{"touch", ran}},
 		map[string]any{"kind": "env", "env": map[string]string{"HOOKED": "yes"}},
 	}}}))
 	d.MustRunCLI(repo.Dir, "link", "--yes")
 
 	res := d.MustRunCLI(repo.Dir, "worktree", "ready")
 
-	assertContains(t, res.Stderr, "warning: Plugin hooked's Preparing hook returned an effect of kind exec, "+
-		"but the Plugin's manifest doesn't declare \"exec\" under capabilities.effects, so Laneway refused it")
+	assertContains(t, res.Stderr, "warning: Plugin hooked's Preparing hook returned an exec effect, "+
+		"but its manifest doesn't declare it may run commands in Worktrees, so Laneway refused it")
 	assertNoFile(t, ran)
 	assertContains(t, readFile(t, filepath.Join(repo.Dir, ".env")), "HOOKED=yes\n")
 }
@@ -262,7 +262,7 @@ func TestAPluginsHooksDoNotFireForProjectsThatDoNotUseIt(t *testing.T) {
 	ran := filepath.Join(gitfixture.TempDir(t), "ran")
 	hooks := hooksJSON(t, map[string]any{
 		"preparing": map[string]any{"effects": []any{map[string]any{"kind": "env", "env": map[string]string{"HOOKED": "{project}"}}}},
-		"ready":     map[string]any{"effects": []any{map[string]any{"kind": "exec", "command": "echo {project} >> " + ran}}},
+		"ready":     map[string]any{"effects": []any{map[string]any{"kind": "exec", "command": []string{"sh", "-c", "echo {project} >> " + ran}}}},
 	})
 	// Both have the same hooks.json, but only one has the file the
 	// Plugin's Recipe detects.
@@ -303,4 +303,20 @@ func waitForLine(t *testing.T, path, want string) {
 		data, err := os.ReadFile(path)
 		return err == nil && slices.Contains(strings.Split(string(data), "\n"), want)
 	})
+}
+
+// Commands apply effects the way hooks do.
+func TestAPluginCommandsEnvEffectSetsKeysInTheWorktreesEnvFile(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	plugin := testkit.Plugin(t, "tasks")
+	manifest := strings.Replace(readFile(t, filepath.Join(plugin, "plugin.json")), `["exec", "warning"]`, `["env", "exec", "warning"]`, 1)
+	d.MustRunCLI(d.Home, "plugin", "add", "--yes", withManifest(t, plugin, manifest))
+	repo := gitfixture.New(t, "tasks-env-declared").WriteFile(".gitignore", ".env\n").Commit("a Project")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+
+	res := d.MustRunCLI(repo.Dir, "tasks", "env")
+
+	assertContains(t, res.Stdout, "still ran\n")
+	assertContains(t, readFile(t, filepath.Join(repo.Dir, ".env")), "TASKS=on\n")
 }

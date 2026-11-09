@@ -34,6 +34,8 @@ type request struct {
 	Call       string `json:"call"`
 	Name       string `json:"name"`
 	Dir        string `json:"dir"`
+	// Args are a command call's arguments.
+	Args []string `json:"args,omitempty"`
 	// Event is what a hook call is about.
 	Event *Event `json:"event,omitempty"`
 }

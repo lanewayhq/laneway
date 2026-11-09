@@ -4,7 +4,7 @@
 // that need it do), adds nothing either.
 // Each hook does what the mounted Worktree's hooks.json says for its event:
 //
-//	{"ready": {"effects": [{"kind": "exec", "command": "touch ran"}], "error": "…"}}
+//	{"ready": {"effects": [{"kind": "exec", "command": ["touch", "ran"]}], "error": "…"}}
 //
 // returning the effects, or failing with the error. In effects' strings,
 // {event}, {project}, {project_path}, {worktree}, {worktree_path}, {main},
@@ -60,7 +60,10 @@ func hook(p sdk.Project, ev sdk.Event) ([]sdk.Effect, error) {
 		"{worktree}", w.Name, "{worktree_path}", w.Path, "{main}", strconv.FormatBool(w.Main),
 		"{domain}", w.Domain, "{url}", w.URL)
 	for i, e := range s.Effects {
-		e.Command, e.Message = r.Replace(e.Command), r.Replace(e.Message)
+		for j, arg := range e.Command {
+			e.Command[j] = r.Replace(arg)
+		}
+		e.Message = r.Replace(e.Message)
 		if e.Env != nil {
 			env := map[string]string{}
 			for k, v := range e.Env {

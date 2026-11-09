@@ -38,30 +38,42 @@ func (d *Daemon) hookEvent(name string, p registry.Project, w worktreeRef) plugi
 func (d *Daemon) preparingHookSteps(p registry.Project, w worktreeRef, cfg recipe.Resolved) []prepare.Step {
 	var steps []prepare.Step
 	for _, pl := range d.plugins.Hooking(plugin.EventPreparing, cfg) {
-		t := effectTarget{project: p, worktree: w, cfg: cfg, dir: w.dir,
-			source: fmt.Sprintf("Plugin %s's Preparing hook", pl.Name)}
 		steps = append(steps, prepare.Step{
 			Name: "Preparing hook of Plugin " + pl.Name,
 			Run: func(ctx context.Context, out io.Writer) error {
+				t := d.hookTarget(pl, plugin.EventPreparing, p, w, cfg, false)
 				warn := func(w string) { prepare.Warn(ctx, w) }
-				return d.runHook(ctx, pl, d.hookEvent(plugin.EventPreparing, p, w), w.dir, t, out, warn)
+				return d.runHook(ctx, t, d.hookEvent(plugin.EventPreparing, p, w), out, warn)
 			},
 		})
 	}
 	return steps
 }
 
-// runHook runs pl's hook for ev with mount as the Project, and applies the
-// effects it returns to t.
-func (d *Daemon) runHook(ctx context.Context, pl plugin.Plugin, ev plugin.Event, mount string, t effectTarget, out io.Writer, warn func(string)) error {
-	effects, refused, err := d.plugins.Hook(pl, ev, mount)
+// hookTarget is where the effects of pl's hook for event apply: the
+// Worktree w, or for a removed one the main Worktree. cfg is the config of
+// that directory.
+func (d *Daemon) hookTarget(pl plugin.Plugin, event string, p registry.Project, w worktreeRef, cfg recipe.Resolved, removed bool) *effectTarget {
+	t := &effectTarget{plugin: pl, project: p, worktree: w, dir: w.dir, removed: removed, cfg: &cfg,
+		source: plugin.HookSource(pl, event)}
+	t.warningPrefix = t.source + ": "
+	if removed {
+		t.dir = p.Path
+	}
+	return t
+}
+
+// runHook runs the hook of t's Plugin for ev, with t's directory mounted as
+// the Project, and applies the effects it returns. An error names the hook.
+func (d *Daemon) runHook(ctx context.Context, t *effectTarget, ev plugin.Event, out io.Writer, warn func(string)) error {
+	effects, err := d.plugins.Hook(t.plugin, ev, t.dir)
 	if err != nil {
 		return err
 	}
-	for _, w := range refused {
-		warn(w)
+	if err := d.applyEffects(ctx, t, effects, out, warn); err != nil {
+		return fmt.Errorf("%s: %w", t.source, err)
 	}
-	return d.applyEffects(ctx, t, effects, out, warn)
+	return nil
 }
 
 // fireHooks runs the hooks of event in the background, for the Worktree w
@@ -81,11 +93,10 @@ func (d *Daemon) fireHooks(event string, p registry.Project, w worktreeRef, remo
 			}
 			var steps []prepare.Step
 			for _, pl := range d.plugins.Hooking(event, cfg) {
-				t := effectTarget{project: p, worktree: w, cfg: cfg, dir: dir, removed: removed,
-					source: fmt.Sprintf("Plugin %s's %s hook", pl.Name, plugin.EventTitle(event))}
+				t := d.hookTarget(pl, event, p, w, cfg, removed)
 				steps = append(steps, prepare.Step{Name: t.source, Run: func(ctx context.Context, _ io.Writer) error {
 					out := &outputTail{}
-					if err := d.runHook(ctx, pl, d.hookEvent(event, p, w), dir, t, out, warn); err != nil && ctx.Err() == nil {
+					if err := d.runHook(ctx, t, d.hookEvent(event, p, w), out, warn); err != nil && ctx.Err() == nil {
 						warn(failureWarning(err, out))
 					}
 					return nil // one Plugin's failure doesn't stop another's hook

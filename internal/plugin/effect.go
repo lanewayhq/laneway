@@ -10,18 +10,19 @@ import (
 )
 
 // Effect is something a Plugin's hook or command asks Laneway to do (see
-// sdk.Effect). Kind says which fields apply. The daemon applies them; to
-// add a kind, add it to EffectKinds, its fields here, its check to check,
-// and its applier to the daemon's (internal/daemon/effects.go).
+// sdk.Effect); Kind says which fields apply. Laneway applies it, under its
+// usual rules, only if the Plugin's manifest declares its kind. To add a
+// kind: add it to EffectKinds, its fields here, its check to check, and its
+// case to the daemon's applyEffect (internal/daemon/effects.go).
 type Effect struct {
 	Kind string `json:"kind"`
-	// Env are the keys an env effect sets in the Worktree's .env.
-	Env map[string]string `json:"env,omitempty"`
-	// Command is what an exec effect runs with /bin/sh -c in the
-	// Worktree.
-	Command string `json:"command,omitempty"`
+	// Command is an exec effect's command and arguments, run without a
+	// shell.
+	Command []string `json:"command,omitempty"`
 	// Message is a warning effect's warning.
 	Message string `json:"message,omitempty"`
+	// Env is an env effect's keys for the Worktree's .env.
+	Env map[string]string `json:"env,omitempty"`
 }
 
 // envKey is what an env file key may be, as in laneway.toml's env.
@@ -40,7 +41,7 @@ func (e Effect) check() error {
 			}
 		}
 	case EffectExec:
-		if strings.TrimSpace(e.Command) == "" {
+		if len(e.Command) == 0 || strings.TrimSpace(e.Command[0]) == "" {
 			return errors.New("it has no command")
 		}
 	case EffectWarning:
@@ -51,25 +52,33 @@ func (e Effect) check() error {
 	return nil
 }
 
-// checkEffects keeps the effects p may return: of a kind its manifest
-// declares, and well formed. Each one refused is a warning, naming what
-// returned it (what) and what to do.
-func (p Plugin) checkEffects(what string, effects []Effect) (allowed []Effect, warnings []string) {
+// CheckEffects keeps the effects p may return: of a kind its manifest
+// declares, and well formed. Each one refused is a warning naming what
+// returned it (source, such as "Plugin tasks") and why.
+func (p Plugin) CheckEffects(source string, effects []Effect) (allowed []Effect, warnings []string) {
 	for _, e := range effects {
-		switch _, known := EffectKinds[e.Kind]; {
-		case !known:
-			warnings = append(warnings, fmt.Sprintf("%s returned an effect of kind %q, which isn't an effect kind, so Laneway refused it", what, e.Kind))
-		case !slices.Contains(p.Capabilities.Effects, e.Kind):
-			warnings = append(warnings, fmt.Sprintf("%s returned an effect of kind %s, but the Plugin's manifest doesn't declare %q under "+
-				"capabilities.effects, so Laneway refused it; the Plugin's author can declare it, and you'd be asked to confirm it when adding the Plugin again",
-				what, e.Kind, e.Kind))
-		default:
-			if err := e.check(); err != nil {
-				warnings = append(warnings, fmt.Sprintf("%s returned an effect of kind %s that Laneway refused: %v", what, e.Kind, err))
-				continue
-			}
-			allowed = append(allowed, e)
+		if _, known := EffectKinds[e.Kind]; !known {
+			warnings = append(warnings, fmt.Sprintf("%s returned an effect of kind %q, which isn't an effect kind; it was ignored", source, e.Kind))
+			continue
 		}
+		if !p.Declares(e.Kind) {
+			warnings = append(warnings, fmt.Sprintf("%s returned %s effect, but its manifest doesn't declare it may %s, so Laneway refused it",
+				source, Article(e.Kind), EffectKinds[e.Kind]))
+			continue
+		}
+		if err := e.check(); err != nil {
+			warnings = append(warnings, fmt.Sprintf("%s returned %s effect that Laneway refused: %v", source, Article(e.Kind), err))
+			continue
+		}
+		allowed = append(allowed, e)
 	}
 	return allowed, warnings
+}
+
+// Article is the effect kind with "a" or "an" before it: "an exec".
+func Article(kind string) string {
+	if strings.ContainsRune("aeiou", rune(kind[0])) {
+		return "an " + kind
+	}
+	return "a " + kind
 }

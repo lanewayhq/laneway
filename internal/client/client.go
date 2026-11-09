@@ -224,6 +224,15 @@ func (c *Client) AddPlugin(ctx context.Context, req api.AddPluginRequest) (api.A
 	return res, err
 }
 
+// RunPluginCommand runs the Plugin's command in a Worktree and applies the
+// effects it returns.
+func (c *Client) RunPluginCommand(ctx context.Context, plugin, command string, req api.PluginCommandRequest) (api.PluginCommandResult, error) {
+	var res api.PluginCommandResult
+	path := "/v1/plugins/" + url.PathEscape(plugin) + "/commands/" + url.PathEscape(command)
+	err := c.do(ctx, http.MethodPost, path, req, &res)
+	return res, err
+}
+
 // do sends one request and decodes the response into out.
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
 	resp, err := c.send(ctx, method, path, body)

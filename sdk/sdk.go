@@ -48,8 +48,11 @@ type Request struct {
 	// Integration's name as the manifest declares it.
 	Name string `json:"name"`
 	// Dir is the Project's directory as the module sees it: mounted
-	// read-only, and the module's working directory.
+	// read-only, and the module's working directory. For a CallCommand it
+	// is the Worktree the command was run in.
 	Dir string `json:"dir"`
+	// Args are a CallCommand's arguments, after the command's name.
+	Args []string `json:"args,omitempty"`
 	// Event describes the event a CallHook is about.
 	Event *Event `json:"event,omitempty"`
 }
@@ -63,9 +66,10 @@ type Response struct {
 	*RecipeResult
 	// IntegrationResult answers a CallIntegration.
 	*IntegrationResult
-	// Effects answer a CallHook: what Laneway does for the Plugin, in
-	// order.
-	Effects []Effect `json:"effects,omitempty"`
+	// CommandResult answers a CallCommand.
+	*CommandResult
+	// HookResult answers a CallHook.
+	*HookResult
 }
 
 // MarshalJSON writes the Error alone, or the one result that is set. (Two
@@ -81,10 +85,10 @@ func (r Response) MarshalJSON() ([]byte, error) {
 		return json.Marshal(r.RecipeResult)
 	case r.IntegrationResult != nil:
 		return json.Marshal(r.IntegrationResult)
-	case r.Effects != nil:
-		return json.Marshal(struct {
-			Effects []Effect `json:"effects"`
-		}{r.Effects})
+	case r.CommandResult != nil:
+		return json.Marshal(r.CommandResult)
+	case r.HookResult != nil:
+		return json.Marshal(r.HookResult)
 	}
 	return []byte("{}"), nil
 }
@@ -187,6 +191,7 @@ type Integration func(Project) (IntegrationResult, error)
 type Plugin struct {
 	Recipes      map[string]Recipe
 	Integrations map[string]Integration
+	Commands     map[string]Command
 	// Hooks are by event, such as EventReady.
 	Hooks map[string]Hook
 }
@@ -240,7 +245,7 @@ func handle(p Plugin, req Request) (Response, error) {
 		if err != nil {
 			return Response{}, err
 		}
-		return Response{Effects: effects}, nil
+		return Response{HookResult: &HookResult{Effects: effects}}, nil
 	case CallIntegration:
 		integration, ok := p.Integrations[req.Name]
 		if !ok {
@@ -251,6 +256,16 @@ func handle(p Plugin, req Request) (Response, error) {
 			return Response{}, err
 		}
 		return Response{IntegrationResult: &res}, nil
+	case CallCommand:
+		command, ok := p.Commands[req.Name]
+		if !ok {
+			return Response{}, fmt.Errorf("this Plugin has no command %q", req.Name)
+		}
+		effects, err := command(project, req.Args)
+		if err != nil {
+			return Response{}, err
+		}
+		return Response{CommandResult: &CommandResult{Effects: effects}}, nil
 	}
 	return Response{}, errors.New("this Plugin doesn't answer " + req.Call + " calls")
 }

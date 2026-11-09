@@ -52,6 +52,11 @@ type EventWorktree struct {
 	URL string `json:"url"`
 }
 
+// HookResult is what a hook returns: the effects Laneway applies, in order.
+type HookResult struct {
+	Effects []Effect `json:"effects"`
+}
+
 // Hook answers a CallHook: it returns the effects Laneway applies for the
 // event, in order. An error fails a Preparing hook (and so setup), and is a
 // warning for any other.
