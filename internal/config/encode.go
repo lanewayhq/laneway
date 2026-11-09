@@ -120,6 +120,15 @@ func Encode(w io.Writer, l Layer) error {
 			fmt.Fprintf(&b, "%s = %s\n", key(k), quote(l.Services[k]))
 		}
 	}
+	for _, name := range slices.Sorted(maps.Keys(l.Buckets)) {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "[buckets.%s]\n", key(name))
+		if public := l.Buckets[name].Public; public != nil {
+			fmt.Fprintf(&b, "public = %t\n", *public)
+		}
+	}
 	_, err := io.WriteString(w, b.String())
 	return err
 }
