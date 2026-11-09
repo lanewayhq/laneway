@@ -80,7 +80,7 @@ The binary carries no Recipes, Integrations, Engines or Generators: a fresh inst
 ## After an upgrade
 
 - [ ] With a Project Linked, remove the installed Plugins (`systemctl --user stop laneway`, `rm -r ~/.local/state/laneway/plugins`, `systemctl --user start laneway`), as an upgrade that leaves them behind does. Without running anything else, `lane plugin list` lists the Project's Plugins again within a few seconds, and `lane info` in the Project shows its Recipe and no `Config` error.
-- [ ] Do the same offline. `lane status` and `lane info` warn that Laneway couldn't fetch the Project's Plugins and say to run `lane doctor`. Back online, `lane doctor` fetches them and the warning goes.
+- [ ] Do the same offline. `lane status` and `lane info` warn that Laneway couldn't fetch the Project's Plugins and say to run `lane doctor`. If the Project's config names an Engine, such as `engine = "postgres"` under `[database]`, `lane info`'s `Config` line says "the postgres Engine isn't installed; run `lane doctor` to fetch it from the Catalog", not `must be sqlite`. Back online, `lane doctor` fetches them and the warning and the `Config` error go.
 
 ## Results
 
