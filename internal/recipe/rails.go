@@ -48,6 +48,7 @@ func (Rails) Defaults(dir string) (config.Layer, error) {
 	l.Processes["web"] = config.ProcessLayer{Command: ptr(railsServer), Primary: ptr(true)}
 	l.Env = map[string]string{}
 	railsDatabase(&l, dir)
+	railsRedis(&l, dir)
 	// A new Worktree has no gems installed yet. Laneway makes its database
 	// itself, so there is no db:prepare.
 	l.Worktree = &config.WorktreeLayer{OnCreate: []string{"bundle install"}}

@@ -190,3 +190,25 @@ func TestARailsAppsProcfileDevWatchersRunAsProcessesReadingItsEnv(t *testing.T) 
 	waitForLogs(t, d, repo.Dir, []string{"logs", "js"},
 		fmt.Sprintf("js watching for DATABASE_URL=postgresql://laneway:laneway@%s:5432/rails_procfile", d.ServiceHost()))
 }
+
+func TestARailsAppUsingSidekiqGetsRedisAtRedisURL(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	railsStubs(t, d)
+	repo := railsRepo(t, "rails-sidekiq", railsSQLiteYml).
+		WriteFile("Gemfile", "source \"https://rubygems.org\"\n\nruby file: \".ruby-version\"\n\ngem \"rails\", \"~> 8.1.0\"\ngem \"sidekiq\"\n").
+		WriteFile("Procfile.dev", "web: bin/rails server\nworker: echo \"sidekiq on $REDIS_URL\" && exec sleep 600\n").
+		Commit("process jobs with Sidekiq")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+
+	url := fmt.Sprintf("redis://:laneway@%s:6379", d.ServiceHost())
+	if got := envValue(t, filepath.Join(repo.Dir, ".env"), "REDIS_URL"); got != url {
+		t.Errorf("REDIS_URL=%q in .env, want %q", got, url)
+	}
+	c := dialRedis(t, d, 6379)
+	if got := c.do("AUTH", "laneway"); got != "+OK" {
+		t.Fatalf("AUTH = %q, want +OK from the Redis Service", got)
+	}
+	startByBrowsing(t, d, "rails-sidekiq.localhost")
+	waitForLogs(t, d, repo.Dir, []string{"logs", "worker"}, "sidekiq on "+url)
+}
