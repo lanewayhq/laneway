@@ -22,28 +22,22 @@ import (
 )
 
 // DefaultURL is where Laneway fetches the Catalog from: the latest release of
-// lanewayhq/plugins, where its Catalog workflow publishes each signed
-// Catalog (see that repository's docs/releasing.md).
-//
-// PLACEHOLDER (#71): no signed Catalog is published there yet, so this
-// answers 404 until a maintainer signs and publishes the first one.
+// lanewayhq/plugins, which publishes it after the maintainer approves its
+// signing (see that repository's docs/releasing.md).
 const DefaultURL = "https://github.com/lanewayhq/plugins/releases/latest/download/catalog.json"
 
-// placeholderKey is the base64 Ed25519 public key built into Laneway: the
-// public half of the Catalog's signing key, as lanewayhq/plugins'
-// keys/catalog.pub has it.
-//
-// PLACEHOLDER (#71): this is NOT the Catalog's real key, and nobody holds
-// its private key, so Laneway refuses every Catalog it fetches until a
-// maintainer generates the real key offline (lanewayhq/plugins'
-// keys/README.md) and replaces this one line with its public half. Then
-// refresh the Catalog snapshot (snapshot.go), which must be signed with it.
-const placeholderKey = "TEFORVdBWS1QTEFDRUhPTERFUi1LRVktU0VFLSM3MSE="
+// catalogKey is the base64 Ed25519 public key built into Laneway: the public
+// half of lanewayhq/plugins' Catalog signing key (its keys/catalog.pub).
+// Laneway refuses any Catalog not signed with it. Changing it needs a Laneway
+// release, and Laneways built before then refuse Catalogs signed with the new
+// key (see lanewayhq/plugins' keys/README.md). After changing it, refresh
+// the Catalog snapshot (snapshot.go), which must be signed with it.
+const catalogKey = "3jCN1VXjJCoBRm+mO2vDBfi4gPou8HaDqKWtPEweLtE="
 
 // DefaultKey is the key the Catalog must be signed with: the one built into
 // Laneway.
 var DefaultKey = func() ed25519.PublicKey {
-	key, err := base64.StdEncoding.DecodeString(placeholderKey)
+	key, err := base64.StdEncoding.DecodeString(catalogKey)
 	if err != nil || len(key) != ed25519.PublicKeySize {
 		panic("catalog: the built-in key isn't a base64 Ed25519 public key")
 	}

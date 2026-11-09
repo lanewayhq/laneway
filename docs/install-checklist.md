@@ -46,7 +46,7 @@ Record each result as pass/fail, plus anything surprising, in the table at the e
 
 ## Plugins from the Catalog
 
-The binary carries no Recipes, Integrations, Engines or Generators: a fresh install fetches the first-party Plugins a Project needs from the signed Catalog (`catalog.DefaultURL`, the latest release of lanewayhq/plugins). This only works once a signed Catalog is published and the binary has its real key (`placeholderKey` in `internal/catalog/fetch.go`). Until then, skip this section and note why.
+The binary carries no Recipes, Integrations, Engines or Generators: a fresh install fetches the first-party Plugins a Project needs from the signed Catalog (`catalog.DefaultURL`, the latest release of lanewayhq/plugins). The binary trusts the Catalog signed with the key in `internal/catalog/fetch.go` (`catalogKey`).
 
 - [ ] Before any Link, `lane plugin list` lists no Plugins, and `~/.local/state/laneway/plugins` doesn't exist or is empty.
 - [ ] Link a fresh Laravel app (`laravel new`, then `git init`) with `lane link`. It prints `Fetched Plugin laravel … from the Catalog`, plus one line for each Engine its `.env.example` uses (such as `mysql`, `redis` and `mailpit`; none for SQLite), and the app is served at `https://<project>.localhost/`.
