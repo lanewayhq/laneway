@@ -507,7 +507,8 @@ type Plugin struct {
 	// --global`), which only personal config turns on.
 	Global bool `json:"global,omitempty"`
 	// Update is the release `lane plugin update` would update it to, if
-	// the Catalog lists a newer one.
+	// there is a newer one that version pins allow: in the Catalog, or for
+	// a Plugin added by hand, at its source.
 	Update *PluginUpdate `json:"update,omitempty"`
 }
 
@@ -610,6 +611,12 @@ type UpdateHandAddedResponse struct {
 	UpToDate bool `json:"upToDate,omitempty"`
 	// Digest, previewing, is as for AddPluginResponse.
 	Digest string `json:"digest,omitempty"`
+	// Warning, if set, is why nothing changes although the source has
+	// something new, such as a version pin that doesn't allow it.
+	Warning string `json:"warning,omitempty"`
+	// OutOfDate are the generated files the update left out of date, as
+	// for UpdatePluginsResponse.
+	OutOfDate []OutOfDateFile `json:"outOfDate,omitempty"`
 }
 
 // RemovePluginResponse is the body of DELETE /v1/plugins/{plugin}: the

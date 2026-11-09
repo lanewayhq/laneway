@@ -25,6 +25,10 @@ func updateByHand(ctx context.Context, env Env, c *client.Client, names []string
 			fmt.Fprintf(env.Stdout, "Plugin %s is up to date: %s, SHA-256 %s\n", name, preview.Plugin.Version, orNone(preview.Plugin.SHA256))
 			continue
 		}
+		if preview.Warning != "" {
+			printUpdateWarnings(env, []string{preview.Warning})
+			continue
+		}
 		if err := checkPluginName(preview.Plugin); err != nil {
 			return err
 		}
@@ -39,6 +43,7 @@ func updateByHand(ctx context.Context, env Env, c *client.Client, names []string
 			return err
 		}
 		fmt.Fprintf(env.Stdout, "Updated Plugin %s %s → %s, pinned to SHA-256 %s\n", name, res.Was.Version, res.Plugin.Version, orNone(res.Plugin.SHA256))
+		printOutOfDate(env.Stdout, res.OutOfDate)
 	}
 	switch len(declined) {
 	case 0:

@@ -173,7 +173,7 @@ func runPluginList(ctx context.Context, env Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	plugins, err := c.Plugins(ctx)
+	plugins, err := c.InstalledPlugins(ctx)
 	if err != nil {
 		return err
 	}

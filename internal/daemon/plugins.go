@@ -11,9 +11,12 @@ import (
 )
 
 // listPlugins is the body of GET /v1/plugins: the installed Plugins, each
-// with its available update, if any.
-func (d *Daemon) listPlugins(ctx context.Context) api.PluginList {
-	updates := d.availableUpdates(ctx)
+// with its available update, if any, unless !withUpdates (?updates=false).
+func (d *Daemon) listPlugins(ctx context.Context, withUpdates bool) api.PluginList {
+	var updates map[string]api.PluginUpdate
+	if withUpdates {
+		updates = d.availableUpdates(ctx)
+	}
 	list := api.PluginList{Plugins: []api.Plugin{}}
 	for _, p := range d.plugins.List() {
 		ap := apiPlugin(p)

@@ -281,3 +281,60 @@ func TestAPluginAddedByHandIsUpdatedFromWhereItWasAddedNotFromTheCatalog(t *test
 	assertContains(t, unknown.Stderr, "no Plugin named nope is installed")
 	assertLineWith(t, d.MustRunCLI(d.Home, "plugin", "list").Stdout, "kv", "0.1.0", local)
 }
+
+func TestAVersionPinnedInLanewayTomlHoldsBackAPluginAddedByHand(t *testing.T) {
+	t.Parallel()
+	gh := testkit.NewGitHub(t)
+	gh.Release(t, "acme/procfile", "v0.1.0", testkit.Plugin(t, "procfile"))
+	d := testkit.StartDaemon(t, gh.Option())
+	d.MustRunCLI(d.Home, "plugin", "add", "--yes", "github.com/acme/procfile")
+	repo := procfileRepo(t, "procfile-pinned", "web: sleep 60\n").
+		WriteFile("laneway.toml", "[plugin_versions]\nprocfile = \"~0.1\"\n").
+		Commit("pin procfile")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	gh.Release(t, "acme/procfile", "v0.2.0", procfileRelease(t, "0.2.0"))
+
+	res := d.MustRunCLI(d.Home, "plugin", "update", "--yes", "procfile")
+
+	assertContains(t, res.Stderr, `warning: Plugin procfile 0.2.0, from github.com/acme/procfile, isn't allowed by every pin: "~0.1" in `+repo.Dir)
+	assertContains(t, res.Stderr, "it stays at 0.1.0")
+	assertLineWith(t, d.MustRunCLI(d.Home, "plugin", "list").Stdout, "procfile", "0.1.0")
+	if out := d.MustRunCLI(d.Home, "status").Stdout; strings.Contains(out, "0.2.0") {
+		t.Errorf("status offers an update the pin doesn't allow:\n%s", out)
+	}
+}
+
+func TestUpdatingAGeneratorPluginAddedByHandReportsOutOfDateGeneratedFiles(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	dir := generatorRelease(t, "1.0.0", "blocks")
+	d.MustRunCLI(d.Home, "plugin", "add", "--yes", dir)
+	generated := generatorProject(t, "notes-by-hand")
+	d.MustRunCLI(generated.Dir, "link", "--yes")
+	d.MustRunCLI(generated.Dir, "generate", "blocks")
+	notes := readFile(t, generated.Dir+"/NOTES.md")
+	withManifest(t, dir, `{"name": "blocks", "version": "1.1.0", "api_version": 1,
+  "engines": ["kv.toml"],
+  "generators": [{"name": "next"}],
+  "capabilities": {"effects": ["file", "warning"]}}`)
+
+	out := d.MustRunCLI(d.Home, "plugin", "update", "--yes", "blocks").Stdout
+
+	assertContains(t, out, "Updated Plugin blocks 1.0.0 → 1.1.0")
+	assertContains(t, out, "In "+generated.Dir+", run `lane generate blocks` to update NOTES.md")
+	assertFile(t, generated.Dir+"/NOTES.md", notes)
+}
+
+func TestStatusShowsAnUpdateToAPluginAddedByHand(t *testing.T) {
+	t.Parallel()
+	gh := testkit.NewGitHub(t)
+	gh.Release(t, "acme/procfile", "v0.1.0", testkit.Plugin(t, "procfile"))
+	d := testkit.StartDaemon(t, gh.Option())
+	d.MustRunCLI(d.Home, "plugin", "add", "--yes", "github.com/acme/procfile")
+	gh.Release(t, "acme/procfile", "v0.2.0", procfileRelease(t, "0.2.0"))
+
+	out := d.MustRunCLI(d.Home, "status").Stdout
+
+	assertContains(t, out, "Plugin updates are available; run `lane plugin update`:")
+	assertLineWith(t, out, "procfile", "0.1.0", "→", "0.2.0")
+}

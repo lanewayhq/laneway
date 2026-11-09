@@ -270,7 +270,7 @@ func (d *Daemon) queryDir(r *http.Request) (string, error) {
 }
 
 func (d *Daemon) handleListPlugins(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, d.listPlugins(r.Context()))
+	writeJSON(w, http.StatusOK, d.listPlugins(r.Context(), r.URL.Query().Get("updates") != "false"))
 }
 
 func (d *Daemon) handleAddPlugin(w http.ResponseWriter, r *http.Request) {

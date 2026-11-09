@@ -207,10 +207,20 @@ func (c *Client) GC(ctx context.Context, req api.GCRequest) (api.GCResponse, err
 	return res, err
 }
 
-// Plugins lists the installed Plugins.
+// Plugins lists the installed Plugins, each with its available update.
 func (c *Client) Plugins(ctx context.Context) ([]api.Plugin, error) {
 	var list api.PluginList
 	if err := c.do(ctx, http.MethodGet, "/v1/plugins", nil, &list); err != nil {
+		return nil, err
+	}
+	return list.Plugins, nil
+}
+
+// InstalledPlugins lists the installed Plugins without checking the Catalog
+// or their sources for updates.
+func (c *Client) InstalledPlugins(ctx context.Context) ([]api.Plugin, error) {
+	var list api.PluginList
+	if err := c.do(ctx, http.MethodGet, "/v1/plugins?updates=false", nil, &list); err != nil {
 		return nil, err
 	}
 	return list.Plugins, nil
