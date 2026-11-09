@@ -7,7 +7,6 @@ import (
 
 	"github.com/lanewayhq/laneway/internal/container"
 	"github.com/lanewayhq/laneway/internal/database"
-	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/prepare"
 	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/registry"
@@ -17,14 +16,14 @@ import (
 // the Project has no database (see database.New).
 // server is how to reach the Service a Service engine's databases live in;
 // naming databases doesn't need it, so the zero Server will do for that.
-func databaseEngine(db recipe.Database, server database.Server) database.Engine {
-	return database.New(db.Engine, db.Path, server)
+func (d *Daemon) databaseEngine(db recipe.Database, server database.Server) database.Engine {
+	return database.New(d.plugins.Engines(), db.Engine, db.Path, server)
 }
 
 // worktreeDatabase is the database the Worktree w uses, which the Env Patch's
 // {db} holds, and whether the Project has one.
-func worktreeDatabase(p registry.Project, w worktreeRef, db recipe.Database) (string, bool) {
-	e := databaseEngine(db, database.Server{})
+func (d *Daemon) worktreeDatabase(p registry.Project, w worktreeRef, db recipe.Database) (string, bool) {
+	e := d.databaseEngine(db, database.Server{})
 	if e == nil {
 		return "", false
 	}
@@ -55,7 +54,7 @@ func databaseVars(cfg recipe.Resolved, vars map[string]string) map[string]string
 // going Idle until the step ends.
 func (d *Daemon) databaseStep(p registry.Project, w worktreeRef, cfg recipe.Resolved) (prepare.Step, bool) {
 	db := cfg.Database
-	names := databaseEngine(db, database.Server{})
+	names := d.databaseEngine(db, database.Server{})
 	if names == nil {
 		return prepare.Step{}, false
 	}
@@ -71,7 +70,7 @@ func (d *Daemon) databaseStep(p registry.Project, w worktreeRef, cfg recipe.Reso
 			}
 			defer release()
 		}
-		warnings, err := database.Ensure(ctx, databaseEngine(db, server), database.Mode(db.Mode), main, own, out)
+		warnings, err := database.Ensure(ctx, d.databaseEngine(db, server), database.Mode(db.Mode), main, own, out)
 		for _, warning := range warnings {
 			prepare.Warn(ctx, warning)
 		}
@@ -82,7 +81,7 @@ func (d *Daemon) databaseStep(p registry.Project, w worktreeRef, cfg recipe.Reso
 // databaseServer starts the Service svc for a database step and says how to
 // reach it. Call release once the step is done with it.
 func (d *Daemon) databaseServer(ctx context.Context, svc recipe.Service, out io.Writer) (database.Server, func(), error) {
-	e, ok := engine.Lookup(svc.Engine)
+	e, ok := d.plugins.Engines().Lookup(svc.Engine)
 	if !ok {
 		return database.Server{}, nil, fmt.Errorf("Laneway has no Service %q", svc.Engine)
 	}

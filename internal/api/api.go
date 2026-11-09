@@ -457,6 +457,8 @@ type Plugin struct {
 	Integrations []PluginIntegration `json:"integrations"`
 	// Commands are the commands it adds, run as `lane <plugin> <command>`.
 	Commands []PluginCommand `json:"commands"`
+	// Engines are the Engines it adds.
+	Engines []PluginEngine `json:"engines"`
 	// Effects are the kinds of effect it may return, each with what it
 	// lets the Plugin do; empty if it only returns config.
 	Effects []PluginEffect `json:"effects"`
@@ -485,6 +487,16 @@ type PluginCommand struct {
 	Name string `json:"name"`
 	// Summary says what it does.
 	Summary string `json:"summary"`
+}
+
+// PluginEngine is an Engine a Plugin adds: what Services of it run.
+type PluginEngine struct {
+	Name string `json:"name"`
+	// Image is the image repository its Services' containers run.
+	Image string `json:"image"`
+	// Port is its standard port, which a Service at its default version
+	// listens on.
+	Port int `json:"port"`
 }
 
 // PluginEffect is a kind of effect a Plugin may return.

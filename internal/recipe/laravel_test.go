@@ -17,7 +17,7 @@ import (
 // Builtin Recipes.
 func resolveLaravel(t *testing.T, name string) recipe.Resolved {
 	t.Helper()
-	res, err := recipe.ResolveDir(filepath.Join("testdata", name))
+	res, err := resolveBuiltin(filepath.Join("testdata", name))
 	if err != nil {
 		t.Fatalf("resolving %s: %v", name, err)
 	}
@@ -162,7 +162,7 @@ func laravelProject(t *testing.T, files map[string]string) string {
 
 func resolveDir(t *testing.T, dir string) recipe.Resolved {
 	t.Helper()
-	res, err := recipe.ResolveDir(dir)
+	res, err := resolveBuiltin(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,7 +396,7 @@ func TestTheLaravelRecipesConfigWrittenAsALayerResolvesToItself(t *testing.T) {
 			}
 			for _, recipes := range [][]recipe.Recipe{nil, recipe.Builtin} {
 				for _, integrations := range [][]recipe.Integration{nil, recipe.BuiltinIntegrations} {
-					again, err := recipe.Resolve(recipe.Input{Dir: filepath.Join("testdata", fixture), Layers: []config.Layer{written},
+					again, err := recipe.Resolve(recipe.Input{Engines: builtinEngines(), Dir: filepath.Join("testdata", fixture), Layers: []config.Layer{written},
 						Recipes: recipes, Integrations: integrations})
 					if err != nil {
 						t.Fatal(err)

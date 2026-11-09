@@ -21,7 +21,7 @@ func resolveFixture(t *testing.T, name string, recipes ...recipe.Recipe) (recipe
 	if err != nil {
 		return recipe.Resolved{}, err
 	}
-	return recipe.Resolve(recipe.Input{Dir: dir, Layers: layers, Recipes: recipes})
+	return recipe.Resolve(recipe.Input{Engines: builtinEngines(), Dir: dir, Layers: layers, Recipes: recipes})
 }
 
 // fixtureStack is a test Recipe, detected by a `fixture-stack` file, that
@@ -288,7 +288,7 @@ func TestUnknownKeysAreWarningsNamingTheFileAndTheKey(t *testing.T) {
 }
 
 func TestResolveDirReadsTheProjectsConfigFiles(t *testing.T) {
-	res, err := recipe.ResolveDir(filepath.Join("testdata", "local-overrides"))
+	res, err := resolveBuiltin(filepath.Join("testdata", "local-overrides"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +298,7 @@ func TestResolveDirReadsTheProjectsConfigFiles(t *testing.T) {
 }
 
 func TestAProjectWithNoConfigAndNoRecipeResolvesToNothing(t *testing.T) {
-	res, err := recipe.ResolveDir(t.TempDir())
+	res, err := resolveBuiltin(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +308,7 @@ func TestAProjectWithNoConfigAndNoRecipeResolvesToNothing(t *testing.T) {
 }
 
 func TestResolveDirReportsInvalidConfig(t *testing.T) {
-	_, err := recipe.ResolveDir(filepath.Join("testdata", "invalid-no-command"))
+	_, err := resolveBuiltin(filepath.Join("testdata", "invalid-no-command"))
 	if err == nil || !strings.Contains(err.Error(), "processes.wbe") {
 		t.Errorf("err = %v, want one naming processes.wbe", err)
 	}
@@ -331,7 +331,7 @@ func TestTheResolvedConfigWrittenAsALayerResolvesToItself(t *testing.T) {
 			}
 			dir := filepath.Join("testdata", fixture)
 			for _, recipes := range [][]recipe.Recipe{nil, {fixtureStack{}}} {
-				again, err := recipe.Resolve(recipe.Input{Dir: dir, Layers: []config.Layer{written}, Recipes: recipes})
+				again, err := recipe.Resolve(recipe.Input{Engines: builtinEngines(), Dir: dir, Layers: []config.Layer{written}, Recipes: recipes})
 				if err != nil {
 					t.Fatal(err)
 				}

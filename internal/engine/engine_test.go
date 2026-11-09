@@ -153,20 +153,3 @@ data_dir = "/data"
 		})
 	}
 }
-
-func TestLanewayHasRedisMailpitPostgresAndMySQLBuiltIn(t *testing.T) {
-	if got, want := engine.Names(), []string{"redis", "mailpit", "postgres", "mysql"}; !slices.Equal(got, want) {
-		t.Fatalf("built-in Engines %q, want %q", got, want)
-	}
-	for _, name := range []string{"postgres", "mysql"} {
-		if e, _ := engine.Lookup(name); e.Database == nil {
-			t.Fatalf("%s has no database commands", name)
-		}
-	}
-	if e, _ := engine.Lookup("mailpit"); e.WebPort != 8025 {
-		t.Fatalf("mailpit's web port is %d, want 8025", e.WebPort)
-	}
-	if _, ok := engine.Lookup("mongodb"); ok {
-		t.Fatal("found an Engine mongodb, want none")
-	}
-}
