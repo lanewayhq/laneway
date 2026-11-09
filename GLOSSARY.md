@@ -70,13 +70,35 @@ _Avoid_: Inactive, sleeping
 Shared backing infrastructure, such as a database or cache, that many Projects use at the same time. Like lazy Processes, a Service starts on first use and stops when unused.
 _Avoid_: Container, dependency, add-on
 
+**Engine**:
+A kind of Service, such as Postgres or Redis. A Service is an Engine at a version.
+_Avoid_: Driver, backend, image
+
 **Recipe**:
-A stack definition: how to recognise a kind of Project and which Processes it runs by default.
-_Avoid_: Plugin, framework support, preset, driver
+A stack definition: how to recognise a kind of Project and which Processes it runs by default. A Project has at most one Recipe.
+_Avoid_: Framework support, preset, driver
+
+**Integration**:
+A tool a Project uses alongside its stack, such as Vite or Horizon, that Laneway recognises on its own and adds Processes, env or Services for. A Project can have any number of Integrations on top of its Recipe.
+_Avoid_: Add-on, companion, extra, mixin
 
 **Runtime**:
 A language toolchain at a specific version, such as Node 22 or PHP 8.4, that a Project's Processes need.
 _Avoid_: SDK, interpreter
+
+## Extending Laneway
+
+**Plugin**:
+A package, installed separately from Laneway, that adds one or more Recipes, Integrations, Engines or Generators to it.
+_Avoid_: Extension, add-on, package, pack
+
+**Catalog**:
+The list of first-party Plugins that Laneway may fetch on its own when a Project needs one. A Plugin outside the Catalog is only installed when a developer adds it by hand.
+_Avoid_: Registry, marketplace, store, index
+
+**Generator**:
+Config a Plugin keeps merged into a Project's committed files, so that a tool such as a Harness works with Laneway. It is only written when a developer asks for it.
+_Avoid_: Scaffold, template, codegen
 
 ## Agents
 

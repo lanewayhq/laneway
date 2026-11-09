@@ -8,3 +8,4 @@ We picked this to avoid DDEV's per-project container cost. Apps run natively bec
 
 - Laneway does not give a team reproducible system libraries. A Project that depends on host libraries (libvips, ImageMagick, etc.) relies on the developer's machine having them.
 - A container engine (Podman or Docker) is required as soon as a Project uses a Service.
+- Engines now come from Plugins (ADR-0007). A Service is still one shared container per Engine and version.
