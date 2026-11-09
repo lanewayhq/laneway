@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/lanewayhq/laneway/internal/engine"
 )
 
 // A Plugin's test cases, run by `lane plugin test`, live beside its manifest:
@@ -159,10 +161,11 @@ func (h *Host) caseOutput(p Plugin, dir string) (caseOutput, error) {
 				continue
 			}
 			r := pluginRecipe{host: h, plugin: p, decl: decl}
-			res, err := r.call(project)
+			var res recipeResponse
+			err := h.call(p, r.source(), request{Call: callRecipe, Name: decl.Name}, project, &res)
 			o := layerOutput{Detected: matched, Layer: res.Layer, TestDatabase: res.TestDatabase,
 				TestDatabaseWarnings: res.TestDatabaseWarnings, Warnings: res.Warnings}
-			o.check(r.source(), err)
+			o.check(r.source(), err, h.Engines())
 			out.Recipes = setOutput(out.Recipes, decl.Name, o)
 		}
 		for _, decl := range p.Integrations {
@@ -174,7 +177,7 @@ func (h *Host) caseOutput(p Plugin, dir string) (caseOutput, error) {
 			var res integrationResponse
 			err := h.call(p, in.source(), request{Call: callIntegration, Name: decl.Name}, project, &res)
 			o := layerOutput{Detected: matched, Layer: res.Layer, Warnings: res.Warnings}
-			o.check(in.source(), err)
+			o.check(in.source(), err, h.Engines())
 			out.Integrations = setOutput(out.Integrations, decl.Name, o)
 		}
 		for _, g := range p.Generators {
@@ -205,12 +208,12 @@ func (h *Host) caseOutput(p Plugin, dir string) (caseOutput, error) {
 
 // check records err, or, for a layer the module returned, what Laneway
 // would say about it: why it would refuse it, and its warnings.
-func (o *layerOutput) check(source string, err error) {
+func (o *layerOutput) check(source string, err error, engines engine.Set) {
 	if err != nil {
 		*o = layerOutput{Detected: o.Detected, Error: err.Error()}
 		return
 	}
-	l, err := parseLayer(source, o.Layer)
+	l, err := parseLayer(source, o.Layer, engines)
 	if err != nil {
 		o.Error = err.Error()
 		return
