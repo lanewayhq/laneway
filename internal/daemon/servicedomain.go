@@ -62,8 +62,9 @@ func (d *Daemon) serviceDomainUpstream(ctx context.Context, domain, label string
 			"Declare the Engine that does in the [services] table of a Project's %s and link the Project; "+
 			"Linking it fetches its Plugin from the Catalog", domain, config.FileName)
 	case service == "":
+		// The Engine as a Project declares it, not a name made up from it.
 		return "", fmt.Errorf("no Project uses %s yet: declare it in the [services] table of %s (%s = %q) and link the Project",
-			strings.ToUpper(e.Name[:1])+e.Name[1:], config.FileName, e.Name, e.DefaultVersion)
+			e.Name, config.FileName, e.Name, e.DefaultVersion)
 	}
 	return d.services.Forward(ctx, service, port)
 }

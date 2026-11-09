@@ -162,7 +162,7 @@ func TestTheInboxExplainsHowToDeclareMailpitWhenNoProjectUsesIt(t *testing.T) {
 	if res.StatusCode != http.StatusBadGateway {
 		t.Fatalf("GET the inbox with no Mailpit Service = %d, want 502:\n%s", res.StatusCode, res.Body)
 	}
-	assertContains(t, res.Body, "no Project uses Mailpit yet")
+	assertContains(t, res.Body, "no Project uses mailpit yet")
 	assertContains(t, res.Body, "mailpit = &#34;v1&#34;")
 	if calls := d.Engine.Calls(); containsCall(calls, "start") {
 		t.Fatalf("visiting the inbox started a container: %v", calls)
