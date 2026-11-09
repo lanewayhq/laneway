@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
+
+	"github.com/lanewayhq/laneway/internal/dotenv"
 
 	"github.com/lanewayhq/laneway/internal/runtimes"
 )
@@ -53,7 +56,13 @@ func runExec(ctx context.Context, env Env, args []string) error {
 		return err
 	}
 	dir := info.Worktree.Path
-	rt := runtimes.Environ(ctx, dir, environOf(env))
+	vars := environOf(env)
+	if info.ExportEnv {
+		// The stack doesn't read .env itself; its Processes load it, and
+		// so does what it runs here.
+		vars = append(vars, dotenv.Environ(filepath.Join(dir, ".env"))...)
+	}
+	rt := runtimes.Environ(ctx, dir, vars)
 	for _, w := range rt.Warnings {
 		fmt.Fprintf(env.Stderr, "lane exec: warning: %s\n", w)
 	}

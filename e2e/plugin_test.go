@@ -72,7 +72,7 @@ func TestAddingAPluginShowsWhatItMayDoAndAddsNothingUnlessConfirmed(t *testing.T
 		"may run commands in Worktrees",
 		"may send HTTP requests, to ntfy.sh",
 		"Add it? [y/N]",
-		"nothing was added; run `lane plugin add --yes <dir>`",
+		"nothing was added; run `lane plugin add --yes <dir|github.com/<owner>/<repo>>`",
 	} {
 		assertContains(t, res.Output(), want)
 	}

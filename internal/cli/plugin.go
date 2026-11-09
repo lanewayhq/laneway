@@ -68,11 +68,11 @@ func runPluginAdd(ctx context.Context, env Env, args []string) error {
 	if err := checkPluginName(preview.Plugin); err != nil {
 		return err
 	}
-	req.Preview = false
+	req.Preview, req.Digest = false, preview.Digest
 	if !*yes {
 		printPlugin(env.Stdout, preview)
 		if !confirm(env, "Add it? [y/N] ") {
-			return errors.New("nothing was added; run `lane plugin add --yes <dir>` to add a Plugin without asking")
+			return errors.New("nothing was added; run `lane plugin add --yes <dir|github.com/<owner>/<repo>>` to add a Plugin without asking")
 		}
 	}
 	res, err := c.AddPlugin(ctx, req)
@@ -173,12 +173,12 @@ func runPluginList(ctx context.Context, env Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	plugins, err := c.Plugins(ctx)
+	plugins, err := c.InstalledPlugins(ctx)
 	if err != nil {
 		return err
 	}
 	if len(plugins) == 0 {
-		fmt.Fprintln(env.Stdout, "No Plugins are installed. Add one with `lane plugin add <dir>`.")
+		fmt.Fprintln(env.Stdout, "No Plugins are installed. Add one with `lane plugin add <dir|github.com/<owner>/<repo>>`.")
 		return nil
 	}
 	tw := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)

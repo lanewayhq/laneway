@@ -19,15 +19,10 @@ type IntegrationDecl struct {
 
 // validateIntegrations checks the Integrations a manifest declares.
 func validateIntegrations(integrations []IntegrationDecl) error {
-	seen := map[string]bool{}
+	if err := checkNames("integrations", "Integration", integrations, func(in IntegrationDecl) string { return in.Name }); err != nil {
+		return err
+	}
 	for i, in := range integrations {
-		if !name.MatchString(in.Name) {
-			return fmt.Errorf("integrations[%d]: name %q isn't an Integration name: use lowercase letters, digits and dashes, starting with a letter", i, in.Name)
-		}
-		if seen[in.Name] {
-			return fmt.Errorf("integrations[%d]: the Plugin declares Integration %s twice", i, in.Name)
-		}
-		seen[in.Name] = true
 		if err := in.Detect.Validate(); err != nil {
 			return fmt.Errorf("integrations[%d] (%s): %w", i, in.Name, err)
 		}

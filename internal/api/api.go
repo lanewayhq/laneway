@@ -251,6 +251,11 @@ type WorktreeInfo struct {
 	// Project has no database, the Worktree has no Domain yet or its config
 	// can't be read.
 	Database *Database `json:"database,omitempty"`
+	// ExportEnv is true when the Project's stack reads its settings from
+	// the environment rather than its .env (such as Rails without the
+	// dotenv gem), so `lane exec` exports the Worktree's .env into the
+	// command's.
+	ExportEnv bool `json:"exportEnv,omitempty"`
 }
 
 // Database names the databases a Worktree uses.
@@ -356,6 +361,11 @@ const (
 	// CodePluginsUnavailable: Linking needs Catalog Plugins that couldn't
 	// be fetched, such as when offline; the message names them.
 	CodePluginsUnavailable = "plugins_unavailable"
+
+	// CodeSourceChanged: a Plugin's source (such as its GitHub release)
+	// has something other than the preview the developer confirmed, so
+	// nothing was installed.
+	CodeSourceChanged = "source_changed"
 )
 
 // Service is a shared Service, such as redis:7, and how to connect to it.
@@ -497,7 +507,8 @@ type Plugin struct {
 	// --global`), which only personal config turns on.
 	Global bool `json:"global,omitempty"`
 	// Update is the release `lane plugin update` would update it to, if
-	// the Catalog lists a newer one.
+	// there is a newer one that version pins allow: in the Catalog, or for
+	// a Plugin added by hand, at its source.
 	Update *PluginUpdate `json:"update,omitempty"`
 }
 
@@ -560,6 +571,10 @@ type AddPluginRequest struct {
 	// Global adds it as a machine-wide Plugin, which only the global
 	// config or a Project's laneway.local.toml turns on.
 	Global bool `json:"global,omitempty"`
+	// Digest, required unless previewing, is the Digest of the preview the
+	// developer confirmed: if the source has anything else now, such as a
+	// GitHub release replaced since, nothing is added (CodeSourceChanged).
+	Digest string `json:"digest,omitempty"`
 }
 
 // AddPluginResponse is the Plugin added (or, previewing, that would be).
@@ -568,6 +583,9 @@ type AddPluginResponse struct {
 	// Replaces is the installed Plugin of the same name it replaced (or
 	// would replace), if any.
 	Replaces *Plugin `json:"replaces,omitempty"`
+	// Digest, previewing, hashes what was read from the source (its
+	// manifest, Engine files and module), for confirming it.
+	Digest string `json:"digest,omitempty"`
 }
 
 // UpdateHandAddedRequest is the body of POST /v1/plugins/{plugin}/update:
@@ -578,6 +596,9 @@ type UpdateHandAddedRequest struct {
 	// Preview only reads and checks what's there, changing nothing, so the
 	// developer can confirm it first.
 	Preview bool `json:"preview,omitempty"`
+	// Digest, required unless previewing, is the Digest of the preview the
+	// developer confirmed, as for AddPluginRequest.
+	Digest string `json:"digest,omitempty"`
 }
 
 // UpdateHandAddedResponse is the Plugin as updated (or, previewing, as it
@@ -588,6 +609,14 @@ type UpdateHandAddedResponse struct {
 	// UpToDate is true when the source has the version and hash already
 	// installed, so nothing changes.
 	UpToDate bool `json:"upToDate,omitempty"`
+	// Digest, previewing, is as for AddPluginResponse.
+	Digest string `json:"digest,omitempty"`
+	// Warning, if set, is why nothing changes although the source has
+	// something new, such as a version pin that doesn't allow it.
+	Warning string `json:"warning,omitempty"`
+	// OutOfDate are the generated files the update left out of date, as
+	// for UpdatePluginsResponse.
+	OutOfDate []OutOfDateFile `json:"outOfDate,omitempty"`
 }
 
 // RemovePluginResponse is the body of DELETE /v1/plugins/{plugin}: the

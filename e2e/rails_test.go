@@ -212,3 +212,20 @@ func TestARailsAppUsingSidekiqGetsRedisAtRedisURL(t *testing.T) {
 	startByBrowsing(t, d, "rails-sidekiq.localhost")
 	waitForLogs(t, d, repo.Dir, []string{"logs", "worker"}, "sidekiq on "+url)
 }
+
+func TestARailsAppsSetupStepsAndLaneExecGetItsDatabaseURL(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	railsStubs(t, d)
+	repo := railsRepo(t, "rails-exec-env", railsSQLiteYml).
+		WriteFile("laneway.toml", "[worktree]\non_create = [\"echo \\\"$DATABASE_URL\\\" > setup-saw\"]\n").
+		Commit("a setup step reading DATABASE_URL")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	url := "sqlite3:" + filepath.Join(repo.Dir, "storage", "development.sqlite3")
+
+	res := d.MustRunCLI(repo.Dir, "exec", "sh", "-c", `echo "exec saw $DATABASE_URL"`)
+
+	assertContains(t, res.Stdout, "exec saw "+url+"\n")
+	assertFile(t, filepath.Join(repo.Dir, "setup-saw"), url+"\n")
+}

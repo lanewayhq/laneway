@@ -175,5 +175,5 @@ func TestAPluginBuiltIntoLanewayOrNotInstalledCantBeRemoved(t *testing.T) {
 	}
 	assertContains(t, engine.Stderr, "Plugin redis is built into Laneway, so it can't be removed")
 	assertContains(t, generator.Stderr, "Plugin claude is built into Laneway, so it can't be removed")
-	assertContains(t, unknown.Stderr, "no Plugin nope is installed; `lane plugin list` lists them")
+	assertContains(t, unknown.Stderr, "no Plugin named nope is installed; `lane plugin list` lists them")
 }

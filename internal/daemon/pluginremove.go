@@ -21,7 +21,7 @@ func (d *Daemon) removePlugin(ctx context.Context, name string) (api.RemovePlugi
 	}
 	if !ok {
 		return api.RemovePluginResponse{}, &api.Error{Code: api.CodeUnknownPlugin,
-			Message: fmt.Sprintf("no Plugin %s is installed; `lane plugin list` lists them", name)}
+			Message: fmt.Sprintf("no Plugin named %s is installed; `lane plugin list` lists them", name)}
 	}
 	if users := d.pluginUsers(p); len(users) > 0 {
 		return api.RemovePluginResponse{}, &api.Error{Code: api.CodePluginInUse,

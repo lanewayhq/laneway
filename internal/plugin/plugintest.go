@@ -83,6 +83,8 @@ type layerOutput struct {
 	TestDatabaseWarnings []string        `json:"test_database_warnings,omitempty"`
 	// TestEnv is the env file a Recipe says its Project's tests read.
 	TestEnv *testEnv `json:"test_env,omitempty"`
+	// ExportEnv is whether a Recipe says its stack doesn't read .env.
+	ExportEnv bool `json:"export_env,omitempty"`
 	// Warnings are those the module returned, then Laneway's about the
 	// layer, such as a key it doesn't know.
 	Warnings []string `json:"warnings,omitempty"`
@@ -168,7 +170,7 @@ func (h *Host) caseOutput(p Plugin, dir string) (caseOutput, error) {
 			var res recipeResponse
 			err := h.call(p, r.source(), request{Call: callRecipe, Name: decl.Name}, project, &res)
 			o := layerOutput{Detected: matched, Layer: res.Layer, TestDatabase: res.TestDatabase,
-				TestDatabaseWarnings: res.TestDatabaseWarnings, TestEnv: res.TestEnv, Warnings: res.Warnings}
+				TestDatabaseWarnings: res.TestDatabaseWarnings, TestEnv: res.TestEnv, ExportEnv: res.ExportEnv, Warnings: res.Warnings}
 			o.check(r.source(), engines, err)
 			out.Recipes = setOutput(out.Recipes, decl.Name, o)
 		}
@@ -186,7 +188,7 @@ func (h *Host) caseOutput(p Plugin, dir string) (caseOutput, error) {
 		}
 		for _, g := range p.Generators {
 			what := fmt.Sprintf("the %s Generator (Plugin %s)", g.Name, p.Name)
-			var res generatorResponse
+			var res effectsResponse
 			err := h.call(p, what, request{Call: callGenerator, Name: g.Name}, project, &res)
 			out.Generators = setOutput(out.Generators, g.Name, checked(p, what, res.Effects, err))
 		}

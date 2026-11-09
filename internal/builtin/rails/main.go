@@ -37,5 +37,8 @@ func recipe(p sdk.Project) (sdk.RecipeResult, error) {
 	res.TestDatabase = autoTestDatabase(p)
 	res.TestDatabaseWarnings = testDatabaseWarnings(p)
 	res.TestEnv = &testEnv
+	// Rails doesn't read .env (see withEnv): the commands Laneway runs in
+	// the Worktree, like its Processes, need it loaded.
+	res.ExportEnv = true
 	return res, nil
 }

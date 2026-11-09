@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/envpatch"
+	"github.com/lanewayhq/laneway/internal/fileblock"
 	"github.com/lanewayhq/laneway/internal/plugin"
 	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/registry"
@@ -100,6 +101,8 @@ func (d *Daemon) applyEffect(ctx context.Context, t *effectTarget, e plugin.Effe
 		return nil
 	case plugin.EffectHTTP:
 		return d.httpEffect(ctx, t, e.HTTP)
+	case plugin.EffectFile:
+		return d.fileEffect(t, *e.File, warn)
 	}
 	warn(fmt.Sprintf("%s returned %s effect, but Laneway doesn't apply %s effects yet, so it was skipped",
 		t.source, plugin.Article(e.Kind), e.Kind))
@@ -135,6 +138,24 @@ func (d *Daemon) execEffect(ctx context.Context, t *effectTarget, command []stri
 		return fmt.Errorf("`%s` exited with status %d", strings.Join(command, " "), exitErr.ExitCode())
 	}
 	return err
+}
+
+// fileEffect merges block into the Worktree's files the way `lane generate`
+// does (see fileblock): only Laneway's own block or entries change, and
+// merging again changes nothing.
+func (d *Daemon) fileEffect(t *effectTarget, block fileblock.Block, warn func(string)) error {
+	if t.gone != "" {
+		warn(fmt.Sprintf("%s merged a block into %s, but %s, so it was skipped", t.source, block.Path, t.gone))
+		return nil
+	}
+	res, err := fileblock.Apply(t.dir, []fileblock.Block{block})
+	if err != nil {
+		return fmt.Errorf("merging a block into %s: %w", block.Path, err)
+	}
+	for _, w := range res.Warnings {
+		warn(t.warningPrefix + w)
+	}
+	return nil
 }
 
 // envEffect sets env in the Worktree's .env the way the Env Patch sets its

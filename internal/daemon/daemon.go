@@ -148,8 +148,12 @@ type Daemon struct {
 	catalogMu sync.Mutex // serialises fetches from the Catalog
 	// checked is the Catalog last loaded, for Plugin updates, see
 	// updates.go. Guarded by catalogMu.
-	checked  checkedCatalog
-	services *service.Manager // shared Services, see services.go
+	checked checkedCatalog
+	// handChecked is what the sources of Plugins added by hand had when
+	// last checked for updates, by Plugin name (see pinned.go).
+	handMu      sync.Mutex
+	handChecked map[string]handCheck
+	services    *service.Manager // shared Services, see services.go
 
 	// github is where Plugins added from GitHub are downloaded from, see
 	// github.go.

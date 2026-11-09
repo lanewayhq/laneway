@@ -161,7 +161,7 @@ func (d *Daemon) updatable(name string) ([]plugin.Plugin, error) {
 		if p.Source != plugin.CatalogSource {
 			if name != "" {
 				return nil, &api.Error{Code: api.CodeNotFromCatalog, Message: fmt.Sprintf(
-					"Plugin %s was added by hand from %s, so it isn't updated from the Catalog, but from there (POST /v1/plugins/%[1]s/update)",
+					"Plugin %s was added by hand from %s, so it isn't updated from the Catalog, but from there, with `lane plugin update %[1]s`",
 					p.Name, p.Source)}
 			}
 			continue
@@ -316,11 +316,13 @@ func (d *Daemon) loadCatalog(ctx context.Context) (*catalog.Catalog, error) {
 }
 
 // availableUpdates are the updates `lane plugin update` would offer, by
-// Plugin name, from the Catalog loaded within catalogMaxAge, or else loaded
-// now. They don't say what new capabilities a release asks for: that needs
-// downloading it.
+// Plugin name: Catalog Plugins' from the Catalog loaded within
+// catalogMaxAge, or else loaded now, and hand-added Plugins' from their
+// sources (see handAddedUpdates). They don't say what new capabilities a
+// release asks for: that needs downloading it.
 func (d *Daemon) availableUpdates(ctx context.Context) map[string]api.PluginUpdate {
-	updates := map[string]api.PluginUpdate{}
+	pins := d.pins()
+	updates := d.handAddedUpdates(ctx, pins)
 	installed, _ := d.updatable("")
 	if len(installed) == 0 {
 		return updates // nothing to check the Catalog for
@@ -339,7 +341,6 @@ func (d *Daemon) availableUpdates(ctx context.Context) map[string]api.PluginUpda
 	if cat == nil {
 		return updates
 	}
-	pins := d.pins()
 	for _, p := range installed {
 		if r, ok, _ := updateFor(cat, p, pins[p.Name]); ok {
 			updates[p.Name] = api.PluginUpdate{Name: p.Name, From: p.Version, To: r.Version, SHA256: r.SHA256}

@@ -80,10 +80,13 @@ type Plugin struct {
 	// Global is true for a machine-wide Plugin, added with `lane plugin
 	// add --global`: only personal config may turn it on (see global.go).
 	Global bool
+	// Digest, for a Plugin read from its source (Inspect), hashes
+	// everything that decides what it is and may do: its manifest, Engine
+	// files and module. Passing it to AddPreviewed installs the Plugin only
+	// if its source still has what was previewed. "" once installed.
+	Digest string
 
-	// serve answers a built-in Plugin's calls in Laneway's process, and
 	// readModule reads a built-in Plugin's module (see Builtin).
-	serve      func([]byte) ([]byte, error)
 	readModule func() ([]byte, error)
 }
 
@@ -226,31 +229,61 @@ func readSource(src string) (Plugin, error) {
 			return Plugin{}, err
 		}
 	}
+	digest := sha256.New()
+	for _, f := range append([]string{ManifestFile}, m.EngineFiles...) {
+		data, err := os.ReadFile(filepath.Join(src, filepath.FromSlash(f)))
+		if err != nil {
+			return Plugin{}, err
+		}
+		fmt.Fprintf(digest, "%s %d\n", f, len(data))
+		digest.Write(data)
+	}
+	fmt.Fprintf(digest, "module %s\n", p.SHA256)
+	p.Digest = hex.EncodeToString(digest.Sum(nil))
 	return p, nil
 }
+
+// ErrChanged is returned by AddPreviewed when the source no longer has the
+// Plugin that was previewed.
+var ErrChanged = errors.New("the Plugin's source changed since it was previewed")
 
 // Add installs the Plugin in the directory src, copying its manifest and
 // module so that later changes to src don't change what runs. A Plugin of the
 // same name is replaced. It returns the Plugin added and the one it
 // replaced, if any. See AddGlobal for a machine-wide Plugin.
 func (h *Host) Add(src string) (added Plugin, replaced *Plugin, err error) {
-	return h.add(src, src, false)
+	return h.add(src, src, false, "")
 }
 
 // AddFrom is Add for a Plugin unpacked into src from somewhere else, such as
 // the Catalog (CatalogSource), which it records as where it came from.
 func (h *Host) AddFrom(src, source string) (added Plugin, replaced *Plugin, err error) {
-	return h.add(src, source, false)
+	return h.add(src, source, false, "")
+}
+
+// AddPreviewed is AddFrom (or AddGlobal, if global) for a Plugin the
+// developer confirmed after Inspect showed it: it adds nothing, returning
+// ErrChanged, unless src still has the Plugin whose Digest was digest.
+func (h *Host) AddPreviewed(src, source string, global bool, digest string) (added Plugin, replaced *Plugin, err error) {
+	if digest == "" {
+		return Plugin{}, nil, errors.New("no previewed Plugin to add")
+	}
+	return h.add(src, source, global, digest)
 }
 
 // add installs the Plugin in src, recording source as where it came from
-// and whether it is machine-wide (see AddGlobal).
-func (h *Host) add(src, source string, global bool) (added Plugin, replaced *Plugin, err error) {
+// and whether it is machine-wide (see AddGlobal), if its Digest is digest
+// (any, if "").
+func (h *Host) add(src, source string, global bool, digest string) (added Plugin, replaced *Plugin, err error) {
 	p, err := h.Inspect(src)
 	if err != nil {
 		return Plugin{}, nil, err
 	}
-	p.Source, p.Global = source, global
+	if digest != "" && p.Digest != digest {
+		return Plugin{}, nil, ErrChanged
+	}
+	inspected := p.Digest
+	p.Source, p.Global, p.Digest = source, global, ""
 	if err := os.MkdirAll(h.opts.Dir, 0o755); err != nil {
 		return Plugin{}, nil, err
 	}
@@ -275,12 +308,10 @@ func (h *Host) add(src, source string, global bool) (added Plugin, replaced *Plu
 	if err := os.WriteFile(filepath.Join(tmp, installedFile), record, 0o644); err != nil {
 		return Plugin{}, nil, err
 	}
-	// The module was hashed when inspected: check the copy is what was
+	// The Plugin was hashed when inspected: check the copy is what was
 	// hashed, so the pin is to what's installed.
-	if p.SHA256 != "" {
-		if sum, err := fileSHA256(filepath.Join(tmp, filepath.FromSlash(p.module()))); err != nil || sum != p.SHA256 {
-			return Plugin{}, nil, fmt.Errorf("the module of Plugin %s changed while it was being added; add it again", p.Name)
-		}
+	if copied, err := readSource(tmp); err != nil || copied.Digest != inspected {
+		return Plugin{}, nil, fmt.Errorf("Plugin %s changed while it was being added; add it again", p.Name)
 	}
 
 	h.mu.Lock()
@@ -329,6 +360,17 @@ func (h *Host) Recipes() []recipe.Recipe {
 // config only through it. The Plugins the config turns on (see turnedOn)
 // are in Resolved.Plugins.
 func (h *Host) ResolveDir(dir string, found ...runtimes.Runtime) (recipe.Resolved, error) {
+	return h.resolveDir(dir, nil, found)
+}
+
+// ResolveDirAssuming is ResolveDir as if the Engines assumed were installed
+// too, such as the Catalog's not fetched yet, to find which of them the
+// Project's config names.
+func (h *Host) ResolveDirAssuming(dir string, assumed []*engine.Manifest) (recipe.Resolved, error) {
+	return h.resolveDir(dir, assumed, nil)
+}
+
+func (h *Host) resolveDir(dir string, assumed []*engine.Manifest, found []runtimes.Runtime) (recipe.Resolved, error) {
 	layers, err := config.LoadLayers(dir)
 	if err != nil {
 		return recipe.Resolved{}, err
@@ -341,7 +383,7 @@ func (h *Host) ResolveDir(dir string, found ...runtimes.Runtime) (recipe.Resolve
 		Dir:          dir,
 		Layers:       layers,
 		Recipes:      h.Recipes(),
-		Engines:      h.Engines(),
+		Engines:      append(h.Engines(), assumed...),
 		Integrations: h.Integrations(),
 		Runtimes:     found,
 	})
@@ -353,7 +395,7 @@ func (h *Host) ResolveDir(dir string, found ...runtimes.Runtime) (recipe.Resolve
 // response into res. what names the call in errors, such as "the procfile
 // Recipe (Plugin procfile)".
 func (h *Host) call(p Plugin, what string, req request, dir string, res any) error {
-	out, err := h.run(p, req, dir)
+	out, err := h.runtime.call(p, req, dir)
 	return decode(what, out, err, res)
 }
 

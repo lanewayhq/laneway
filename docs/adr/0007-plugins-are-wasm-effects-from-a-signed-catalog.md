@@ -20,4 +20,5 @@ The Catalog is signed with a key built into Laneway and lists a SHA-256 for each
 - Recipes and Integrations declare their detection rules as data, so Laneway can match a Project against Plugins it hasn't fetched yet.
 - A Plugin's hooks fire only for Projects that use it. A machine-wide Plugin can only be turned on in personal config, never in a committed `laneway.toml`.
 - Linking a Project that needs a Catalog Plugin not yet installed fails offline.
+- Until the Catalog exists (lanewayhq/laneway#72), the first-party Plugins (Laravel, Rails, Vite, Claude Code, T3 Code, Laravel Boost, and the Postgres, MySQL, Redis and Mailpit Engines) are built into the `lane` binary rather than fetched. They are still Plugins: their WASM modules run in the same sandbox as any other, and they move to `lanewayhq/plugins` unchanged.
 - Plugins declare the Plugin API version they target. Until Laneway reaches 1.0, only the current version is accepted and it may change freely.

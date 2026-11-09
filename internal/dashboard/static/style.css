@@ -40,6 +40,8 @@ th { color: var(--muted); font-weight: 500; border-top: 0; }
 .badge[data-state="running"], .badge[data-state="ready"] { color: var(--ok); }
 .badge[data-state="starting"], .badge[data-state="restarting"], .badge[data-state="preparing"], .badge[data-state="idle"] { color: var(--warn); }
 .badge[data-state="failed"] { color: var(--bad); }
+.badge[data-state="update"] { color: var(--warn); }
+.notice { color: var(--warn); }
 .controls { display: inline-flex; gap: 0.25rem; }
 .actions { white-space: nowrap; }
 .actions > button { margin-left: 0.25rem; }

@@ -31,6 +31,7 @@ type GitHub struct {
 	mu       sync.Mutex
 	releases map[string][]string // tags by repository ("owner/name"), oldest first
 	assets   map[string][]byte   // by "owner/name/tag"
+	replaced map[string][]byte   // by "owner/name/tag": what the asset becomes once downloaded
 }
 
 // NewGitHub serves a GitHub with no releases until the test ends.
@@ -42,7 +43,7 @@ func NewGitHub(t testing.TB) *GitHub {
 }
 
 func newGitHub() *GitHub {
-	g := &GitHub{releases: map[string][]string{}, assets: map[string][]byte{}}
+	g := &GitHub{releases: map[string][]string{}, assets: map[string][]byte{}, replaced: map[string][]byte{}}
 	g.server = httptest.NewServer(http.HandlerFunc(g.serve))
 	return g
 }
@@ -70,6 +71,20 @@ func (g *GitHub) Release(t testing.TB, repo, tag, dir string) string {
 	return catalog.SHA256(archive)
 }
 
+// ReplaceAfterDownload makes the release tag of repo, once it is next
+// downloaded, become the Plugin in dir: a release moved or replaced between
+// the developer seeing it and Laneway installing it.
+func (g *GitHub) ReplaceAfterDownload(t testing.TB, repo, tag, dir string) {
+	t.Helper()
+	archive, err := catalog.Pack(dir)
+	if err != nil {
+		t.Fatalf("testkit: releasing %s: %v", dir, err)
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.replaced[repo+"/"+tag] = archive
+}
+
 // serve answers as GitHub does for a release's asset: at
 // /<owner>/<name>/releases/download/<tag>/<asset>, and at
 // /<owner>/<name>/releases/latest/download/<asset> by redirecting to the
@@ -92,10 +107,15 @@ func (g *GitHub) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		http.Redirect(w, r, fmt.Sprintf("/%s/releases/download/%s/%s", repo, tags[len(tags)-1], github.Asset), http.StatusFound)
 	case len(parts) == 6 && parts[3] == "download":
-		archive, ok := g.assets[repo+"/"+parts[4]]
+		key := repo + "/" + parts[4]
+		archive, ok := g.assets[key]
 		if !ok {
 			http.NotFound(w, r)
 			return
+		}
+		if next, ok := g.replaced[key]; ok {
+			g.assets[key] = next
+			delete(g.replaced, key)
 		}
 		w.Write(archive)
 	default:

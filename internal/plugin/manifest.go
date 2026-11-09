@@ -28,9 +28,7 @@ const ManifestFile = "plugin.json"
 const DefaultModule = "plugin.wasm"
 
 // Manifest is what a Plugin declares in plugin.json: who it is, the Plugin
-// API it targets, what it adds and what it may do. Later Plugin API versions
-// add what Plugins can add (Integrations, Engines, Generators, commands,
-// hooked events) as more fields here.
+// API it targets, what it adds and what it may do.
 type Manifest struct {
 	// Name identifies the Plugin, such as "procfile": lowercase letters,
 	// digits and dashes, starting with a letter.
@@ -85,10 +83,11 @@ type Capabilities struct {
 }
 
 // Effect kinds a Plugin's hooks and commands may return, which Laneway
-// applies under its usual rules.
+// applies under its usual rules. There is no Process effect: a Plugin adds
+// Processes with the config its Recipes and Integrations return, which
+// Laneway keeps running and restarts as the config changes.
 const (
 	EffectEnv     = "env"
-	EffectProcess = "process"
 	EffectExec    = "exec"
 	EffectFile    = "file"
 	EffectHTTP    = "http"
@@ -98,7 +97,6 @@ const (
 // EffectKinds describes every effect kind, as the developer is shown it.
 var EffectKinds = map[string]string{
 	EffectEnv:     "set keys in Worktrees' env files",
-	EffectProcess: "add Processes",
 	EffectExec:    "run commands in Worktrees",
 	EffectFile:    "merge blocks into files",
 	EffectHTTP:    "send HTTP requests",
@@ -108,6 +106,32 @@ var EffectKinds = map[string]string{
 // name is what Plugin and Recipe names look like: they become directory
 // names and, later, `lane <plugin>` commands.
 var name = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+
+// checkNames checks the names of what a manifest declares under field,
+// such as the Recipes (what) under recipes: each must be a name, and none
+// declared twice.
+func checkNames[T any](field, what string, decls []T, nameOf func(T) string) error {
+	seen := map[string]bool{}
+	for i, d := range decls {
+		n := nameOf(d)
+		if !name.MatchString(n) {
+			return fmt.Errorf("%s[%d]: name %q isn't %s name: use lowercase letters, digits and dashes, starting with a letter", field, i, n, article(what))
+		}
+		if seen[n] {
+			return fmt.Errorf("%s[%d]: the Plugin declares %s %s twice", field, i, what, n)
+		}
+		seen[n] = true
+	}
+	return nil
+}
+
+// article is noun with "a" or "an" before it.
+func article(noun string) string {
+	if strings.ContainsRune("AEIOUaeiou", rune(noun[0])) {
+		return "an " + noun
+	}
+	return "a " + noun
+}
 
 // LoadManifest reads and checks the manifest of the Plugin in dir. Errors
 // name the file and say what to change.
@@ -180,15 +204,10 @@ func (m Manifest) validate() error {
 	if err := m.validateEngineFiles(); err != nil {
 		return err
 	}
-	seen := map[string]bool{}
+	if err := checkNames("recipes", "Recipe", m.Recipes, func(r RecipeDecl) string { return r.Name }); err != nil {
+		return err
+	}
 	for i, r := range m.Recipes {
-		if !name.MatchString(r.Name) {
-			return fmt.Errorf("recipes[%d]: name %q isn't a Recipe name: use lowercase letters, digits and dashes, starting with a letter", i, r.Name)
-		}
-		if seen[r.Name] {
-			return fmt.Errorf("recipes[%d]: the Plugin declares Recipe %s twice", i, r.Name)
-		}
-		seen[r.Name] = true
 		if err := r.Detect.Validate(); err != nil {
 			return fmt.Errorf("recipes[%d] (%s): %w", i, r.Name, err)
 		}
@@ -209,6 +228,9 @@ func (m Manifest) validate() error {
 		return err
 	}
 	for _, kind := range m.Capabilities.Effects {
+		if kind == "process" {
+			return errors.New(`capabilities.effects: "process" isn't an effect kind: a Plugin adds Processes with the config its Recipes and Integrations return; remove it`)
+		}
 		if _, ok := EffectKinds[kind]; !ok {
 			return fmt.Errorf("capabilities.effects: %q isn't an effect kind; use %s", kind, strings.Join(slices.Sorted(maps.Keys(EffectKinds)), ", "))
 		}

@@ -216,3 +216,41 @@ func TestConfigNamingACatalogPluginItsPinsAllowNoReleaseOfSaysSoRatherThanToAddI
 		t.Errorf("Linking says layers isn't in the Catalog:\n%s", res.Stderr)
 	}
 }
+
+func TestAGitHubReleaseReplacedAfterTheDeveloperSawItIsntAdded(t *testing.T) {
+	t.Parallel()
+	gh := testkit.NewGitHub(t)
+	gh.Release(t, "acme/procfile", "v0.1.0", testkit.Plugin(t, "procfile"))
+	gh.ReplaceAfterDownload(t, "acme/procfile", "v0.1.0", procfileRelease(t, "0.1.0"))
+	d := testkit.StartDaemon(t, gh.Option())
+
+	res := d.RunCLI(d.Home, "plugin", "add", "--yes", "github.com/acme/procfile")
+
+	if res.ExitCode == 0 {
+		t.Fatalf("adding a release replaced after it was shown exited 0:\n%s", res.Output())
+	}
+	assertContains(t, res.Stderr, "github.com/acme/procfile changed since it was shown, so nothing was added")
+	if got := installedPlugins(t, d); len(got) != 0 {
+		t.Fatalf("installed Plugins = %v, want none", got)
+	}
+}
+
+func TestAGitHubReleaseReplacedAfterTheDeveloperSawTheUpdateIsntInstalled(t *testing.T) {
+	t.Parallel()
+	gh := testkit.NewGitHub(t)
+	gh.Release(t, "acme/procfile", "v0.1.0", testkit.Plugin(t, "procfile"))
+	d := testkit.StartDaemon(t, gh.Option())
+	d.MustRunCLI(d.Home, "plugin", "add", "--yes", "github.com/acme/procfile")
+	gh.Release(t, "acme/procfile", "v0.2.0", procfileRelease(t, "0.2.0"))
+	gh.ReplaceAfterDownload(t, "acme/procfile", "v0.2.0", withManifest(t, testkit.Plugin(t, "procfile"),
+		`{"name": "procfile", "version": "0.2.0", "api_version": 1, "recipes": [{"name": "procfile", "detect": {"file": "Procfile"}}],
+  "capabilities": {"effects": ["exec"]}}`))
+
+	res := d.RunCLI(d.Home, "plugin", "update", "--yes", "procfile")
+
+	if res.ExitCode == 0 {
+		t.Fatalf("updating to a release replaced after it was shown exited 0:\n%s", res.Output())
+	}
+	assertContains(t, res.Stderr, "github.com/acme/procfile changed since it was shown, so Plugin procfile wasn't updated")
+	assertLineWith(t, d.MustRunCLI(d.Home, "plugin", "list").Stdout, "procfile", "0.1.0")
+}

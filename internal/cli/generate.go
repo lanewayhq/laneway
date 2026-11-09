@@ -42,7 +42,7 @@ func generate(ctx context.Context, env Env, name, command string) error {
 	defer plugins.Close()
 	res, err := plugins.Generate(name, checkout.Dir)
 	if errors.Is(err, plugin.ErrUnknownPlugin) {
-		return fmt.Errorf("no Plugin named %s is installed or built in; add it with `lane plugin add <dir>`", name)
+		return fmt.Errorf("no Plugin named %s is installed or built in; add it with `lane plugin add <dir|github.com/<owner>/<repo>>`", name)
 	}
 	for _, f := range res.Files {
 		switch {

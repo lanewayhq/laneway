@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"slices"
 
 	"github.com/lanewayhq/laneway/internal/api"
@@ -9,9 +11,12 @@ import (
 )
 
 // listPlugins is the body of GET /v1/plugins: the installed Plugins, each
-// with its available update, if any.
-func (d *Daemon) listPlugins(ctx context.Context) api.PluginList {
-	updates := d.availableUpdates(ctx)
+// with its available update, if any, unless !withUpdates (?updates=false).
+func (d *Daemon) listPlugins(ctx context.Context, withUpdates bool) api.PluginList {
+	var updates map[string]api.PluginUpdate
+	if withUpdates {
+		updates = d.availableUpdates(ctx)
+	}
 	list := api.PluginList{Plugins: []api.Plugin{}}
 	for _, p := range d.plugins.List() {
 		ap := apiPlugin(p)
@@ -49,15 +54,18 @@ func (d *Daemon) addPlugin(ctx context.Context, req api.AddPluginRequest) (api.A
 			return api.AddPluginResponse{}, &api.Error{Code: api.CodeInvalidPlugin, Message: err.Error()}
 		}
 		p.Source, p.Global = source, req.Global
-		res.Plugin = apiPlugin(p)
+		res.Plugin, res.Digest = apiPlugin(p), p.Digest
 		replaced(p.Name)
 		return res, nil
 	}
-	add := d.plugins.AddFrom
-	if req.Global {
-		add = d.plugins.AddGlobal
+	if req.Digest == "" {
+		return api.AddPluginResponse{}, &api.Error{Code: api.CodeBadRequest, Message: "digest must be the digest of the preview the developer confirmed"}
 	}
-	p, old, err := add(src, source)
+	p, old, err := d.plugins.AddPreviewed(src, source, req.Global, req.Digest)
+	if errors.Is(err, plugin.ErrChanged) {
+		return api.AddPluginResponse{}, &api.Error{Code: api.CodeSourceChanged,
+			Message: fmt.Sprintf("%s changed since it was shown, so nothing was added; run `lane plugin add %s` again to see what it has now", source, source)}
+	}
 	if err != nil {
 		return api.AddPluginResponse{}, &api.Error{Code: api.CodeInvalidPlugin, Message: err.Error()}
 	}

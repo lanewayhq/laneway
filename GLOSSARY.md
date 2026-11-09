@@ -71,7 +71,7 @@ Shared backing infrastructure, such as a database or cache, that many Projects u
 _Avoid_: Container, dependency, add-on
 
 **Engine**:
-A kind of Service, such as Postgres or Redis. A Service is an Engine at a version.
+A kind of Service, such as Postgres or Redis. A Service is an Engine at a version. Not the container engine (Podman or Docker) that runs Services' containers.
 _Avoid_: Driver, backend, image
 
 **Recipe**:
@@ -89,8 +89,40 @@ _Avoid_: SDK, interpreter
 ## Extending Laneway
 
 **Plugin**:
-A package, installed separately from Laneway, that adds one or more Recipes, Integrations, Engines or Generators to it.
+A package that adds one or more Recipes, Integrations, Engines or Generators to Laneway. Most are installed separately from Laneway; a built-in Plugin ships inside it.
 _Avoid_: Extension, add-on, package, pack
+
+**Built-in Plugin**:
+A first-party Plugin shipped inside Laneway itself rather than installed. It behaves like any other Plugin, but can't be removed and no other Plugin may take its name.
+_Avoid_: Core feature, bundled extension
+
+**Hand-added Plugin**:
+A Plugin a developer added themselves, from a directory or a GitHub repository, rather than one fetched from the Catalog. It is updated from where it was added.
+_Avoid_: Third-party Plugin, local Plugin, sideloaded
+
+**Machine-wide Plugin**:
+A hand-added Plugin that only a developer's personal config turns on, in every Project or in one, and never a committed `laneway.toml`.
+_Avoid_: Global plugin, user plugin
+
+**Pin**:
+A version range a Project's config sets for a Plugin, which every update of that Plugin must satisfy. A hand-added Plugin is also held to the hash it had when added.
+_Avoid_: Lock, constraint
+
+**Capability**:
+A kind of thing a Plugin may do beyond returning config, such as running commands or sending HTTP requests to listed hosts. A Plugin declares its Capabilities, the developer sees them before it is added, and Laneway refuses anything it didn't declare.
+_Avoid_: Permission, scope, grant
+
+**Effect**:
+One thing a Plugin asks Laneway to do, such as set env keys, run a command in a Worktree, merge a block into a file, send an HTTP request or show a warning. Laneway applies it under its own rules; the Plugin never acts directly.
+_Avoid_: Action, side effect, instruction
+
+**Event**:
+A moment in a Project's or Worktree's life that Plugins can react to, such as Link, Ready, or a Process crashing.
+_Avoid_: Lifecycle event, trigger, signal
+
+**Hook**:
+A Plugin's reaction to an Event: the Effects it returns when that Event happens in a Project that uses the Plugin.
+_Avoid_: Callback, listener, handler
 
 **Catalog**:
 The list of first-party Plugins that Laneway may fetch on its own when a Project needs one. A Plugin outside the Catalog is only installed when a developer adds it by hand.

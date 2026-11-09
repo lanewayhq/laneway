@@ -11,7 +11,6 @@ import (
 
 	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/catalog"
-	"github.com/lanewayhq/laneway/internal/config"
 	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/plugin"
 	"github.com/lanewayhq/laneway/internal/recipe"
@@ -27,7 +26,7 @@ import (
 //
 // A Catalog that can't be fetched falls back to the copy kept last time;
 // with neither, nothing is fetched and the Project resolves with what is
-// installed (unchecked says why). A Catalog that is refused (its signature
+// installed, with a warning (unchecked says why). A Catalog that is refused (its signature
 // isn't Laneway's) is reported in warnings. It fails, naming them, if a
 // Plugin the Project needs can't be fetched, such as when offline.
 func (d *Daemon) fetchCatalogPlugins(ctx context.Context, dir string) (res catalogFetched, err error) {
@@ -45,7 +44,12 @@ func (d *Daemon) fetchCatalogPlugins(ctx context.Context, dir string) (res catal
 		if len(named) > 0 {
 			return res, uncheckedNamedError(named, loadErr)
 		}
+		// Without a Catalog, Laneway can't tell which of its Plugins
+		// detect the Project, so it can't name them: it says so.
 		res.unchecked = loadErr
+		res.warnings = append(res.warnings, fmt.Sprintf("Laneway has never been able to fetch the Catalog (%v), "+
+			"so it couldn't fetch any Plugin from it this Project needs, such as its Recipe; "+
+			"once Laneway can reach the Catalog, run `lane link` again", loadErr))
 		return res, nil
 	}
 	f := catalogFetch{d: d, ctx: ctx, latest: latestAllowed(cat, d.pins(dir)), failed: map[string]error{}}
@@ -203,27 +207,25 @@ func (d *Daemon) withRelease(ctx context.Context, name string, r catalog.Release
 // were installed; if it doesn't resolve for another reason, none are
 // needed, and Linking reports that reason.
 func (f *catalogFetch) enginePlugins(dir string) []string {
-	installed := f.d.plugins.Engines()
-	engines := slices.Clone(installed)
+	engines := f.d.plugins.Engines()
+	var assumed engine.Set
 	by := map[string]string{} // Engine name → Plugin
 	for _, name := range f.names() {
 		for _, e := range f.latest[name].Engines {
 			if _, ok := engines.Lookup(e); ok {
 				continue
 			}
+			if _, ok := assumed.Lookup(e); ok {
+				continue
+			}
 			by[e] = name
-			engines = append(engines, placeholderEngine(e))
+			assumed = append(assumed, placeholderEngine(e))
 		}
 	}
 	if len(by) == 0 {
 		return nil
 	}
-	layers, err := config.LoadLayers(dir)
-	if err != nil {
-		return nil
-	}
-	res, err := recipe.Resolve(recipe.Input{Dir: dir, Layers: layers, Recipes: f.d.plugins.Recipes(),
-		Integrations: f.d.plugins.Integrations(), Engines: engines})
+	res, err := f.d.plugins.ResolveDirAssuming(dir, assumed)
 	if err != nil {
 		return nil
 	}
