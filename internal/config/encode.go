@@ -22,6 +22,9 @@ func Encode(w io.Writer, l Layer) error {
 	if l.IdleTimeout != nil {
 		fmt.Fprintf(&b, "idle_timeout = %s\n", quote(l.IdleTimeout.String()))
 	}
+	if l.BucketCopyLimit != nil {
+		fmt.Fprintf(&b, "bucket_copy_limit = %s\n", quote(l.BucketCopyLimit.exact()))
+	}
 	if l.Plugins != nil {
 		quoted := make([]string, len(l.Plugins))
 		for i, p := range l.Plugins {

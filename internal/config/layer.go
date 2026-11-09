@@ -46,6 +46,15 @@ type Layer struct {
 	// connections before it is Idle and its lazy Processes stop, such as
 	// "30m". It overrides the global idle_timeout.
 	IdleTimeout *time.Duration `toml:"idle_timeout"`
+	// BucketCopyLimit is the biggest the main Worktree's Bucket may be for
+	// a new Worktree's Bucket to start as a copy of it, such as "1GB" (the
+	// default) or "500MB" (see Size); above it the new Bucket starts empty
+	// and Preparing warns. It overrides the global bucket_copy_limit.
+	// Copying happens on the server, so how long it takes follows the
+	// number of objects more than their bytes: a thousand objects copy in
+	// seconds however big they are, while tens of thousands of thumbnails
+	// take minutes though they are well under 1GB.
+	BucketCopyLimit *Size `toml:"bucket_copy_limit"`
 	// Env is the Env Patch: the keys Laneway owns in each Worktree's .env,
 	// keyed by env key ([env] table). Values are templates such as
 	// "{url}"; see envpatch.Variables.
