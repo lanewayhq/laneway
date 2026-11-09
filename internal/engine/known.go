@@ -16,6 +16,20 @@ type Known struct {
 	// Fetchable are the names of the Engines that Catalog Plugins not
 	// installed add (see plugin.Host.FetchableEngines).
 	Fetchable []string
+	// Buckets are the names of the Buckets config declares ([buckets]),
+	// which an Engine with Bucket commands gives a variable each:
+	// {<engine>_bucket_<name>} (Manifest.DeclaredBucketVariable).
+	Buckets []string
+}
+
+// Variables are the Service variables of the Installed Engines, with those
+// of the Buckets config declares.
+func (k Known) Variables() []string {
+	vars := k.Installed.Variables()
+	for _, m := range k.Installed {
+		vars = append(vars, m.DeclaredBucketVariables(k.Buckets)...)
+	}
+	return vars
 }
 
 // CanFetch reports whether the Engine name isn't installed but can be
@@ -45,8 +59,9 @@ func (k Known) Lookup(name string) (*Manifest, error) {
 // the template uses no variable of one. Every Engine gives
 // {<engine>_host}, {<engine>_port} and {<engine>_password}, but only one
 // with users gives {<engine>_username}, only one with Service Domains
-// {<engine>_endpoint}, and only one with Bucket commands {<engine>_bucket},
-// which Laneway can't tell before fetching it.
+// {<engine>_endpoint}, and only one with Bucket commands {<engine>_bucket}
+// and {<engine>_bucket_<name>} for each of Buckets, which Laneway can't
+// tell before fetching it.
 func (k Known) TemplateError(uses func(variable string) bool) error {
 	for _, name := range k.Fetchable {
 		if !k.CanFetch(name) {
@@ -55,7 +70,9 @@ func (k Known) TemplateError(uses func(variable string) bool) error {
 		if slices.ContainsFunc((&Manifest{Name: name}).Variables(), uses) {
 			return NotInstalled(name)
 		}
-		for _, v := range []string{name + "_username", name + "_endpoint", name + "_bucket"} {
+		maybe := []string{name + "_username", name + "_endpoint", name + "_bucket"}
+		maybe = append(maybe, Assumed(name).DeclaredBucketVariables(k.Buckets)...)
+		for _, v := range maybe {
 			if uses(v) {
 				return fmt.Errorf("the %s Engine isn't installed, so Laneway can't tell whether it has {%s}; "+
 					"run `lane doctor` to fetch it from the Catalog", name, v)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/bucket"
@@ -35,9 +36,10 @@ type worktreeBucket struct {
 }
 
 // worktreeBuckets are the Buckets of the Worktree w whose config is cfg, in
-// cfg.Services' order: a private one in each Service whose Engine has Bucket
-// commands. A Bucket config declares adds its name to the Bucket's (the
-// suffix of naming.BucketName).
+// cfg.Services' order: in each Service whose Engine has Bucket commands, a
+// private one, then each Bucket config declares (cfg.Buckets), whose name
+// adds the declared one to the private Bucket's (the suffix of
+// naming.BucketName).
 func (d *Daemon) worktreeBuckets(p registry.Project, w worktreeRef, cfg recipe.Resolved) []worktreeBucket {
 	var buckets []worktreeBucket
 	for _, svc := range cfg.Services {
@@ -48,6 +50,11 @@ func (d *Daemon) worktreeBuckets(p registry.Project, w worktreeRef, cfg recipe.R
 		buckets = append(buckets, worktreeBucket{Service: svc, Engine: e,
 			Name: naming.BucketName(p.Name, w.label, ""), Main: naming.BucketName(p.Name, "", ""),
 			Variable: e.BucketVariable()})
+		for _, b := range cfg.Buckets {
+			buckets = append(buckets, worktreeBucket{Service: svc, Engine: e,
+				Name: naming.BucketName(p.Name, w.label, b.Name), Main: naming.BucketName(p.Name, "", b.Name),
+				Variable: e.DeclaredBucketVariable(b.Name), Public: b.Public})
+		}
 	}
 	return buckets
 }
@@ -72,7 +79,9 @@ const DefaultBucketCopyLimit config.Size = 1e9
 // database step and keeps it from going Idle until the step ends. A Bucket
 // that exists is left as it is; the main Worktree's starts empty, and any
 // other Worktree's as a copy of the main Worktree's, unless that is over
-// the limit (bucket_copy_limit).
+// the limit (bucket_copy_limit). Then, made or not, the Bucket is
+// configured: public or private, and allowing CORS from the Worktree's
+// Domains and Aliases, which the copy doesn't bring along.
 func (d *Daemon) bucketSteps(p registry.Project, w worktreeRef, cfg recipe.Resolved) []prepare.Step {
 	var steps []prepare.Step
 	for _, b := range d.worktreeBuckets(p, w, cfg) {
@@ -89,14 +98,78 @@ func (d *Daemon) bucketSteps(p registry.Project, w worktreeRef, cfg recipe.Resol
 				return err
 			}
 			defer release()
-			warnings, err := bucket.Ensure(ctx, bucket.Commands{Engine: b.Engine, Exec: server.Exec}, b.Name, from, out)
+			c := bucket.Commands{Engine: b.Engine, Exec: server.Exec}
+			warnings, err := bucket.Ensure(ctx, c, b.Name, from, out)
 			for _, warning := range warnings {
 				prepare.Warn(ctx, warning)
 			}
-			return err
+			if err != nil {
+				return err
+			}
+			return configureBucket(ctx, c, b, d.worktreeOrigins(p, w), out)
 		}})
 	}
 	return steps
+}
+
+// worktreeOrigins are the origins browsers reach the Worktree w at: its own
+// Domain's, then its Aliases', which its Buckets allow CORS from.
+func (d *Daemon) worktreeOrigins(p registry.Project, w worktreeRef) []string {
+	origins := []string{strings.TrimSuffix(domainURL(w.domain), "/")}
+	for _, a := range d.aliasDomains(p, w.name) {
+		origins = append(origins, strings.TrimSuffix(domainURL(a), "/"))
+	}
+	return origins
+}
+
+// configureBucket sets who may reach the Bucket b: anyone may read it if it
+// is public, and browsers may make requests to it from origins.
+func configureBucket(ctx context.Context, c bucket.Commands, b worktreeBucket, origins []string, out io.Writer) error {
+	if err := c.Configure(ctx, b.Name, bucket.Access{Public: b.Public, Origins: origins}); err != nil {
+		return fmt.Errorf("configuring the Bucket %s: %w", b.Name, err)
+	}
+	who := "only signed requests may read it"
+	if b.Public {
+		who = "anyone may read it"
+	}
+	fmt.Fprintf(out, "the Bucket %s allows browsers on %s; %s\n", b.Name, strings.Join(origins, ", "), who)
+	return nil
+}
+
+// worktreeOriginsChanged brings the origins the Worktree w's Buckets allow
+// up to date with its Domains, in the background, once it is Ready: its
+// Aliases changed. A Worktree that isn't Ready yet gets them when its
+// Buckets are made, and a Failed one when it is prepared again.
+func (d *Daemon) worktreeOriginsChanged(p registry.Project, w worktreeRef) {
+	s := d.servedWorktree(w.domain)
+	if s == nil {
+		return
+	}
+	d.background(func() {
+		if err := d.waitForReady(s); err != nil {
+			return
+		}
+		cfg, err := d.plugins.ResolveDir(w.dir)
+		if err != nil {
+			return
+		}
+		for _, b := range d.worktreeBuckets(p, w, cfg) {
+			if err := d.reconfigureBucket(s.ctx, p, w, b); err != nil {
+				d.log.Warn("updating a Bucket's CORS origins", "project", p.Name, "worktree", w.dir, "bucket", b.Name, "error", err)
+			}
+		}
+	})
+}
+
+// reconfigureBucket sets who may reach the Worktree w's Bucket b again,
+// starting its Service if it has stopped.
+func (d *Daemon) reconfigureBucket(ctx context.Context, p registry.Project, w worktreeRef, b worktreeBucket) error {
+	server, release, err := d.databaseServer(ctx, b.Service, io.Discard)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return configureBucket(ctx, bucket.Commands{Engine: b.Engine, Exec: server.Exec}, b, d.worktreeOrigins(p, w), io.Discard)
 }
 
 // bucketSource is what the Bucket b of a Worktree other than the main one

@@ -132,3 +132,26 @@ b=$1
 out=$("$rc" --json --no-progress bucket list --recursive --summarize "local/$b/") || exit 1
 printf '%s\n' "$out" | sed -n 's/^ *"total_size_bytes": \([0-9]*\),\{0,1\}$/\1/p'
 ''', "sh", "{bucket}"]
+# Lets anyone read {bucket}'s objects if {public} is true (an anonymous
+# s3:GetObject bucket policy) and no one if it is false, and replaces its
+# CORS configuration with one allowing exactly {origins} (none if empty).
+configure = ["sh", "-c", '''
+set -eu
+b=$1 public=$2 origins=$3
+s3() { curl -sS --fail-with-body -o /dev/stderr --aws-sigv4 aws:amz:us-east-1:s3 --user "$OBJECTS_ACCESS_KEY:$OBJECTS_SECRET_KEY" "$@"; }
+case $public in
+true)
+  printf '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":["s3:GetObject"],"Resource":["arn:aws:s3:::%s/*"]}]}' "$b" |
+    s3 -X PUT --data-binary @- "http://127.0.0.1:7490/$b?policy" ;;
+false) s3 -X DELETE "http://127.0.0.1:7490/$b?policy" ;;
+*) echo "public must be true or false, not $public" >&2; exit 2 ;;
+esac
+allowed=
+for o in $origins; do allowed="$allowed<AllowedOrigin>$o</AllowedOrigin>"; done
+if [ -z "$allowed" ]; then
+  s3 -X DELETE "http://127.0.0.1:7490/$b?cors"
+  exit 0
+fi
+printf '<CORSConfiguration><CORSRule>%s<AllowedMethod>GET</AllowedMethod><AllowedMethod>HEAD</AllowedMethod><AllowedMethod>PUT</AllowedMethod><AllowedMethod>POST</AllowedMethod><AllowedMethod>DELETE</AllowedMethod><AllowedHeader>*</AllowedHeader><ExposeHeader>ETag</ExposeHeader><MaxAgeSeconds>3600</MaxAgeSeconds></CORSRule></CORSConfiguration>' "$allowed" |
+  s3 -X PUT -H 'Content-Type: application/xml' --data-binary @- "http://127.0.0.1:7490/$b?cors"
+''', "sh", "{bucket}", "{public}", "{origins}"]

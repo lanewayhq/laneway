@@ -75,6 +75,17 @@ func TestABucketVariableOfAnEngineInTheCatalogButNotInstalledSaysLanewayCantTell
 	}
 }
 
+// And so does {<engine>_bucket_<name>} for a Bucket config declares.
+func TestADeclaredBucketsVariableOfAnEngineInTheCatalogButNotInstalledSaysLanewayCantTellIfItHasOne(t *testing.T) {
+	err := resolveWithout(t, "catalog-engine-declared-bucket", "redis", "redis")
+	want := filepath.Join("testdata", "catalog-engine-declared-bucket", config.FileName) + ": env.PUBLIC_BUCKET: " +
+		"the redis Engine isn't installed, so Laneway can't tell whether it has {redis_bucket_public}; " +
+		"run `lane doctor` to fetch it from the Catalog"
+	if err == nil || err.Error() != want {
+		t.Errorf("error = %v, want %q", err, want)
+	}
+}
+
 func TestConfigNamingAnEngineNeitherInstalledNorInTheCatalogStillCallsItUnknown(t *testing.T) {
 	tests := []struct {
 		fixture, engine, want string

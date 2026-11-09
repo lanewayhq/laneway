@@ -48,6 +48,32 @@ func (c Commands) Clone(ctx context.Context, from, to string) error {
 	return err
 }
 
+// Access is who may reach a Bucket: whether anyone may read its objects
+// without signing, and the origins browsers may make requests to it from
+// (CORS).
+type Access struct {
+	Public bool
+	// Origins are https:// origins, such as https://shop.localhost.
+	Origins []string
+}
+
+// origin is what an origin Laneway allows looks like: one that is safe in
+// a script and a CORS configuration as it is.
+var origin = regexp.MustCompile(`^https://[a-z0-9.-]+(:[0-9]+)?$`)
+
+// Configure sets who may reach the Bucket name, replacing what was set
+// before.
+func (c Commands) Configure(ctx context.Context, name string, access Access) error {
+	for _, o := range access.Origins {
+		if !origin.MatchString(o) {
+			return fmt.Errorf("%q isn't an origin Laneway allows CORS from: only https:// and a host", o)
+		}
+	}
+	values := map[string]string{"public": strconv.FormatBool(access.Public), "origins": strings.Join(access.Origins, " ")}
+	_, err := c.runWith(ctx, "configure", c.Engine.Bucket.Configure, values, "bucket", name)
+	return err
+}
+
 // Size is the total size of the objects in the Bucket name.
 func (c Commands) Size(ctx context.Context, name string) (config.Size, error) {
 	out, err := c.run(ctx, "size", c.Engine.Bucket.Size, "bucket", name)
@@ -85,10 +111,15 @@ var safeName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$`)
 // run runs the Bucket command called op with the placeholders in names
 // (pairs of placeholder and Bucket name) filled in, and returns its stdout.
 func (c Commands) run(ctx context.Context, op string, cmd []string, names ...string) (string, error) {
+	return c.runWith(ctx, op, cmd, map[string]string{}, names...)
+}
+
+// runWith is run with more placeholders filled in from values, which the
+// caller has checked.
+func (c Commands) runWith(ctx context.Context, op string, cmd []string, values map[string]string, names ...string) (string, error) {
 	if c.Exec == nil {
 		return "", fmt.Errorf("the %s Service isn't running", c.Engine.Name)
 	}
-	values := map[string]string{}
 	for i := 0; i+1 < len(names); i += 2 {
 		if !safeName.MatchString(names[i+1]) || strings.HasPrefix(names[i+1], "xn--") {
 			return "", fmt.Errorf("%q isn't a Bucket name Laneway makes: only lowercase letters, digits and -, 3 to 63 of them", names[i+1])

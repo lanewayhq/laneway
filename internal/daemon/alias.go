@@ -65,8 +65,10 @@ func (d *Daemon) servedProject(s *served) (registry.Project, bool) {
 
 // changeAliases makes change, a change to the Aliases of the Project's
 // Worktree w, and reports whether it moved w's Primary Domain. If it did,
-// w catches up with it (primaryDomainMoved). change runs under syncMu, so
-// a Worktree discovered meanwhile can't be given the same label.
+// w catches up with it (primaryDomainMoved). Either way, the origins w's
+// Buckets allow follow its Aliases (worktreeOriginsChanged). change runs
+// under syncMu, so a Worktree discovered meanwhile can't be given the same
+// label.
 func (d *Daemon) changeAliases(p registry.Project, w worktreeRef, change func() error) (moved bool, err error) {
 	d.syncMu.Lock()
 	before := d.primaryDomain(p, w)
@@ -76,6 +78,8 @@ func (d *Daemon) changeAliases(p registry.Project, w worktreeRef, change func() 
 	if err != nil {
 		return false, err
 	}
+	// Every Alias is an origin its Buckets allow, newest or not.
+	d.worktreeOriginsChanged(p, w)
 	if before != after {
 		d.primaryDomainMoved(w.domain)
 		d.primaryDomainChanged(p, w, before)

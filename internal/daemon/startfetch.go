@@ -157,7 +157,7 @@ func usesPlugin(cfg recipe.Resolved, p plugin.Plugin) bool {
 	}
 	templates := slices.Concat(slices.Collect(maps.Values(cfg.Env)), slices.Collect(maps.Values(cfg.LinkedEnv)))
 	for _, e := range p.Engines {
-		for _, v := range e.Variables() {
+		for _, v := range slices.Concat(e.Variables(), e.DeclaredBucketVariables(cfg.BucketNames())) {
 			if slices.ContainsFunc(templates, func(t string) bool { return envpatch.Uses(t, v) }) {
 				return true
 			}

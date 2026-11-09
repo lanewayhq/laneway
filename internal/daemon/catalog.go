@@ -269,7 +269,7 @@ func (f *catalogFetch) enginePlugins(dir string) []string {
 	}
 	templates := slices.Concat(slices.Collect(maps.Values(res.Env)), slices.Collect(maps.Values(res.LinkedEnv)))
 	for _, e := range assumed {
-		for _, v := range e.Variables() {
+		for _, v := range slices.Concat(e.Variables(), e.DeclaredBucketVariables(res.BucketNames())) {
 			if slices.ContainsFunc(templates, func(t string) bool { return envpatch.Uses(t, v) }) {
 				need(e.Name)
 			}
