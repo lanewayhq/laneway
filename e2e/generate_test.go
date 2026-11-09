@@ -202,15 +202,16 @@ func TestGenerateNamesAPluginThatIsntInstalled(t *testing.T) {
 	assertContains(t, res.Stderr, "lane plugin add")
 }
 
-func TestGenerateRunsTheBuiltInHarnessGeneratorsLikeHarnessAdd(t *testing.T) {
+func TestGenerateRunsTheHarnessGeneratorsLikeHarnessAdd(t *testing.T) {
 	t.Parallel()
-	d := testkit.StartDaemon(t)
+	// Each on a fresh install, so each fetches the Plugin.
+	harnessAdd, generate := testkit.StartDaemon(t), testkit.StartDaemon(t)
 	for _, harness := range []string{"claude", "t3"} {
 		viaHarness := gitfixture.New(t, "harness-add-"+harness).WriteFile("CLAUDE.md", "# Project\n").Commit("notes")
 		viaGenerate := gitfixture.New(t, "generate-"+harness).WriteFile("CLAUDE.md", "# Project\n").Commit("notes")
 
-		want := d.MustRunCLI(viaHarness.Dir, "harness", "add", harness)
-		got := d.MustRunCLI(viaGenerate.Dir, "generate", harness)
+		want := harnessAdd.MustRunCLI(viaHarness.Dir, "harness", "add", harness)
+		got := generate.MustRunCLI(viaGenerate.Dir, "generate", harness)
 
 		if got.Stdout != want.Stdout {
 			t.Errorf("lane generate %s said %q, want what lane harness add said: %q", harness, got.Stdout, want.Stdout)
@@ -261,25 +262,6 @@ func TestAddingAGeneratorPluginShowsItsGeneratorsAndListShowsThem(t *testing.T) 
 	assertContains(t, preview.Stdout, "may merge blocks into files")
 	d.MustRunCLI(d.Home, "plugin", "add", "--yes", plugin)
 	assertContains(t, lineWith(t, d.MustRunCLI(d.Home, "plugin", "list").Stdout, "blocks"), "Generator blocks")
-}
-
-func TestAPluginCannotTakeTheNameOfABuiltInPlugin(t *testing.T) {
-	t.Parallel()
-	d := testkit.StartDaemon(t)
-	plugin := withManifest(t, testkit.Plugin(t, "blocks"), `{
-  "name": "claude",
-  "version": "0.1.0",
-  "api_version": 1,
-  "generators": [{"name": "blocks"}],
-  "capabilities": {"effects": ["file"]}
-}`)
-
-	res := d.RunCLI(d.Home, "plugin", "add", "--yes", plugin)
-
-	if res.ExitCode == 0 {
-		t.Fatalf("a Plugin took the name of a built-in one:\n%s", res.Output())
-	}
-	assertContains(t, res.Stderr, "built-in Plugin named claude")
 }
 
 func TestAGeneratorPluginMustDeclareFileEffects(t *testing.T) {

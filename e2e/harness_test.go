@@ -137,6 +137,38 @@ func TestHarnessAddClaudeAddsASessionStartHookThatWaitsUntilTheWorktreeIsReady(t
 	assertContains(t, res.Stdout, "is Ready: https://harness-claude.localhost/")
 }
 
+func TestHarnessAddOnAFreshInstallFetchesTheHarnessPluginFromTheCatalog(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t) // nothing installed; its Catalog lists the first-party Plugins
+	repo := gitfixture.New(t, "harness-fresh").WriteFile("README.md", "# Project\n").Commit("readme")
+
+	res := d.MustRunCLI(repo.Dir, "harness", "add", "claude")
+
+	assertContains(t, res.Stdout, "Fetched Plugin claude ")
+	assertContains(t, res.Stdout, "Created .claude/settings.json")
+	assertLineWith(t, d.MustRunCLI(d.Home, "plugin", "list").Stdout, "claude", "Catalog")
+	again := d.MustRunCLI(repo.Dir, "harness", "add", "claude")
+	assertNotContains(t, again.Stdout, "Fetched Plugin")
+}
+
+func TestHarnessAddOfflineOnAFreshInstallFailsNamingThePlugin(t *testing.T) {
+	t.Parallel()
+	cat := testkit.NewCatalog(t)
+	cat.PublishFirstParty()
+	d := testkit.StartDaemon(t, cat.Option())
+	cat.Offline()
+	repo := gitfixture.New(t, "harness-offline").WriteFile("README.md", "# Project\n").Commit("readme")
+
+	res := d.RunCLI(repo.Dir, "harness", "add", "t3")
+
+	if res.ExitCode == 0 {
+		t.Fatalf("harness add exited 0 offline on a fresh install:\n%s", res.Output())
+	}
+	assertContains(t, res.Stderr, "Laneway couldn't fetch the Plugin t3 from the Catalog")
+	assertContains(t, res.Stderr, "run `lane harness add t3` again")
+	assertNoFile(t, filepath.Join(repo.Dir, "t3.json"))
+}
+
 func TestTheGeneratedHookQuietlySucceedsWhenThereIsNothingToWaitFor(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
