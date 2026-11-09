@@ -52,6 +52,15 @@ jobs:
           curl -sf --unix-socket "$XDG_RUNTIME_DIR/podman/podman.sock" http://d/_ping
           docker info --format 'Docker {{.ServerVersion}}'
           echo "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR" >> "$GITHUB_ENV"
+      # The runner has MySQL installed, and with it an AppArmor profile for
+      # /usr/sbin/mysqld. Rootless Podman leaves containers unconfined, so
+      # that profile attaches to the mysqld in our MySQL containers too: it
+      # can't read the image's /etc/my.cnf (so its socket isn't where the
+      # clients look) and it refuses crun's SIGTERM and SIGKILL (so the
+      # container can't be stopped). Docker confines containers with its own
+      # profile, so only Podman is affected. See #81.
+      - name: Unload the runner's AppArmor profile for mysqld
+        run: sudo apparmor_parser -R /etc/apparmor.d/usr.sbin.mysqld
       - name: Slow tier (Postgres, MySQL, Redis, Mailpit on Docker and Podman)
         env:
           LANEWAY_SLOW: '1'
