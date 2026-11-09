@@ -4,19 +4,17 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
-	"strconv"
 
 	"github.com/lanewayhq/laneway/internal/container"
 	"github.com/lanewayhq/laneway/internal/database"
+	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/prepare"
 	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/registry"
-	"github.com/lanewayhq/laneway/internal/service"
 )
 
 // databaseEngine is the Engine of the database config describes, or nil if
-// the Project has no database (engines are listed in database.Engines).
+// the Project has no database (see database.New).
 // server is how to reach the Service a Service engine's databases live in;
 // naming databases doesn't need it, so the zero Server will do for that.
 func databaseEngine(db recipe.Database, server database.Server) database.Engine {
@@ -84,13 +82,12 @@ func (d *Daemon) databaseStep(p registry.Project, w worktreeRef, cfg recipe.Reso
 // databaseServer starts the Service svc for a database step and says how to
 // reach it. Call release once the step is done with it.
 func (d *Daemon) databaseServer(ctx context.Context, svc recipe.Service, out io.Writer) (database.Server, func(), error) {
-	e, ok := service.Lookup(svc.Engine)
+	e, ok := engine.Lookup(svc.Engine)
 	if !ok {
 		return database.Server{}, nil, fmt.Errorf("Laneway has no Service %q", svc.Engine)
 	}
 	d.serveServices([]recipe.Service{svc})
-	rs, err := d.registry.PlanService(svc, e.Ports(svc.Version))
-	if err != nil {
+	if _, err := d.registry.PlanService(svc, e.Ports(svc.Version)); err != nil {
 		return database.Server{}, nil, err
 	}
 	name := svc.Name()
@@ -105,9 +102,6 @@ func (d *Daemon) databaseServer(ctx context.Context, svc recipe.Service, out io.
 		return database.Server{}, nil, err
 	}
 	return database.Server{
-		Addr:     net.JoinHostPort(d.serviceHost(), strconv.Itoa(rs.Port)),
-		User:     e.User,
-		Password: service.Password,
 		Exec: func(ctx context.Context, cmd []string) (container.Output, error) {
 			return d.services.Exec(ctx, name, cmd)
 		},

@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/gitfixture"
-	"github.com/lanewayhq/laneway/internal/mysqlwire"
 	"github.com/lanewayhq/laneway/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/testkit/mysqlwire"
 )
 
 // mysqlProject is a Project whose database is a MySQL database, with the Env

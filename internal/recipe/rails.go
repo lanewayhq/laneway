@@ -16,7 +16,7 @@ import (
 	"github.com/lanewayhq/laneway/internal/config"
 	"github.com/lanewayhq/laneway/internal/detect"
 	"github.com/lanewayhq/laneway/internal/dotenv"
-	"github.com/lanewayhq/laneway/internal/service"
+	"github.com/lanewayhq/laneway/internal/engine"
 )
 
 // Rails is the Rails Recipe: a Project whose Gemfile declares the rails gem
@@ -47,9 +47,11 @@ const railsServer = withEnv + "exec bin/rails server -b 127.0.0.1 -p {port}"
 
 func (Rails) Defaults(dir string) (config.Layer, error) {
 	l := config.Layer{Source: "the rails Recipe", Processes: map[string]config.ProcessLayer{}}
+	railsProcfileProcesses(&l, dir)
 	l.Processes["web"] = config.ProcessLayer{Command: ptr(railsServer), Primary: ptr(true)}
 	l.Env = map[string]string{}
 	railsDatabase(&l, dir)
+	railsRedis(&l, dir)
 	// A new Worktree has no gems installed yet. Laneway makes its database
 	// itself, so there is no db:prepare.
 	l.Worktree = &config.WorktreeLayer{OnCreate: []string{"bundle install"}}
@@ -57,7 +59,7 @@ func (Rails) Defaults(dir string) (config.Layer, error) {
 }
 
 // railsAdapters maps the Active Record adapters Laneway has a database
-// engine (database.Engines) for to that engine.
+// engine (database.New) for to that engine.
 var railsAdapters = map[string]string{
 	"sqlite3":    "sqlite",
 	"postgresql": "postgres",
@@ -81,7 +83,7 @@ func railsDatabase(l *config.Layer, dir string) {
 	if db.adapter == "" {
 		return
 	}
-	engine, ok := railsAdapters[db.adapter]
+	dbEngine, ok := railsAdapters[db.adapter]
 	if !ok {
 		known := slices.Sorted(maps.Keys(railsAdapters))
 		l.Warnings = append(l.Warnings, fmt.Sprintf("%s: %s uses the %q adapter, which Laneway has no database for "+
@@ -90,13 +92,13 @@ func railsDatabase(l *config.Layer, dir string) {
 			strings.Join(known[:len(known)-1], ", "), known[len(known)-1], config.FileName))
 		return
 	}
-	if _, inService := service.Lookup(engine); !inService {
+	if _, inService := engine.Lookup(dbEngine); !inService {
 		// A file in each Worktree.
-		l.Database = &config.DatabaseLayer{Engine: ptr(engine), Path: ptr(railsSQLitePath(dir, db.database))}
+		l.Database = &config.DatabaseLayer{Engine: ptr(dbEngine), Path: ptr(railsSQLitePath(dir, db.database))}
 		l.Env["DATABASE_URL"] = db.adapter + ":{db}"
 		return
 	}
-	l.Database = &config.DatabaseLayer{Engine: ptr(engine)}
+	l.Database = &config.DatabaseLayer{Engine: ptr(dbEngine)}
 	l.Env["DATABASE_URL"] = db.adapter + "://{db_username}:{db_password}@{db_host}:{db_port}/{db}"
 }
 
@@ -129,28 +131,38 @@ func railsDevelopmentDatabase(dir string) (db railsDB, from string, err error) {
 		}
 		return db, from, nil
 	}
-	from = "config/database.yml"
-	data, err := os.ReadFile(filepath.Join(dir, "config", "database.yml"))
+	db, err = railsYmlDatabase(dir, "development")
+	return db, railsDatabaseYml, err
+}
+
+// railsDatabaseYml is the Rails app's database config, relative to it.
+const railsDatabaseYml = "config/database.yml"
+
+// railsYmlDatabase reads the database config/database.yml gives the Rails
+// environment env (development, test): with several databases, the primary
+// one, the app's own. It is empty if the file has none for env.
+func railsYmlDatabase(dir, env string) (railsDB, error) {
+	data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(railsDatabaseYml)))
 	if os.IsNotExist(err) {
-		return railsDB{}, from, nil
+		return railsDB{}, nil
 	}
 	if err != nil {
-		return railsDB{}, from, err
+		return railsDB{}, err
 	}
 	var doc map[string]any
 	if err := yaml.Unmarshal(withoutERB(data), &doc); err != nil {
-		return railsDB{}, from, err
+		return railsDB{}, err
 	}
-	dev, _ := doc["development"].(map[string]any)
-	if _, ok := dev["adapter"]; !ok {
-		// Several databases: the primary one is the app's own.
-		if primary, ok := dev["primary"].(map[string]any); ok {
-			dev = primary
+	config, _ := doc[env].(map[string]any)
+	if _, ok := config["adapter"]; !ok {
+		if primary, ok := config["primary"].(map[string]any); ok {
+			config = primary
 		}
 	}
-	db.adapter, _ = dev["adapter"].(string)
-	db.database, _ = dev["database"].(string)
-	return db, from, nil
+	var db railsDB
+	db.adapter, _ = config["adapter"].(string)
+	db.database, _ = config["database"].(string)
+	return db, nil
 }
 
 // erbTag matches an ERB tag in database.yml, such as <%= ENV["X"] %>.

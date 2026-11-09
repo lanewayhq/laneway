@@ -13,6 +13,7 @@ import (
 
 	"github.com/lanewayhq/laneway/internal/config"
 	"github.com/lanewayhq/laneway/internal/detect"
+	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/runtimes"
 	"github.com/lanewayhq/laneway/internal/service"
 )
@@ -65,6 +66,30 @@ type TestDatabaseWarner interface {
 	// may not use its Test Database, each naming the file at fault.
 	TestDatabaseWarnings(dir string) []string
 }
+
+// TestEnvRecipe is a Recipe whose Projects' tests read their settings from
+// an env file other than DefaultTestEnv.
+type TestEnvRecipe interface {
+	Recipe
+	// TestEnv is the env file the tests of the Recipe's Projects read.
+	TestEnv() TestEnv
+}
+
+// TestEnv is the env file a Project's tests read their settings from, which
+// Laneway patches to point them at the Worktree's Test Database.
+type TestEnv struct {
+	// File is the env file's name in the Worktree, such as ".env.testing".
+	File string
+	// Layered means the tests read File over .env, so a File holding only
+	// the Env Patch is complete and Laneway may create it. Otherwise File
+	// replaces .env for the tests, and Laneway only patches one the
+	// Worktree has, or a copy of the main Worktree's.
+	Layered bool
+}
+
+// DefaultTestEnv is the test env file of a Project whose Recipe names none:
+// Laravel's .env.testing, which replaces .env when the tests run.
+var DefaultTestEnv = TestEnv{File: ".env.testing"}
 
 // Resolved is the Project's resolved config.
 type Resolved struct {
@@ -129,6 +154,10 @@ type Resolved struct {
 	// (DatabaseService) and database.test is on, or auto and the Recipe
 	// decides so (TestDatabaseRecipe).
 	TestDatabase bool
+	// TestEnv is the env file the Project's tests read, which Laneway
+	// points at the Test Database (TestEnvRecipe, else DefaultTestEnv).
+	// Zero when TestDatabase is false.
+	TestEnv TestEnv
 	// TestDatabaseWarnings are why the Project's tests may not use the
 	// Test Database although there is one, such as a phpunit.xml that
 	// hard-codes DB_DATABASE (TestDatabaseWarner). Each names the file it
@@ -510,7 +539,7 @@ func Resolve(in Input) (Resolved, error) {
 	}
 	// A database in a Service needs the Service: at the version
 	// [services] pins, else the engine's default.
-	e, inService := service.Lookup(res.Database.Engine)
+	e, inService := engine.Lookup(res.Database.Engine)
 	if inService && services[e.Name] == "" {
 		services[e.Name] = e.DefaultVersion
 	}
@@ -524,6 +553,12 @@ func Resolve(in Input) (Resolved, error) {
 	case "", "auto":
 		r, ok := detected.(TestDatabaseRecipe)
 		res.TestDatabase = inService && ok && r.AutoTestDatabase(in.Dir)
+	}
+	if res.TestDatabase {
+		res.TestEnv = DefaultTestEnv
+		if r, ok := detected.(TestEnvRecipe); ok {
+			res.TestEnv = r.TestEnv()
+		}
 	}
 	if w, ok := detected.(TestDatabaseWarner); ok && res.TestDatabase {
 		res.TestDatabaseWarnings = w.TestDatabaseWarnings(in.Dir)

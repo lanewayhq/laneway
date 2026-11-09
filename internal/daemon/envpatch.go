@@ -17,11 +17,6 @@ import (
 // envFileName is the env file the Env Patch goes into.
 const envFileName = ".env"
 
-// testEnvFileName is the env file a Laravel app's tests read on top of .env.
-// With Test Databases on, it gets the Env Patch too, pointed at the
-// Worktree's Test Database.
-const testEnvFileName = ".env.testing"
-
 // worktreeRef identifies one Worktree of a Project: its names, directory and
 // Domain. The Env Patch, setup and Orphans work from it, and every served
 // Domain carries one.
@@ -100,15 +95,16 @@ func (d *Daemon) envPatchVars(p registry.Project, w worktreeRef, cfg recipe.Reso
 	return vars
 }
 
-// planTestEnvPatch works out how the Worktree's .env.testing changes to
-// point its tests at its Test Database: it gets the same Env Patch as .env,
-// rendered with {db} holding the Test Database. A linked Worktree without a
-// .env.testing gets a copy of the main Worktree's. The plan is empty when
-// Test Databases are off or there are no templates. Laneway never makes a
-// .env.testing from nothing: when neither the Worktree nor the main Worktree
-// has one, test config is left alone and missing is the Test Database the
-// tests won't use, for a warning.
-func (d *Daemon) planTestEnvPatch(p registry.Project, w worktreeRef) (plan envpatch.Plan, missing string, err error) {
+// planTestEnvPatch works out how the env file the Worktree's tests read
+// (recipe.Resolved.TestEnv) changes to point them at its Test Database: it
+// gets the same Env Patch as .env, rendered with {db} holding the Test
+// Database. A linked Worktree without one gets a copy of the main
+// Worktree's. The plan is empty when Test Databases are off or there are no
+// templates. Unless the tests read the file over .env (TestEnv.Layered),
+// Laneway never makes it from nothing: when neither the Worktree nor the
+// main Worktree has one, test config is left alone and warning says why
+// the tests won't use the Test Database.
+func (d *Daemon) planTestEnvPatch(p registry.Project, w worktreeRef) (plan envpatch.Plan, warning string, err error) {
 	cfg, err := d.plugins.ResolveDir(w.dir)
 	templates := cfg.EnvFor(w.main)
 	if err != nil || len(templates) == 0 {
@@ -124,26 +120,27 @@ func (d *Daemon) planTestEnvPatch(p registry.Project, w worktreeRef) (plan envpa
 	if err != nil {
 		return envpatch.Plan{}, "", err
 	}
-	f := envpatch.File{Path: filepath.Join(w.dir, testEnvFileName)}
+	name := cfg.TestEnv.File
+	f := envpatch.File{Path: filepath.Join(w.dir, name)}
 	if !w.main {
-		f.Seeds = []string{filepath.Join(p.Path, testEnvFileName)}
+		f.Seeds = []string{filepath.Join(p.Path, name)}
 	}
 	plan, err = envpatch.Prepare(f, values)
 	if err != nil {
 		return envpatch.Plan{}, "", err
 	}
-	if plan.Create && plan.CopyFrom == "" {
-		return envpatch.Plan{}, testDB, nil
+	if plan.Create && plan.CopyFrom == "" && !cfg.TestEnv.Layered {
+		return envpatch.Plan{}, testEnvWarning(p, name, testDB), nil
 	}
 	return plan, "", nil
 }
 
 // testEnvWarning is the setup warning for a Worktree whose tests won't use
-// its Test Database testDB because there is no .env.testing to patch.
-func testEnvWarning(p registry.Project, testDB string) string {
+// its Test Database testDB because there is no test env file name to patch.
+func testEnvWarning(p registry.Project, name, testDB string) string {
 	return fmt.Sprintf("the main Worktree has no %s, so Laneway left this Worktree's test config alone and its tests "+
 		"don't use its Test Database %s; create %s and it is patched the next time the Worktree starts or `lane link` runs",
-		testEnvFileName, testDB, filepath.Join(p.Path, testEnvFileName))
+		name, testDB, filepath.Join(p.Path, name))
 }
 
 // applyEnvPatch brings the Worktree's .env up to date with its Env Patch,
@@ -167,7 +164,7 @@ func (d *Daemon) applyEnvPatch(p registry.Project, w worktreeRef) (changed bool)
 		err = d.applyPlan(p, testPlan)
 	}
 	if err != nil {
-		d.log.Error("applying the Env Patch to .env.testing", "project", p.Name, "worktree", w.dir, "err", err)
+		d.log.Error("applying the Env Patch to the test env file", "project", p.Name, "worktree", w.dir, "err", err)
 	} else if !testPlan.Empty() {
 		d.log.Info("applied the Env Patch", "project", p.Name, "path", testPlan.Path)
 	}
