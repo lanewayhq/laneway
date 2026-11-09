@@ -65,6 +65,9 @@ type Layer struct {
 	Worktree *WorktreeLayer `toml:"worktree"`
 	// Database is the Project's database ([database] table).
 	Database *DatabaseLayer `toml:"database"`
+	// PluginVersions pin Plugins to version ranges, by Plugin name
+	// ([plugin_versions] table; see plugins.go).
+	PluginVersions map[string]string `toml:"plugin_versions"`
 	// Plugins are Plugins the Project uses, by name, besides those whose
 	// Recipe, Integrations or Engines it uses: their hooks fire in it. A
 	// machine-wide Plugin may only be named in laneway.local.toml (or the
@@ -229,7 +232,7 @@ func ParseLayer(source string, data []byte) (Layer, error) {
 		return Layer{}, decodeError(source, err)
 	}
 	// The decoder silently skips a non-table value for a map field.
-	for _, key := range append([]toml.Key{{"processes"}, {"env"}, {"linked_env"}, {"database"}, {"services"}}, processKeys(l)...) {
+	for _, key := range append([]toml.Key{{"processes"}, {"env"}, {"linked_env"}, {"database"}, {"services"}, {"plugin_versions"}}, processKeys(l)...) {
 		if t := md.Type(key...); t != "" && t != "Hash" {
 			return Layer{}, fmt.Errorf("%s: %s must be a table, not a %s", source, key, strings.ToLower(t))
 		}
@@ -320,6 +323,9 @@ func (l Layer) validate() error {
 		return err
 	}
 	if err := checkPluginNames(l.Plugins); err != nil {
+		return err
+	}
+	if err := checkPluginVersions(l.PluginVersions); err != nil {
 		return err
 	}
 	if err := l.Worktree.validate(); err != nil {

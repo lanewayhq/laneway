@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"path/filepath"
 	"slices"
 
@@ -8,11 +9,17 @@ import (
 	"github.com/lanewayhq/laneway/internal/plugin"
 )
 
-// listPlugins is the body of GET /v1/plugins.
-func (d *Daemon) listPlugins() api.PluginList {
+// listPlugins is the body of GET /v1/plugins: the installed Plugins, each
+// with its available update, if any.
+func (d *Daemon) listPlugins(ctx context.Context) api.PluginList {
+	updates := d.availableUpdates(ctx)
 	list := api.PluginList{Plugins: []api.Plugin{}}
 	for _, p := range d.plugins.List() {
-		list.Plugins = append(list.Plugins, apiPlugin(p))
+		ap := apiPlugin(p)
+		if u, ok := updates[p.Name]; ok {
+			ap.Update = &u
+		}
+		list.Plugins = append(list.Plugins, ap)
 	}
 	return list
 }

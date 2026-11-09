@@ -496,6 +496,9 @@ type Plugin struct {
 	// Global is true for a machine-wide Plugin (`lane plugin add
 	// --global`), which only personal config turns on.
 	Global bool `json:"global,omitempty"`
+	// Update is the release `lane plugin update` would update it to, if
+	// the Catalog lists a newer one.
+	Update *PluginUpdate `json:"update,omitempty"`
 }
 
 // PluginRecipe is a Recipe a Plugin adds.
