@@ -106,7 +106,7 @@ func runDoctor(ctx context.Context, env Env, args []string) error {
 	}
 
 	if v, err := plat.Mise(ctx); err != nil {
-		r.check(statusWarn, "mise", err.Error()+"; Runtimes (PHP, Node) are looked up on PATH instead",
+		r.check(statusWarn, "mise", err.Error()+"; Runtimes (PHP, Node, Ruby) are looked up on PATH instead",
 			"install mise (https://mise.jdx.dev) to pin Runtime versions per Project")
 	} else {
 		r.check(statusOK, "mise", v, "")

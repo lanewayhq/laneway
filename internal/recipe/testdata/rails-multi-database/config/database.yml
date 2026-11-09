@@ -1,0 +1,11 @@
+default: &default
+  adapter: mysql2
+  encoding: utf8mb4
+
+development:
+  primary:
+    <<: *default
+    database: shop_development
+  cache:
+    adapter: sqlite3
+    database: storage/development_cache.sqlite3
