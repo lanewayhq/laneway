@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -50,6 +51,10 @@ type state struct {
 	Aliases   []Alias    `json:"aliases,omitempty"`
 	Services  []Service  `json:"services,omitempty"`
 	Orphans   []Orphan   `json:"orphans,omitempty"`
+	// DeclaredBuckets are, by Project path, the names of the Buckets each
+	// Project's config has declared ([buckets]) while Laneway made its
+	// Buckets.
+	DeclaredBuckets map[string][]string `json:"declaredBuckets,omitempty"`
 }
 
 const currentVersion = 1
@@ -129,11 +134,53 @@ func (r *Registry) RemoveProject(path string) (bool, error) {
 	next.Projects = slices.Delete(slices.Clone(r.state.Projects), i, i+1)
 	next.Worktrees = slices.DeleteFunc(slices.Clone(r.state.Worktrees), func(w Worktree) bool { return w.Project == path })
 	next.Aliases = slices.DeleteFunc(slices.Clone(r.state.Aliases), func(a Alias) bool { return a.Project == path })
+	next.DeclaredBuckets = maps.Clone(r.state.DeclaredBuckets)
+	delete(next.DeclaredBuckets, path)
 	if err := r.save(next); err != nil {
 		return false, err
 	}
 	r.state = next
 	return true, nil
+}
+
+// RecordDeclaredBuckets records that the config of the Project at path
+// declares the Buckets called names, and persists the change if it records
+// any it hadn't. Its record keeps every name it was given: the Buckets made
+// while a name was declared stay its Project's after the config stops
+// declaring it.
+func (r *Registry) RecordDeclaredBuckets(path string, names []string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	recorded := r.state.DeclaredBuckets[path]
+	next := r.state
+	merged := slices.Clone(recorded)
+	for _, name := range names {
+		if !slices.Contains(merged, name) {
+			merged = append(merged, name)
+		}
+	}
+	if len(merged) == len(recorded) {
+		return nil
+	}
+	slices.Sort(merged)
+	next.DeclaredBuckets = maps.Clone(r.state.DeclaredBuckets)
+	if next.DeclaredBuckets == nil {
+		next.DeclaredBuckets = map[string][]string{}
+	}
+	next.DeclaredBuckets[path] = merged
+	if err := r.save(next); err != nil {
+		return err
+	}
+	r.state = next
+	return nil
+}
+
+// DeclaredBuckets are the names of the Buckets the config of the Project at
+// path has declared (RecordDeclaredBuckets), sorted.
+func (r *Registry) DeclaredBuckets(path string) []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.state.DeclaredBuckets[path])
 }
 
 // Worktree is a linked (not main) Worktree of a Project, as last discovered

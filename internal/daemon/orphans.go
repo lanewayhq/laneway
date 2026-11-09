@@ -86,7 +86,7 @@ func (d *Daemon) orphanWorktree(p registry.Project, w worktreeRef) {
 		d.log.Error("finding the databases of a removed Worktree", "project", p.Name, "worktree", w.name, "err", err)
 		return
 	}
-	d.addOrphans(d.worktreeOrphans(p, w, cfg, d.cfg.Clock.Now()), []goneWorktree{{p.Name, w}})
+	d.addOrphans(d.worktreeOrphans(p, w, cfg, d.cfg.Clock.Now()), []goneWorktree{d.goneWorktreeOf(p, w, cfg)})
 }
 
 // reclaimOrphans takes back the databases and Buckets of the Worktree w

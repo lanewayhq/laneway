@@ -697,7 +697,7 @@ How long a copy takes follows the number of objects more than their size: a thou
 
 A failed copy fails Preparing with its output, like a failed database copy. Fix the cause, then `lane worktree ready --retry`.
 
-`lane info` lists the Worktree's Buckets (`Buckets  shop--feature-x on rustfs:1`, and `(public)` after a public one), and `lane info --json` has them under `buckets`. A removed Worktree's Buckets become Orphans with its databases: kept for 24 hours, then dropped. `lane gc` lists them with the kind `bucket`.
+`lane info` lists the Worktree's Buckets (`Buckets  shop--feature-x on rustfs:1`, and `(public)` after a public one), and `lane info --json` has them under `buckets`. A removed Worktree's Buckets become Orphans with its databases: kept for 24 hours, then dropped. Only Buckets Laneway made count: the private one, and one for each `[buckets.<name>]` the Project declares or has declared. A bucket you make yourself in the console, such as `shop-backup`, is never an Orphan, unless the Project declares `[buckets.backup]`. `lane gc` lists them with the kind `bucket`.
 
 ### 10.6 The console and other clients
 

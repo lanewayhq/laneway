@@ -434,4 +434,3 @@ func (s Set) Names() []string {
 	}
 	return names
 }
-

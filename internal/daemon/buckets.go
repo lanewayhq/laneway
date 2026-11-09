@@ -81,10 +81,15 @@ const DefaultBucketCopyLimit config.Size = 1e9
 // other Worktree's as a copy of the main Worktree's, unless that is over
 // the limit (bucket_copy_limit). Then, made or not, the Bucket is
 // configured: public or private, and allowing CORS from the Worktree's
-// Domains and Aliases, which the copy doesn't bring along.
+// Domains and Aliases, which the copy doesn't bring along. The Buckets
+// config declares are recorded as the Project's (recordDeclaredBuckets).
 func (d *Daemon) bucketSteps(p registry.Project, w worktreeRef, cfg recipe.Resolved) []prepare.Step {
+	buckets := d.worktreeBuckets(p, w, cfg)
+	if len(buckets) > 0 {
+		d.recordDeclaredBuckets(p, cfg)
+	}
 	var steps []prepare.Step
-	for _, b := range d.worktreeBuckets(p, w, cfg) {
+	for _, b := range buckets {
 		steps = append(steps, prepare.Step{Name: "bucket " + b.Name, Run: func(ctx context.Context, out io.Writer) error {
 			var from bucket.Source
 			if !w.main {
