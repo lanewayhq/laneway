@@ -64,7 +64,7 @@ type commandResponse struct {
 // to have it run.
 func (h *Host) Command(p Plugin, command string, args []string, dir string) ([]Effect, error) {
 	what := fmt.Sprintf("the command `lane %s %s`", p.Name, command)
-	if !slices.ContainsFunc(p.Commands, func(c CommandDecl) bool { return c.Name == command }) {
+	if !p.HasCommand(command) {
 		return nil, fmt.Errorf("Plugin %s has no command %s", p.Name, command)
 	}
 	in, err := json.Marshal(request{APIVersion: APIVersion, Call: callCommand, Name: command, Dir: projectMount, Args: args})
@@ -77,6 +77,11 @@ func (h *Host) Command(p Plugin, command string, args []string, dir string) ([]E
 		return nil, err
 	}
 	return res.Effects, nil
+}
+
+// HasCommand reports whether the Plugin adds the command called name.
+func (m Manifest) HasCommand(name string) bool {
+	return slices.ContainsFunc(m.Commands, func(c CommandDecl) bool { return c.Name == name })
 }
 
 // Plugin returns the installed Plugin called name.

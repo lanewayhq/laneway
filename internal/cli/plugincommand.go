@@ -10,6 +10,18 @@ import (
 	"github.com/lanewayhq/laneway/internal/plugin"
 )
 
+// laneCommand reports whether Laneway has its own command called name, which
+// wins over a Plugin's. It is set in init, since commands refers to it
+// (through `lane plugin add`).
+var laneCommand func(name string) bool
+
+func init() {
+	laneCommand = func(name string) bool {
+		_, ok := commands[name]
+		return ok || name == "help"
+	}
+}
+
 // installedPlugin is the installed Plugin called name, read from the
 // Plugins' directory rather than asked of the daemon, so `lane <typo>` says
 // it's unknown even when the daemon isn't running.
@@ -50,7 +62,7 @@ func pluginCommand(p plugin.Plugin) func(ctx context.Context, env Env, args []st
 			printPluginUsage(env.Stdout, p)
 			return nil
 		}
-		if !hasCommand(p, args[0]) {
+		if !p.HasCommand(args[0]) {
 			return usageError{fmt.Sprintf("Plugin %s has no command %q; `lane %s --help` lists its commands", p.Name, args[0], p.Name)}
 		}
 		c, err := apiClient(env)
@@ -74,13 +86,29 @@ func pluginCommand(p plugin.Plugin) func(ctx context.Context, env Env, args []st
 	}
 }
 
-func hasCommand(p plugin.Plugin, name string) bool {
-	for _, c := range p.Commands {
-		if c.Name == name {
-			return true
-		}
+// printPluginsUsage lists the installed Plugins that add commands, after
+// Laneway's own in `lane --help`.
+func printPluginsUsage(w io.Writer, env Env) {
+	h, err := openPlugins(env)
+	if err != nil {
+		return
 	}
-	return false
+	defer h.Close()
+	heading := false
+	for _, p := range h.List() {
+		if len(p.Commands) == 0 {
+			continue
+		}
+		if laneCommand(p.Name) {
+			continue // Laneway's own command of the name wins
+		}
+		if !heading {
+			fmt.Fprintln(w)
+			fmt.Fprintln(w, "Plugins:")
+			heading = true
+		}
+		fmt.Fprintf(w, "  %-8s Commands from Plugin %s (lane %s --help lists them)\n", p.Name, p.Name, p.Name)
+	}
 }
 
 // printPluginUsage lists the Plugin's commands, for `lane <plugin> --help`.

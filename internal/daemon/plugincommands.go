@@ -30,7 +30,7 @@ func (d *Daemon) runPluginCommand(ctx context.Context, name, command string, req
 		return api.PluginCommandResult{}, &api.Error{Code: api.CodeUnknownPlugin,
 			Message: fmt.Sprintf("no Plugin called %s is installed; `lane plugin list` lists them", name)}
 	}
-	if !hasCommand(p, command) {
+	if !p.HasCommand(command) {
 		return api.PluginCommandResult{}, &api.Error{Code: api.CodeUnknownCommand,
 			Message: fmt.Sprintf("Plugin %s has no command %s; `lane %s --help` lists its commands", name, command, name)}
 	}
@@ -66,15 +66,6 @@ func (d *Daemon) runPluginCommand(ctx context.Context, name, command string, req
 		}
 	}
 	return res, nil
-}
-
-func hasCommand(p plugin.Plugin, command string) bool {
-	for _, c := range p.Commands {
-		if c.Name == command {
-			return true
-		}
-	}
-	return false
 }
 
 // commandApplier applies the effects a Plugin's command returns in a

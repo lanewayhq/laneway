@@ -97,6 +97,7 @@ func (e exitCode) Error() string { return fmt.Sprintf("exit status %d: %s", e.co
 func Run(ctx context.Context, env Env) int {
 	if len(env.Args) == 0 || env.Args[0] == "help" || env.Args[0] == "-h" || env.Args[0] == "--help" {
 		printUsage(env.Stdout)
+		printPluginsUsage(env.Stdout, env)
 		return exitOK
 	}
 	cmd, ok := commands[env.Args[0]]
@@ -109,6 +110,7 @@ func Run(ctx context.Context, env Env) int {
 	if !ok {
 		fmt.Fprintf(env.Stderr, "lane: unknown command %q\n\n", env.Args[0])
 		printUsage(env.Stderr)
+		printPluginsUsage(env.Stderr, env)
 		return exitUsage
 	}
 	err := cmd.run(ctx, env, env.Args[1:])
