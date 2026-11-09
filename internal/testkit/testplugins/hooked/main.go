@@ -6,7 +6,8 @@
 //
 //	{"ready": {"effects": [{"kind": "exec", "command": ["touch", "ran"]}], "error": "…"}}
 //
-// returning the effects, or failing with the error. In effects' strings,
+// returning the effects, or failing with the error. In effects' strings
+// (commands, messages, env values, and http URLs, headers and bodies),
 // {event}, {project}, {project_path}, {worktree}, {worktree_path}, {main},
 // {domain} and {url} become the event's values.
 package main
@@ -70,6 +71,12 @@ func hook(p sdk.Project, ev sdk.Event) ([]sdk.Effect, error) {
 				env[k] = r.Replace(v)
 			}
 			e.Env = env
+		}
+		if e.HTTP != nil {
+			e.HTTP.URL, e.HTTP.Body = r.Replace(e.HTTP.URL), r.Replace(e.HTTP.Body)
+			for k, v := range e.HTTP.Headers {
+				e.HTTP.Headers[k] = r.Replace(v)
+			}
 		}
 		s.Effects[i] = e
 	}

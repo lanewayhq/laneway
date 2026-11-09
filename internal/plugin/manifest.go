@@ -210,6 +210,9 @@ func (m Manifest) validate() error {
 	if len(m.Capabilities.HTTP) > 0 && !slices.Contains(m.Capabilities.Effects, EffectHTTP) {
 		return fmt.Errorf("capabilities.http lists hosts, but capabilities.effects doesn't include %q; add it, or remove the hosts", EffectHTTP)
 	}
+	if err := validateHTTPHosts(m.Capabilities.HTTP); err != nil {
+		return err
+	}
 	return nil
 }
 

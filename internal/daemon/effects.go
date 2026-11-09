@@ -97,6 +97,8 @@ func (d *Daemon) applyEffect(ctx context.Context, t *effectTarget, e plugin.Effe
 			return fmt.Errorf("setting %s in .env: %w", strings.Join(slices.Sorted(maps.Keys(e.Env)), ", "), err)
 		}
 		return nil
+	case plugin.EffectHTTP:
+		return d.httpEffect(ctx, t, e.HTTP)
 	}
 	warn(fmt.Sprintf("%s returned %s effect, but Laneway doesn't apply %s effects yet, so it was skipped",
 		t.source, plugin.Article(e.Kind), e.Kind))

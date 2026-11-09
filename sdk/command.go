@@ -15,7 +15,7 @@ const (
 
 // Effect is something a Plugin's command, Generator (or hook) asks Laneway
 // to do, which Laneway does under its usual rules. Build one with Exec,
-// Warning, Env or File.
+// Warning, Env, File or HTTP.
 type Effect struct {
 	// Kind is what the effect does, such as EffectExec.
 	Kind string `json:"kind"`
@@ -29,6 +29,8 @@ type Effect struct {
 	Env map[string]string `json:"env,omitempty"`
 	// File is a file effect's block, merged into the Worktree's files.
 	File *FileBlock `json:"file,omitempty"`
+	// HTTP is an http effect's request, which Laneway sends.
+	HTTP *HTTPRequest `json:"http,omitempty"`
 }
 
 // Exec is an effect that runs command with its arguments in the Worktree,
