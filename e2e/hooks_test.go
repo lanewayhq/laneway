@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lanewayhq/laneway/internal/container/containertest"
 	"github.com/lanewayhq/laneway/internal/gitfixture"
 	"github.com/lanewayhq/laneway/internal/testkit"
 )
@@ -254,6 +255,32 @@ func TestAPluginsHooksFireForProjectsItsIntegrationDetects(t *testing.T) {
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
 
 	assertContains(t, readFile(t, filepath.Join(repo.Dir, ".env")), "HOOKED=hook-integration\n")
+}
+
+func TestAPluginsHooksFireForProjectsThatUseItsEngine(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	d.Engine.Serve(kvImage, containertest.Redis)
+	plugin := withManifest(t, testkit.Plugin(t, "hooked"), `{
+  "name": "hooked",
+  "version": "0.1.0",
+  "api_version": 1,
+  "engines": ["kv.toml"],
+  "hooks": ["preparing"],
+  "capabilities": {"effects": ["env"]}
+}`)
+	writeTestFile(t, filepath.Join(plugin, "kv.toml"), readFile(t, filepath.Join(testkit.Plugin(t, "kv"), "kv.toml")))
+	d.MustRunCLI(d.Home, "plugin", "add", "--yes", plugin)
+	repo := gitfixture.New(t, "hook-engine").
+		WriteFile(".gitignore", ".env\n").
+		WriteFile("laneway.toml", "[services]\nkv = \"1\"\n").
+		WriteFile("hooks.json", `{"preparing": {"effects": [{"kind": "env", "env": {"HOOKED": "{project}"}}]}}`).
+		Commit("a Project using the kv Engine")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+
+	assertContains(t, readFile(t, filepath.Join(repo.Dir, ".env")), "HOOKED=hook-engine\n")
 }
 
 func TestAPluginsHooksDoNotFireForProjectsThatDoNotUseIt(t *testing.T) {
