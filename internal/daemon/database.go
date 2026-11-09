@@ -78,8 +78,8 @@ func (d *Daemon) databaseStep(p registry.Project, w worktreeRef, cfg recipe.Reso
 	}}, true
 }
 
-// databaseServer starts the Service svc for a database step and says how to
-// reach it. Call release once the step is done with it.
+// databaseServer starts the Service svc for a database or Bucket step and
+// says how to reach it. Call release once the step is done with it.
 func (d *Daemon) databaseServer(ctx context.Context, svc recipe.Service, out io.Writer) (database.Server, func(), error) {
 	e, ok := d.plugins.Engines().Lookup(svc.Engine)
 	if !ok {
