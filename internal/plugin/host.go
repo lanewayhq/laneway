@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lanewayhq/laneway/internal/catalog"
 	"github.com/lanewayhq/laneway/internal/config"
 	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/recipe"
@@ -58,12 +59,13 @@ type Options struct {
 	// GlobalConfig is the global config file, whose plugins turn on
 	// machine-wide Plugins in every Project; "" for none.
 	GlobalConfig string
-	// CatalogEngines, if set, lists the Engines Laneway hasn't installed
-	// but can fetch from the Catalog, such as after an upgrade left the
-	// installed Plugins behind: config naming one says to fetch it, rather
-	// than that the Engine is unknown. It is called on every resolve, so it
-	// must not wait on the Catalog.
-	CatalogEngines func() []string
+	// Catalog, if set, returns the latest Catalog Laneway has, or nil. An
+	// Engine that a Catalog Plugin not installed adds is one Laneway can
+	// fetch, such as after an upgrade left the installed Plugins behind:
+	// config naming it says to fetch it, rather than that the Engine is
+	// unknown. It is called on every resolve, so it must not wait on the
+	// network.
+	Catalog func() *catalog.Catalog
 }
 
 // Plugin is a Plugin: its manifest, and where it came from.
@@ -386,12 +388,28 @@ func (h *Host) resolveDir(dir string, assumed []*engine.Manifest, found []runtim
 }
 
 // catalogEngines are the Engines Laneway hasn't installed but can fetch
-// from the Catalog (see Options.CatalogEngines).
+// from the Catalog (see Options.Catalog): those that each Catalog Plugin not
+// installed adds at its latest release for this Laneway's Plugin API.
 func (h *Host) catalogEngines() []string {
-	if h.opts.CatalogEngines == nil {
+	if h.opts.Catalog == nil {
 		return nil
 	}
-	return h.opts.CatalogEngines()
+	cat := h.opts.Catalog()
+	if cat == nil {
+		return nil
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var engines []string
+	for _, p := range cat.Plugins {
+		if _, installed := h.plugins[p.Name]; installed {
+			continue
+		}
+		if releases := cat.Releases(p.Name, APIVersion); len(releases) > 0 {
+			engines = append(engines, releases[0].Engines...)
+		}
+	}
+	return engines
 }
 
 // call runs p's module for req about the Project in dir, decoding its

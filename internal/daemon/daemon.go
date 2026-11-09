@@ -146,13 +146,16 @@ type Daemon struct {
 	// catalog is where Catalog Plugins are fetched from, see catalog.go.
 	catalog   *catalog.Source
 	catalogMu sync.Mutex // serialises fetches from the Catalog
-	// checked is the Catalog last loaded, for Plugin updates, see
-	// updates.go. Guarded by catalogMu.
+	// checked is when the Catalog was last loaded, and what that gave
+	// (nil if nothing), for Plugin update checks, see updates.go. Guarded
+	// by catalogMu.
 	checked checkedCatalog
-	// known is the Catalog last loaded, if any, without catalogMu: config
-	// errors read it to tell an Engine Laneway can fetch from an unknown
-	// one (see catalogEngines), while catalogMu may be held for a fetch.
-	known atomic.Pointer[catalog.Catalog]
+	// lastCatalog is the latest Catalog Laneway has: the last one loaded,
+	// or, until one is, the copy kept or the snapshot. The Plugin Host
+	// reads it, without catalogMu, which a fetch may hold, to tell an
+	// Engine Laneway can fetch from an unknown one (see
+	// plugin.Options.Catalog).
+	lastCatalog *atomic.Pointer[catalog.Catalog]
 	// unfetched is why Laneway couldn't fetch the Catalog Plugins each
 	// Linked Project needs when it started, by Project path, until a later
 	// fetch for it succeeds (see startfetch.go).
@@ -232,35 +235,41 @@ func Start(cfg Config) (*Daemon, error) {
 		ln.Close()
 		return nil, err
 	}
-	d := &Daemon{
-		cfg:      cfg,
-		log:      log,
-		registry: reg,
-		listener: ln,
-		served:   map[string]*served{},
-		closing:  make(chan struct{}),
-		done:     make(chan struct{}),
-	}
+	source := catalog.NewSource(cfg.Catalog, cfg.Paths.Catalog())
+	// Until the Catalog is fetched, the copy kept last time, or else the
+	// snapshot, tells which Engines Laneway can fetch: config resolved
+	// before then, such as a Worktree's setup, already says so.
+	lastCatalog := new(atomic.Pointer[catalog.Catalog])
+	lastCatalog.Store(source.Cached())
 	plugins, err := plugin.Open(plugin.Options{
 		Dir:      cfg.Paths.Plugins(),
 		CacheDir: cmp.Or(cfg.PluginCacheDir, cfg.Paths.PluginCache()),
 		Log:      log,
 		Timeout:  cfg.PluginTimeout,
 		// The global config may turn on machine-wide Plugins.
-		GlobalConfig:   cfg.Paths.GlobalConfig(),
-		CatalogEngines: d.catalogEngines,
+		GlobalConfig: cfg.Paths.GlobalConfig(),
+		Catalog:      lastCatalog.Load,
 	})
 	if err != nil {
 		ln.Close()
 		return nil, err
+	}
+	d := &Daemon{
+		cfg:         cfg,
+		log:         log,
+		registry:    reg,
+		listener:    ln,
+		served:      map[string]*served{},
+		closing:     make(chan struct{}),
+		done:        make(chan struct{}),
+		catalog:     source,
+		lastCatalog: lastCatalog,
 	}
 	d.supervisor = supervisor.New(log, supervisor.Options{Clock: cfg.Clock, LogMaxBytes: cfg.LogFileMaxBytes,
 		OnEvent: d.processEvent})
 	d.preparer = prov
 	prov.OnReady(d.worktreeBecameReady)
 	d.plugins = plugins
-	d.catalog = catalog.NewSource(cfg.Catalog, cfg.Paths.Catalog())
-	d.loadKnownCatalog()
 	d.github = github.New(cfg.GitHub)
 	d.services = service.New(service.Options{
 		Engine:      cfg.ContainerEngine,
