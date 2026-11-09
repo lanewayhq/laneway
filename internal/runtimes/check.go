@@ -25,10 +25,10 @@ type packageJSON struct {
 // Check compares the Runtimes found for the Project in dir with what its
 // files declare: composer.json `require.php` and `ext-*` for PHP,
 // package.json `engines.node` for Node, and the Gemfile's `ruby` for Ruby.
-// For a PHP Project, it also checks PHP loads the driver for database, the
-// Engine of the Project's database (such as pdo_mysql for mysql); "" for
-// none. It only reads files.
-func Check(dir string, found []Runtime, database string) []Warning {
+// For a PHP Project, it also checks PHP loads the PDO extension for engine,
+// the Project's database engine (such as pdo_mysql for mysql); "" for none.
+// It only reads files.
+func Check(dir string, found []Runtime, engine string) []Warning {
 	var warnings []Warning
 	byName := map[string]Runtime{}
 	for _, r := range found {
@@ -36,7 +36,7 @@ func Check(dir string, found []Runtime, database string) []Warning {
 	}
 	var composer composerJSON
 	if ok, w := readManifest(dir, "composer.json", &composer); ok {
-		warnings = append(warnings, checkPHP(byName[PHP], composer, database)...)
+		warnings = append(warnings, checkPHP(byName[PHP], composer, engine)...)
 	} else if w != nil {
 		warnings = append(warnings, *w)
 	}
@@ -75,7 +75,7 @@ func runtimeOf(manifest string) string {
 	return PHP
 }
 
-func checkPHP(php Runtime, composer composerJSON, database string) []Warning {
+func checkPHP(php Runtime, composer composerJSON, engine string) []Warning {
 	constraint := composer.Require["php"]
 	if php.Version == "" && php.Path != "" {
 		return []Warning{{Runtime: PHP, Message: fmt.Sprintf("can't run PHP at %s: %s", php.Path, php.Error)}}
@@ -115,21 +115,20 @@ func checkPHP(php Runtime, composer composerJSON, database string) []Warning {
 				strings.Join(missing, ", ext-"), php.Version, php.Path, strings.Join(missing, ", ")),
 			Fix: fmt.Sprintf("install or enable the %s extension(s) for that PHP", strings.Join(missing, ", "))})
 	}
-	// The ext-* warning already names a driver composer.json requires.
-	if driver := databaseDrivers[database]; driver != "" && !loaded[driver] && !slices.Contains(missing, driver) {
+	// The ext-* warning already names an extension composer.json requires.
+	if ext := pdoExtensions[engine]; ext != "" && !loaded[ext] && !slices.Contains(missing, ext) {
 		warnings = append(warnings, Warning{Runtime: PHP,
 			Message: fmt.Sprintf("the Project's database is %s, but PHP %s (%s) doesn't load %s, the driver PHP needs for it",
-				database, php.Version, php.Path, driver),
-			Fix: fmt.Sprintf("install or enable the %s extension for that PHP", driver)})
+				engine, php.Version, php.Path, ext),
+			Fix: fmt.Sprintf("install or enable the %s extension for that PHP", ext)})
 	}
 	return warnings
 }
 
-// databaseDrivers are the PHP extensions PHP needs to reach a database of
-// each Engine.
-var databaseDrivers = map[string]string{
+// pdoExtensions maps a database engine to the PDO extension PHP needs to
+// reach a database of it.
+var pdoExtensions = map[string]string{
 	"mysql":    "pdo_mysql",
-	"mariadb":  "pdo_mysql",
 	"postgres": "pdo_pgsql",
 	"sqlite":   "pdo_sqlite",
 }
