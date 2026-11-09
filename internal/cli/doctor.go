@@ -112,13 +112,19 @@ func runDoctor(ctx context.Context, env Env, args []string) error {
 	} else {
 		r.check(statusOK, "mise", v, "")
 	}
-	// The Project's config, once the Plugins it needs are fetched, tells
-	// the Runtime checks its database and gives its Test Database warnings.
+	// The Project's config, once the Plugins it needs are fetched, gives
+	// the Runtime checks its database engine and gives its Test Database
+	// warnings. Without it, the Runtimes are still checked, but not the PDO
+	// extension for the database.
 	dir := worktreeDir(ctx, env)
 	checkProjectPlugins(ctx, r, env, dir)
 	cfg, cfgErr := resolveProject(env, dir)
-	checkRuntimes(ctx, r, env, dir, cfg.Database.Engine)
-	if cfgErr == nil {
+	if cfgErr != nil {
+		checkRuntimes(ctx, r, env, dir, "")
+		r.check(statusWarn, "database driver", "skipped: can't resolve the Project's config: "+cfgErr.Error(),
+			"run `lane link` to see what to fix")
+	} else {
+		checkRuntimes(ctx, r, env, dir, cfg.Database.Engine)
 		checkTestDatabase(r, cfg)
 	}
 
@@ -131,13 +137,13 @@ func runDoctor(ctx context.Context, env Env, args []string) error {
 
 // checkRuntimes reports the Runtimes resolved for the Worktree in dir (or
 // directory, outside a git repository), and how they fit what the Project
-// declares and its database, whose Engine is database ("" for none or
-// unknown). A Runtime that is neither found nor needed isn't mentioned.
-func checkRuntimes(ctx context.Context, r *report, env Env, dir, database string) {
+// declares and its database engine, engine ("" for none or unknown). A
+// Runtime that is neither found nor needed isn't mentioned.
+func checkRuntimes(ctx context.Context, r *report, env Env, dir, engine string) {
 	rt := runtimes.Environ(ctx, dir, environOf(env))
 	found := rt.Find(ctx)
 	warned := map[string]bool{}
-	for _, w := range append(rt.Warnings, runtimes.Check(dir, found, database)...) {
+	for _, w := range append(rt.Warnings, runtimes.Check(dir, found, engine)...) {
 		warned[w.Runtime] = true
 		name := w.Runtime
 		if name == "mise" {
@@ -158,8 +164,7 @@ func checkRuntimes(ctx context.Context, r *report, env Env, dir, database string
 }
 
 // resolveProject resolves the config of the Project in dir with the
-// installed Plugins. A config that can't be resolved isn't reported here:
-// link and starts report it.
+// installed Plugins.
 func resolveProject(env Env, dir string) (recipe.Resolved, error) {
 	plugins, err := openPlugins(env)
 	if err != nil {
