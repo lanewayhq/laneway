@@ -236,6 +236,8 @@ var statusFor = map[string]int{
 	api.CodeInvalidPlugin:  http.StatusUnprocessableEntity,
 	api.CodeUnknownPlugin:  http.StatusNotFound,
 	api.CodeUnknownCommand: http.StatusNotFound,
+
+	api.CodePluginsUnavailable: http.StatusBadGateway,
 }
 
 // writeError sends err to the client. An *api.Error is passed through as is;
