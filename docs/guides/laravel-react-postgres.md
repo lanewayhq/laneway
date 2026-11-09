@@ -669,7 +669,7 @@ Anyone may read a public Bucket's objects, so `Storage::disk('public_s3')->url('
 
 ### 10.4 Uploads from the browser (CORS)
 
-Each Bucket allows browser requests from its Worktree's Domain and Aliases, such as `https://feature-x.shop.localhost` and, once you add that Alias, `https://checkout.shop.localhost`. Laneway updates the Buckets whenever an Alias is added or removed. So presigned uploads from `temporaryUploadUrl()`, such as Livewire's direct-to-S3 uploads, work from the app's pages. Process subdomains such as `vite.feature-x.shop.localhost` aren't allowed.
+Each Bucket allows browser requests from its Worktree's Domain and Aliases, such as `https://feature-x.shop.localhost` and, once you add that Alias, `https://checkout.shop.localhost`. Laneway updates the Buckets whenever an Alias is added or removed. So presigned uploads from `temporaryUploadUrl()`, such as Livewire's direct-to-S3 uploads, work from the app's pages. Process subdomains such as `vite.feature-x.shop.localhost` aren't allowed. If updating a Bucket after an Alias change fails, `lane info`, `lane worktree ready` and the Dashboard show a warning on the Worktree (`the Bucket shop--feature-x may not allow browsers on the Worktree's Aliases since they changed: …`); `lane link` tries again.
 
 ### 10.5 Buckets in new Worktrees
 

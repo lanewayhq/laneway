@@ -143,6 +143,15 @@ func (d *Daemon) bucketsMade(dir string, buckets []worktreeBucket) bool {
 	return !slices.ContainsFunc(buckets, func(b worktreeBucket) bool { return !slices.Contains(d.madeBuckets[dir], b.Name) })
 }
 
+// bucketUnmade records that the Bucket name of the Worktree at dir isn't as
+// its setup made it any more, such as when configuring it again failed, so
+// that linking its Project again runs its Bucket steps (prepareNewBuckets).
+func (d *Daemon) bucketUnmade(dir, name string) {
+	d.madeBucketsMu.Lock()
+	defer d.madeBucketsMu.Unlock()
+	d.madeBuckets[dir] = slices.DeleteFunc(slices.Clone(d.madeBuckets[dir]), func(n string) bool { return n == name })
+}
+
 // forgetMadeBuckets forgets what bucketMade recorded for the Worktree at
 // dir, which is gone or Preparing anew.
 func (d *Daemon) forgetMadeBuckets(dir string) {
@@ -153,7 +162,8 @@ func (d *Daemon) forgetMadeBuckets(dir string) {
 
 // prepareNewBuckets makes the Buckets the config of the Project p's Ready
 // Worktrees gives them and their setup hasn't made, such as once p declares
-// an object storage Service or another [buckets.<name>]: a Ready Worktree
+// an object storage Service or another [buckets.<name>], and configures again
+// those that couldn't follow an Alias change (bucketUnmade): a Ready Worktree
 // isn't prepared again, so each such one runs its Bucket steps again
 // (Preparer.Refresh), Preparing until they end. A Bucket that exists is left
 // as it is and configured again, so a Worktree whose Buckets this daemon
@@ -218,9 +228,16 @@ func (d *Daemon) worktreeOriginsChanged(p registry.Project, w worktreeRef) {
 			return
 		}
 		for _, b := range d.worktreeBuckets(p, w, cfg) {
-			if err := d.reconfigureBucket(s.ctx, p, w, b); err != nil {
-				d.log.Warn("updating a Bucket's CORS origins", "project", p.Name, "worktree", w.dir, "bucket", b.Name, "err", err)
+			err := d.reconfigureBucket(s.ctx, p, w, b)
+			if err == nil || s.ctx.Err() != nil {
+				continue
 			}
+			d.log.Warn("updating a Bucket's CORS origins", "project", p.Name, "worktree", w.dir, "bucket", b.Name, "err", err)
+			// Linking the Project again runs its Bucket steps
+			// (prepareNewBuckets), which configure it.
+			d.bucketUnmade(w.dir, b.Name)
+			d.preparer.AddWarning(w.dir, fmt.Sprintf("the Bucket %s may not allow browsers on the Worktree's Aliases since they changed: %v; "+
+				"run `lane link` to try again", b.Name, err))
 		}
 	})
 }
