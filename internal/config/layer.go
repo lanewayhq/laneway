@@ -311,7 +311,11 @@ func (l Layer) checkEngines(engines engine.Known) error {
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(l.Services)) {
-		if _, err := engines.Lookup(name); err != nil {
+		e, err := engines.Lookup(name)
+		if err != nil {
+			return fmt.Errorf("services.%s: %w", key(name), err)
+		}
+		if _, err := e.ImageRef(l.Services[name]); err != nil {
 			return fmt.Errorf("services.%s: %w", key(name), err)
 		}
 	}

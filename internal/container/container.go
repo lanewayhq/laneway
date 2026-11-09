@@ -11,6 +11,7 @@ package container
 import (
 	"context"
 	"errors"
+	"strings"
 )
 
 // Engine runs containers.
@@ -19,8 +20,12 @@ type Engine interface {
 	Pull(ctx context.Context, image string) error
 	// Start makes the container described by spec run: it creates it if
 	// it doesn't exist (pulling the image first if needed) and starts it if
-	// it isn't running. It returns the host address ("127.0.0.1:<port>")
-	// that spec.Port is published on, which may change on every start.
+	// it isn't running. A container that exists but was created from
+	// another image than spec.Image is removed and created again from
+	// spec.Image, keeping its volume (and so its data): that is how a
+	// Service moves to a new image. It returns the host address
+	// ("127.0.0.1:<port>") that spec.Port is published on, which may change
+	// on every start.
 	//
 	// The container may not be ready when Start returns: the published
 	// port can accept connections before anything listens inside.
@@ -67,6 +72,19 @@ type Spec struct {
 	// the container being stopped (or re-created).
 	Volume       string
 	VolumeTarget string
+}
+
+// Repository is image's repository, without its tag or digest:
+// "docker.io/library/redis" for "docker.io/library/redis:7" or
+// "docker.io/library/redis@sha256:…". A registry's port is kept.
+func Repository(image string) string {
+	if i := strings.Index(image, "@"); i >= 0 {
+		return image[:i]
+	}
+	if i := strings.LastIndex(image, ":"); i > strings.LastIndex(image, "/") {
+		return image[:i]
+	}
+	return image
 }
 
 // ErrUnavailable means no container engine could be reached.

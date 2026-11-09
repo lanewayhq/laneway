@@ -195,7 +195,10 @@ func (f *catalogFetch) fetch(name string) {
 // installs it, replacing the installed version, if any.
 func (d *Daemon) installRelease(ctx context.Context, name string, r catalog.Release) (plugin.Plugin, error) {
 	return d.withRelease(ctx, name, r, func(dir string) (plugin.Plugin, error) {
-		p, _, err := d.plugins.AddFrom(dir, plugin.CatalogSource)
+		p, replaced, err := d.plugins.AddFrom(dir, plugin.CatalogSource)
+		if err == nil && replaced != nil {
+			d.updateServices(ctx, p)
+		}
 		return p, err
 	})
 }
