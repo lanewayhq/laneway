@@ -82,11 +82,22 @@ func pgServerOf(spec container.Spec, data *Volume) *pgServer {
 // as -tA prints it (one row per line, no headers), with -q leaving out
 // command tags. An error goes to stderr with its SQLSTATE when VERBOSITY is
 // verbose, and psql exits 1; a login refused exits 2.
+//
+// It also answers pg_isready (ready as soon as the container is), and the
+// Postgres Engine manifest's clone script, sh -c '… CREATE DATABASE …
+// TEMPLATE …' sh <user> <from> <to>, as that script does: CREATE DATABASE
+// <to> TEMPLATE <from>, closing the other sessions connected to <from> and
+// trying again while it is in use, up to 5 times.
 func PostgresCommands(_ context.Context, spec container.Spec, data *Volume, cmd []string) container.Output {
-	if cmd[0] != "psql" {
+	pg := pgServerOf(spec, data)
+	switch {
+	case cmd[0] == "pg_isready":
+		return container.Output{}
+	case cmd[0] == "sh" && len(cmd) == 7 && cmd[1] == "-c" && strings.Contains(cmd[2], "TEMPLATE"):
+		return pg.cloneScript(cmd[4], cmd[5], cmd[6])
+	case cmd[0] != "psql":
 		return container.Output{ExitCode: 127, Stderr: fmt.Appendf(nil, "%s: command not found\n", cmd[0])}
 	}
-	pg := pgServerOf(spec, data)
 	var user, database, sql string
 	var quiet, verbose bool
 	for i := 1; i < len(cmd); i++ {
@@ -144,6 +155,31 @@ func PostgresCommands(_ context.Context, spec container.Spec, data *Volume, cmd 
 		out.Stdout = []byte(res.tag + "\n")
 	}
 	return out
+}
+
+// cloneScript does what the Postgres Engine manifest's clone script does.
+func (pg *pgServer) cloneScript(user, from, to string) container.Output {
+	pg.mu.Lock()
+	defer pg.mu.Unlock()
+	if user != pg.user && user != "postgres" {
+		return container.Output{ExitCode: 1, Stderr: fmt.Appendf(nil, "psql: error: FATAL:  role %q does not exist\n", user)}
+	}
+	s := &pgSession{pid: pg.nextPID.Add(1) + 100, database: "postgres"}
+	for attempt := 1; ; attempt++ {
+		res := pg.query(s, fmt.Sprintf(`CREATE DATABASE "%s" TEMPLATE "%s"`, to, from))
+		if res.code == "" {
+			return container.Output{}
+		}
+		message := fmt.Sprintf("ERROR:  %s: %s", res.code, res.message)
+		if res.code != "55006" {
+			return container.Output{ExitCode: 1, Stderr: []byte(message + "\n")}
+		}
+		if attempt == 5 {
+			return container.Output{ExitCode: 1, Stderr: fmt.Appendf(nil,
+				"%s is still in use after closing its connections %d times: %s\n", from, attempt-1, message)}
+		}
+		pg.terminate(from, s)
+	}
 }
 
 // pgDatabase is a fake database: table → its rows (one text column).

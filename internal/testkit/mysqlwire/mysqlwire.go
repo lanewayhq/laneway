@@ -1,7 +1,8 @@
 // Package mysqlwire is a small MySQL client: just enough of the client/server
 // protocol for the tests to read and change databases in Laneway's MySQL
-// Service, as an app would. Laneway itself manages them with the mysql
-// client inside the Service's container (see database.MySQL). It logs in
+// Service, as an app would. Laneway itself carries no MySQL client: it
+// manages databases with the commands in the MySQL Engine's manifest, run
+// inside the Service's container (package engine). It logs in
 // (caching_sha2_password, including the RSA exchange a plain-TCP connection
 // needs the first time, and mysql_native_password) and runs text queries,
 // whose results come back as text.

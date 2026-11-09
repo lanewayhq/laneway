@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/lanewayhq/laneway/internal/service"
+	"github.com/lanewayhq/laneway/internal/engine"
 )
 
 // Variables are the names a template can use as {name}. Every Worktree has a
@@ -27,7 +27,7 @@ var Variables = append([]string{
 },
 	// Each Service's host, port and credentials, such as {redis_port},
 	// which only have values in Worktrees whose config uses the Service.
-	service.AllVariables()...)
+	engine.AllVariables()...)
 
 // placeholder matches what a template treats specially: an escaped brace,
 // or {name}. Any other brace is literal.

@@ -7,7 +7,6 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/lanewayhq/laneway/internal/config"
-	"github.com/lanewayhq/laneway/internal/service"
 )
 
 // railsRedis adds Redis when the app uses it in development: for Sidekiq,
@@ -21,7 +20,7 @@ func railsRedis(l *config.Layer, dir string) {
 	if l.Services == nil {
 		l.Services = map[string]string{}
 	}
-	l.Services[service.Redis.Name] = service.Redis.DefaultVersion
+	l.Services["redis"] = defaultVersion("redis")
 	l.Env["REDIS_URL"] = "redis://:{redis_password}@{redis_host}:{redis_port}"
 }
 

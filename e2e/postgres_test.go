@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/gitfixture"
-	"github.com/lanewayhq/laneway/internal/pgwire"
 	"github.com/lanewayhq/laneway/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/testkit/pgwire"
 )
 
 // postgresProject is a Project whose database is a Postgres database, with

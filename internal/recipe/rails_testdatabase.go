@@ -1,6 +1,6 @@
 package recipe
 
-import "github.com/lanewayhq/laneway/internal/service"
+import "github.com/lanewayhq/laneway/internal/engine"
 
 var _ TestEnvRecipe = Rails{}
 
@@ -22,11 +22,11 @@ func (Rails) AutoTestDatabase(dir string) bool {
 	if err != nil {
 		return false
 	}
-	engine, ok := railsAdapters[db.adapter]
+	dbEngine, ok := railsAdapters[db.adapter]
 	if !ok {
 		return false
 	}
-	_, inService := service.Lookup(engine)
+	_, inService := engine.Lookup(dbEngine)
 	return inService
 }
 

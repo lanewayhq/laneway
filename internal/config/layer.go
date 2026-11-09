@@ -15,8 +15,8 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/lanewayhq/laneway/internal/database"
+	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/envpatch"
-	"github.com/lanewayhq/laneway/internal/service"
 )
 
 // LocalFileName is the gitignored per-developer config file. It overrides
@@ -275,9 +275,9 @@ func (l Layer) validate() error {
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(l.Services)) {
-		if _, ok := service.Lookup(name); !ok {
+		if _, ok := engine.Lookup(name); !ok {
 			return fmt.Errorf("services.%s: Laneway has no Service %q; the Services are %s",
-				key(name), name, strings.Join(service.Names(), ", "))
+				key(name), name, strings.Join(engine.Names(), ", "))
 		}
 		if !serviceVersion.MatchString(l.Services[name]) {
 			return fmt.Errorf("services.%s must be a version, such as \"7\" or \"7.2\", not %q", name, l.Services[name])

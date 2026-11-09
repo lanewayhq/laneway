@@ -1,3 +1,12 @@
+// Package service is the Service Manager (ADR-0001, ADR-0005): Services are
+// shared containers, one per Engine and version (redis:7), started on the
+// first connection to the port Laneway listens on for them and stopped once
+// they have had no connections and no running Worktree depending on them
+// for the Service idle timeout.
+//
+// What a Service of an Engine runs, and when it is ready, is the Engine's
+// manifest (package engine): the Manager turns it into a container and runs
+// its readiness probes.
 package service
 
 import (
@@ -9,6 +18,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -18,6 +28,7 @@ import (
 	"github.com/lanewayhq/laneway/internal/activity"
 	"github.com/lanewayhq/laneway/internal/clock"
 	"github.com/lanewayhq/laneway/internal/container"
+	"github.com/lanewayhq/laneway/internal/engine"
 )
 
 // Ref names a Service: an engine (by name) at a version, such as redis at
@@ -32,7 +43,7 @@ func (r Ref) Name() string { return r.Engine + ":" + r.Version }
 
 // Service is an Engine at a version, listening on Port.
 type Service struct {
-	Engine  *Engine
+	Engine  *engine.Manifest
 	Version string
 	Port    int
 }
@@ -197,12 +208,8 @@ func (m *Manager) spec(svc Service) container.Spec {
 		Port:         e.Port,
 		Volume:       name,
 		VolumeTarget: e.DataDir,
-	}
-	if e.Env != nil {
-		spec.Env = e.Env(svc.Version)
-	}
-	if e.Cmd != nil {
-		spec.Cmd = e.Cmd(svc.Version)
+		Env:          e.ContainerEnv(svc.Version),
+		Cmd:          e.ContainerCmd(svc.Version),
 	}
 	if e.WebPort != 0 {
 		spec.ExtraPorts = []int{e.WebPort}
@@ -495,10 +502,7 @@ func (s *managed) ensure(ctx context.Context) (string, error) {
 	defer cancel()
 	addr, err := s.m.opts.Engine.Start(ctx, s.spec)
 	if err == nil {
-		err = s.waitReady(ctx, addr, s.Engine.Probe)
-	}
-	if err == nil && s.Engine.WebPort != 0 {
-		err = s.waitWebReady(ctx)
+		err = s.waitReady(ctx, addr)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -516,51 +520,50 @@ func (s *managed) ensure(ctx context.Context) (string, error) {
 // probeInterval is how often a starting Service is probed.
 const probeInterval = 50 * time.Millisecond
 
-// waitWebReady waits until the engine's web UI answers HTTP, so the first
-// page of it doesn't fail while the engine is starting.
-func (s *managed) waitWebReady(ctx context.Context) error {
-	addr, running, err := s.m.opts.Engine.Running(ctx, s.spec.Name, s.Engine.WebPort)
-	if err != nil {
-		return err
-	}
-	if !running || addr == "" {
-		return fmt.Errorf("its web UI (port %d) isn't published", s.Engine.WebPort)
-	}
-	return s.waitReady(ctx, addr, probeHTTP)
-}
-
-// probeHTTP sends a request for /: any HTTP response means the server is
-// up.
-func probeHTTP(ctx context.Context, conn net.Conn) error {
-	if _, err := io.WriteString(conn, "GET / HTTP/1.0\r\nHost: localhost\r\n\r\n"); err != nil {
-		return err
-	}
-	line, err := bufio.NewReader(conn).ReadString('\n')
-	if err != nil {
-		return fmt.Errorf("http: %w", err)
-	}
-	if !strings.HasPrefix(line, "HTTP/") {
-		return fmt.Errorf("http: %s", strings.TrimSpace(line))
+// waitReady waits until every one of the Engine's readiness probes passes,
+// in order, with the container's Port published at addr.
+func (s *managed) waitReady(ctx context.Context, addr string) error {
+	for _, p := range s.Engine.Ready {
+		for {
+			err := s.probe(ctx, addr, p)
+			if err == nil {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("it wasn't ready within %s (last check: %v)", s.m.opts.StartTimeout, err)
+			case <-time.After(probeInterval):
+			}
+		}
 	}
 	return nil
 }
 
-// waitReady probes addr with probe until the engine answers.
-func (s *managed) waitReady(ctx context.Context, addr string, probe func(context.Context, net.Conn) error) error {
-	for {
-		err := s.probe(ctx, addr, probe)
-		if err == nil {
-			return nil
+// probe checks p once.
+func (s *managed) probe(ctx context.Context, addr string, p engine.Probe) error {
+	if p.Kind == engine.Command {
+		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		out, err := s.m.opts.Engine.Exec(ctx, s.spec.Name, s.Engine.Expand(p.Command, map[string]string{"version": s.Version}))
+		if err != nil {
+			return err
 		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("it wasn't ready within %s (last check: %v)", s.m.opts.StartTimeout, err)
-		case <-time.After(probeInterval):
+		if out.ExitCode != 0 {
+			return fmt.Errorf("%s exited with status %d: %s", p.Command[0], out.ExitCode,
+				cmp.Or(strings.TrimSpace(string(out.Stderr)), strings.TrimSpace(string(out.Stdout))))
 		}
+		return nil
 	}
-}
-
-func (s *managed) probe(ctx context.Context, addr string, probe func(context.Context, net.Conn) error) error {
+	if p.Port != s.Engine.Port {
+		published, running, err := s.m.opts.Engine.Running(ctx, s.spec.Name, p.Port)
+		if err != nil {
+			return err
+		}
+		if !running || published == "" {
+			return fmt.Errorf("port %d isn't published", p.Port)
+		}
+		addr = published
+	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	var d net.Dialer
@@ -571,7 +574,41 @@ func (s *managed) probe(ctx context.Context, addr string, probe func(context.Con
 	defer conn.Close()
 	deadline, _ := ctx.Deadline()
 	conn.SetDeadline(deadline)
-	return probe(ctx, conn)
+	r := bufio.NewReader(conn)
+	switch p.Kind {
+	case engine.Banner:
+		line, err := r.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("reading its banner: %w", err)
+		}
+		if !strings.HasPrefix(line, p.Expect) {
+			return fmt.Errorf("its banner is %q, not %s…", strings.TrimSpace(line), p.Expect)
+		}
+	case engine.RedisPing:
+		if _, err := io.WriteString(conn, "PING\r\n"); err != nil {
+			return err
+		}
+		line, err := r.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("PING: %w", err)
+		}
+		if strings.HasPrefix(line, "-LOADING") || !(strings.HasPrefix(line, "+") || strings.HasPrefix(line, "-")) {
+			return fmt.Errorf("PING: %s", strings.TrimSpace(line))
+		}
+	case engine.HTTP:
+		if _, err := fmt.Fprintf(conn, "GET %s HTTP/1.0\r\nHost: localhost\r\n\r\n", p.Path); err != nil {
+			return err
+		}
+		resp, err := http.ReadResponse(r, nil)
+		if err != nil {
+			return fmt.Errorf("GET %s: %w", p.Path, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != p.Status {
+			return fmt.Errorf("GET %s: %s, want %d", p.Path, resp.Status, p.Status)
+		}
+	}
+	return nil
 }
 
 // goIdle is called by the Activity Tracker once the Service has had no

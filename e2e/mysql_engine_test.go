@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/api"
-	"github.com/lanewayhq/laneway/internal/mysqlwire"
 	"github.com/lanewayhq/laneway/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/testkit/mysqlwire"
 )
 
 // waitForSetup waits for the Worktree at dir to be set up, for longer than
