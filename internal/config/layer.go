@@ -65,6 +65,31 @@ type Layer struct {
 	Worktree *WorktreeLayer `toml:"worktree"`
 	// Database is the Project's database ([database] table).
 	Database *DatabaseLayer `toml:"database"`
+	// Plugins are Plugins the Project uses, by name, besides those whose
+	// Recipe, Integrations or Engines it uses: their hooks fire in it. A
+	// machine-wide Plugin may only be named in laneway.local.toml (or the
+	// global config), never in laneway.toml (see Layer.Personal).
+	Plugins []string `toml:"plugins"`
+}
+
+// Personal reports whether the layer is the developer's own config,
+// laneway.local.toml, rather than committed config or a Recipe's: only
+// personal config may turn on a machine-wide Plugin.
+func (l Layer) Personal() bool {
+	return filepath.Base(l.Source) == LocalFileName
+}
+
+// pluginName is what a Plugin's name looks like (see plugin.Manifest.Name).
+var pluginName = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+
+// checkPluginNames checks the names a plugins key lists.
+func checkPluginNames(names []string) error {
+	for i, n := range names {
+		if !pluginName.MatchString(n) {
+			return fmt.Errorf("plugins[%d]: %q isn't a Plugin name: use lowercase letters, digits and dashes, starting with a letter", i, n)
+		}
+	}
+	return nil
 }
 
 // WorktreeLayer is the [worktree] table: where `lane worktree add` creates
@@ -292,6 +317,9 @@ func (l Layer) validate() error {
 		return fmt.Errorf("idle_timeout must be positive, such as \"30m\", not %s", *l.IdleTimeout)
 	}
 	if err := l.Database.validate(); err != nil {
+		return err
+	}
+	if err := checkPluginNames(l.Plugins); err != nil {
 		return err
 	}
 	if err := l.Worktree.validate(); err != nil {

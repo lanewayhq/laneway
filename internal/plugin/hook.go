@@ -141,8 +141,7 @@ func (h *Host) Hooking(event string, res recipe.Resolved) []Plugin {
 
 // usedBy reports whether a Project whose config is res uses the Plugin, so
 // its hooks fire there (see UsedBy, which also decides whether the Plugin
-// may be removed). Plugins named in config should count too, once config
-// can name them.
+// may be removed).
 func (p Plugin) usedBy(res recipe.Resolved) bool {
 	return len(p.UsedBy(res)) > 0
 }

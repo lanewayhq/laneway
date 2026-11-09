@@ -78,6 +78,23 @@ func TestRemovingAPluginWhoseEngineALinkedProjectUsesIsRefused(t *testing.T) {
 	assertContains(t, res.Stderr, "  rm-kv: its Service kv:1\n")
 }
 
+func TestRemovingAPluginOnlyALinkedProjectsLanewayTomlNamesIsRefused(t *testing.T) {
+	t.Parallel()
+	server := newRequestLog(t)
+	d := testkit.StartDaemon(t)
+	d.MustRunCLI(d.Home, "plugin", "add", "--yes", notifyPlugin(t, server))
+	repo := notifiedRepo(t, "rm-named", server, "laneway.toml", "plugins = [\"notify\"]\n")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+
+	res := d.RunCLI(d.Home, "plugin", "remove", "notify")
+
+	if res.ExitCode == 0 {
+		t.Fatalf("removing a Plugin a Project's laneway.toml names exited 0:\n%s", res.Output())
+	}
+	assertContains(t, res.Stderr, "Plugin notify is used by these Linked Projects, so it wasn't removed:")
+	assertContains(t, res.Stderr, "  rm-named: its config turns it on (plugins)\n")
+}
+
 func TestRemovingAnEnginesPluginStopsItsServiceAndKeepsItsData(t *testing.T) {
 	t.Parallel()
 	d := kvDaemon(t)

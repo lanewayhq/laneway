@@ -20,6 +20,9 @@ type Global struct {
 	// and without running Worktrees using it before it is stopped, such
 	// as "1h".
 	ServiceIdleTimeout *time.Duration `toml:"service_idle_timeout"`
+	// Plugins are the machine-wide Plugins (added with `lane plugin add
+	// --global`) turned on in every Project, by name.
+	Plugins []string `toml:"plugins"`
 	// Warnings are problems that don't stop the file loading, such as
 	// unknown keys, each prefixed with the file's path.
 	Warnings []string `toml:"-"`
@@ -48,6 +51,9 @@ func LoadGlobal(path string) (Global, error) {
 	}
 	if g.ServiceIdleTimeout != nil && *g.ServiceIdleTimeout <= 0 {
 		return Global{}, fmt.Errorf("%s: service_idle_timeout must be positive, such as \"1h\", not %s", path, *g.ServiceIdleTimeout)
+	}
+	if err := checkPluginNames(g.Plugins); err != nil {
+		return Global{}, fmt.Errorf("%s: %w", path, err)
 	}
 	for _, key := range md.Undecoded() {
 		g.Warnings = append(g.Warnings, fmt.Sprintf("%s: unknown key %q", path, key.String()))

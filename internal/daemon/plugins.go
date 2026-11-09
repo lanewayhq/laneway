@@ -39,15 +39,20 @@ func (d *Daemon) addPlugin(req api.AddPluginRequest) (api.AddPluginResponse, err
 		if err != nil {
 			return api.AddPluginResponse{}, &api.Error{Code: api.CodeInvalidPlugin, Message: err.Error()}
 		}
+		p.Global = req.Global
 		res.Plugin = apiPlugin(p)
 		replaced(p.Name)
 		return res, nil
 	}
-	p, old, err := d.plugins.Add(req.Source)
+	add := d.plugins.Add
+	if req.Global {
+		add = d.plugins.AddGlobal
+	}
+	p, old, err := add(req.Source)
 	if err != nil {
 		return api.AddPluginResponse{}, &api.Error{Code: api.CodeInvalidPlugin, Message: err.Error()}
 	}
-	d.log.Info("Plugin added", "plugin", p.Name, "version", p.Version, "source", p.Source, "sha256", p.SHA256)
+	d.log.Info("Plugin added", "plugin", p.Name, "version", p.Version, "source", p.Source, "sha256", p.SHA256, "global", p.Global)
 	res.Plugin = apiPlugin(p)
 	if old != nil {
 		o := apiPlugin(*old)
@@ -57,7 +62,7 @@ func (d *Daemon) addPlugin(req api.AddPluginRequest) (api.AddPluginResponse, err
 }
 
 func apiPlugin(p plugin.Plugin) api.Plugin {
-	ap := api.Plugin{Name: p.Name, Version: p.Version, Source: p.Source, SHA256: p.SHA256,
+	ap := api.Plugin{Name: p.Name, Version: p.Version, Source: p.Source, SHA256: p.SHA256, Global: p.Global,
 		Recipes: []api.PluginRecipe{}, Integrations: []api.PluginIntegration{}, Commands: []api.PluginCommand{}, Engines: []api.PluginEngine{}, Generators: []string{}, Hooks: []string{}, Effects: []api.PluginEffect{}, HTTPHosts: []string{}}
 	for _, r := range p.Recipes {
 		ap.Recipes = append(ap.Recipes, api.PluginRecipe{Name: r.Name, Detects: r.Detect.String()})
