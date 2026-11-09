@@ -87,6 +87,10 @@ func printInfo(env Env, info api.Info) error {
 		}
 	}
 	fmt.Fprintf(tw, "  State\t%s\n", cmp.Or(info.State, "-"))
+	fmt.Fprintf(tw, "  Recipe\t%s\n", cmp.Or(info.Recipe, "-"))
+	if len(info.Integrations) > 0 {
+		fmt.Fprintf(tw, "  Integrations\t%s\n", strings.Join(info.Integrations, " "))
+	}
 	if info.ConfigError != "" {
 		fmt.Fprintf(tw, "  Config\t%s\n", info.ConfigError)
 	}

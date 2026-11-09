@@ -27,6 +27,7 @@ func (d *Daemon) info(ctx context.Context, dir string) (api.Info, error) {
 		State:         d.worktreeState(wt.Domain),
 		Processes:     []api.InfoProcess{},
 		Services:      []api.InfoService{},
+		Integrations:  []string{},
 	}
 	for _, domain := range wt.Worktree.Aliases {
 		info.Aliases = append(info.Aliases, api.InfoAlias{Domain: domain, URL: domainURL(domain)})
@@ -50,6 +51,8 @@ func (d *Daemon) info(ctx context.Context, dir string) (api.Info, error) {
 	}
 	if cfgErr == nil {
 		info.Services = d.infoServices(cfg.Services)
+		info.Recipe = cfg.Recipe
+		info.Integrations = orEmpty(cfg.Integrations)
 	} else {
 		info.ConfigError = cfgErr.Error()
 	}

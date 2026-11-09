@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/lanewayhq/laneway/internal/config"
 	"github.com/lanewayhq/laneway/internal/gitrepo"
@@ -33,7 +34,7 @@ func runInit(ctx context.Context, env Env, args []string) error {
 	}
 	path := filepath.Join(checkout.Dir, config.FileName)
 
-	in := recipe.Input{Dir: checkout.Dir, Recipes: recipe.Builtin}
+	in := recipe.Input{Dir: checkout.Dir, Recipes: recipe.Builtin, Integrations: recipe.BuiltinIntegrations}
 	committed, err := config.LoadLayer(path)
 	switch {
 	case err == nil && !*force:
@@ -65,8 +66,18 @@ func runInit(ctx context.Context, env Env, args []string) error {
 
 func writeInitHeader(buf *bytes.Buffer, res recipe.Resolved) {
 	fmt.Fprintf(buf, "# Laneway config for this Project, written by `lane init`.\n")
+	var from []string
 	if res.Recipe != "" {
-		fmt.Fprintf(buf, "# These are the %s Recipe's defaults plus your config. Edit them freely.\n", res.Recipe)
+		from = append(from, "the "+res.Recipe+" Recipe's")
+	}
+	switch n := len(res.Integrations); {
+	case n == 1:
+		from = append(from, "the "+res.Integrations[0]+" Integration's")
+	case n > 1:
+		from = append(from, "the "+strings.Join(res.Integrations[:n-1], ", ")+" and "+res.Integrations[n-1]+" Integrations'")
+	}
+	if len(from) > 0 {
+		fmt.Fprintf(buf, "# These are %s defaults plus your config. Edit them freely.\n", strings.Join(from, " and "))
 	}
 	fmt.Fprintf(buf, "# For personal settings, use %s and keep it out of git.\n", config.LocalFileName)
 	if len(res.Processes) == 0 {
