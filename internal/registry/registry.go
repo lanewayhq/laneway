@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/naming"
 	"github.com/lanewayhq/laneway/internal/service"
 )
@@ -73,6 +74,12 @@ func Open(path string) (*Registry, error) {
 	if err := json.Unmarshal(data, &r.state); err != nil {
 		return nil, fmt.Errorf("reading registry %s: %w", path, err)
 	}
+	// Laneway once gave some Services a port above engine.MaxPort, which
+	// none can listen on: such a Service has no port, so it gets a fresh
+	// one. This is done on every Open rather than as a migration of
+	// Version: an older Laneway run on the file again could record such a
+	// port again without changing Version back.
+	r.state.Services = slices.DeleteFunc(r.state.Services, func(s Service) bool { return s.Port > engine.MaxPort })
 	return r, nil
 }
 
@@ -443,7 +450,8 @@ func (r *Registry) RemoveAlias(a Alias) error {
 }
 
 // Service is a Service and the port Laneway listens on for it. Once a
-// Service has a port it keeps it, so connection settings never change.
+// Service has a port it keeps it, so connection settings never change
+// (unless it is above engine.MaxPort: see Open).
 type Service struct {
 	service.Ref
 	Port int `json:"port"`

@@ -236,18 +236,32 @@ func (m *Manifest) Values(host string, port int) map[string]string {
 	return vars
 }
 
+// MaxPort is the highest TCP port.
+const MaxPort = 65535
+
 // Ports are the ports a Service of m at version may listen on, best first.
 // The default version gets the standard Port. Any other version gets a port
-// derived from the first three digits of the standard port and the
-// version's digits, such as redis:6 → 63706 and postgres:14 → 54314; a
-// version with more than two digits uses a hash of it instead. The others
-// are the rest of that block of 100, in order, for when the first is taken.
-// The port a Service gets is recorded in the Registry, so it never changes.
+// in a block of 100 picked by the standard port, at the version's digits,
+// such as redis:6 → 63706 and postgres:14 → 54314; a version with more than
+// two digits uses a hash of it instead. The block is the first three digits
+// of the standard port, as with those two, if the whole block is a port
+// (up to MaxPort). Otherwise it is 50000 plus 100 × the first two digits,
+// so the block of a high or 5-digit port is within 51000–59999: rustfs:2
+// (port 9000) → 59002, port 27017 → 527xx. The others are the rest of that block,
+// in order, for when the first is taken. The port a Service gets is
+// recorded in the Registry, so it never changes.
 func (m *Manifest) Ports(version string) []int {
 	if version == m.DefaultVersion {
 		return []int{m.Port}
 	}
 	base := m.Port / 10 * 100
+	if base+99 > MaxPort {
+		lead := m.Port
+		for lead >= 100 {
+			lead /= 10
+		}
+		base = 50000 + lead*100
+	}
 	digits := strings.Map(func(r rune) rune {
 		if r >= '0' && r <= '9' {
 			return r
@@ -302,10 +316,10 @@ func (m *Manifest) check() error {
 	case m.Image != "" && len(m.Versions) > 0:
 		return fmt.Errorf("image and [versions] are both set: give either the image repository, whose tags are the versions, " +
 			"or [versions], mapping each version to an image")
-	case m.Port < 1 || m.Port > 65535:
-		return fmt.Errorf("port must be the Engine's TCP port, 1 to 65535, not %d", m.Port)
-	case m.WebPort < 0 || m.WebPort > 65535:
-		return fmt.Errorf("web_port must be 1 to 65535, not %d", m.WebPort)
+	case m.Port < 1 || m.Port > MaxPort:
+		return fmt.Errorf("port must be the Engine's TCP port, 1 to %d, not %d", MaxPort, m.Port)
+	case m.WebPort < 0 || m.WebPort > MaxPort:
+		return fmt.Errorf("web_port must be 1 to %d, not %d", MaxPort, m.WebPort)
 	case !path.IsAbs(m.DataDir):
 		return fmt.Errorf("data_dir must be an absolute path in the container, not %q", m.DataDir)
 	case len(m.Ready) == 0:
