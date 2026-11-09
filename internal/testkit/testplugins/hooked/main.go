@@ -1,5 +1,6 @@
-// Command hooked is a test Plugin that hooks Preparing, Ready and Worktree
-// removed. Its Recipe detects Projects with a hooked file and adds nothing;
+// Command hooked is a test Plugin that can hook every event; its manifest
+// hooks Preparing, Ready and Worktree removed, and tests that need others
+// hook them with their own manifest. Its Recipe detects Projects with a hooked file and adds nothing;
 // its Integration hooked-tool, which its manifest doesn't declare (tests
 // that need it do), adds nothing either.
 // Each hook does what the mounted Worktree's hooks.json says for its event:
@@ -8,12 +9,16 @@
 //
 // returning the effects, or failing with the error. In effects' strings,
 // {event}, {project}, {project_path}, {worktree}, {worktree_path}, {main},
-// {domain} and {url} become the event's values.
+// {domain}, {url} and {previous_domain} become the event's values; so do
+// {process}, {process_command}, {process_port}, {exit} and {failed} for a
+// Process event, and {service}, {service_host} and {service_port} for a
+// Service event.
 package main
 
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -27,9 +32,19 @@ func main() {
 			"hooked-tool": func(sdk.Project) (sdk.IntegrationResult, error) { return sdk.IntegrationResult{}, nil },
 		},
 		Hooks: map[string]sdk.Hook{
-			sdk.EventPreparing:       hook,
-			sdk.EventReady:           hook,
-			sdk.EventWorktreeRemoved: hook,
+			sdk.EventLink:                 hook,
+			sdk.EventUnlink:               hook,
+			sdk.EventPreparing:            hook,
+			sdk.EventReady:                hook,
+			sdk.EventWorktreeRemoved:      hook,
+			sdk.EventPrimaryDomainChanged: hook,
+			sdk.EventProcessStarted:       hook,
+			sdk.EventProcessStopped:       hook,
+			sdk.EventProcessCrashed:       hook,
+			sdk.EventIdle:                 hook,
+			sdk.EventWoken:                hook,
+			sdk.EventServiceStarted:       hook,
+			sdk.EventServiceStopped:       hook,
 		},
 	})
 }
@@ -56,9 +71,20 @@ func hook(p sdk.Project, ev sdk.Event) ([]sdk.Effect, error) {
 	if w == nil {
 		w = &sdk.EventWorktree{}
 	}
+	proc := ev.Process
+	if proc == nil {
+		proc = &sdk.EventProcess{}
+	}
+	svc := ev.Service
+	if svc == nil {
+		svc = &sdk.EventService{}
+	}
 	r := strings.NewReplacer("{event}", ev.Name, "{project}", ev.Project.Name, "{project_path}", ev.Project.Path,
 		"{worktree}", w.Name, "{worktree_path}", w.Path, "{main}", strconv.FormatBool(w.Main),
-		"{domain}", w.Domain, "{url}", w.URL)
+		"{domain}", w.Domain, "{url}", w.URL, "{previous_domain}", w.PreviousDomain,
+		"{process}", proc.Name, "{process_command}", proc.Command, "{process_port}", fmt.Sprint(proc.Port),
+		"{exit}", proc.Exit, "{failed}", strconv.FormatBool(proc.Failed),
+		"{service}", svc.Name, "{service_host}", svc.Host, "{service_port}", fmt.Sprint(svc.Port))
 	for i, e := range s.Effects {
 		for j, arg := range e.Command {
 			e.Command[j] = r.Replace(arg)

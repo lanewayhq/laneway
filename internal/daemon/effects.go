@@ -31,10 +31,11 @@ type effectTarget struct {
 	project  registry.Project
 	worktree worktreeRef
 	// dir is where exec effects run: the Worktree's directory, or the
-	// main Worktree's for a removed Worktree.
+	// main Worktree's once it is gone.
 	dir string
-	// removed is true when the Worktree is gone, so it has no .env to set.
-	removed bool
+	// gone is why the Worktree has no .env for Laneway to set any more,
+	// such as "the Worktree was removed"; "" while it has.
+	gone string
 	// source names what returned the effects in errors and warnings, such
 	// as "Plugin tasks" or "Plugin notify's Ready hook".
 	source string
@@ -139,9 +140,9 @@ func (d *Daemon) execEffect(ctx context.Context, t *effectTarget, command []stri
 // backing up the original first. Keys the Env Patch owns are left to it,
 // with a warning, since laneway.toml's env decides them.
 func (d *Daemon) envEffect(t *effectTarget, env map[string]string, warn func(string)) error {
-	if t.removed {
-		warn(fmt.Sprintf("%s set %s, but the Worktree was removed, so there is no .env to set them in",
-			t.source, strings.Join(slices.Sorted(maps.Keys(env)), ", ")))
+	if t.gone != "" {
+		warn(fmt.Sprintf("%s set %s, but %s, so there is no .env to set them in",
+			t.source, strings.Join(slices.Sorted(maps.Keys(env)), ", "), t.gone))
 		return nil
 	}
 	cfg, err := d.effectConfig(t)

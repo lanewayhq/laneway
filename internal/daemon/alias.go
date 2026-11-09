@@ -78,6 +78,7 @@ func (d *Daemon) changeAliases(p registry.Project, w worktreeRef, change func() 
 	}
 	if before != after {
 		d.primaryDomainMoved(w.domain)
+		d.primaryDomainChanged(p, w, before)
 	}
 	return before != after, nil
 }
