@@ -27,6 +27,7 @@ clone = ["sh", "-c", "clone", "sh", "{from}", "{to}"]
 drop = ["sh", "-c", "drop", "sh", "{bucket}"]
 list = ["sh", "-c", "list --password={password}"]
 size = ["sh", "-c", "size", "sh", "{bucket}"]
+configure = ["sh", "-c", "configure", "sh", "{bucket}", "{public}", "{origins}"]
 `
 
 func TestAnEngineManifestMayDeclareBucketCommands(t *testing.T) {
@@ -46,6 +47,9 @@ func TestAnEngineManifestMayDeclareBucketCommands(t *testing.T) {
 	}
 	if got := m.Expand(b.Size, map[string]string{"bucket": "shop"}); !slices.Equal(got, []string{"sh", "-c", "size", "sh", "shop"}) {
 		t.Fatalf("expanded size command %q", got)
+	}
+	if got := m.Expand(b.Configure, map[string]string{"bucket": "shop-public", "public": "true", "origins": "https://shop.localhost https://feature.shop.localhost"}); !slices.Equal(got, []string{"sh", "-c", "configure", "sh", "shop-public", "true", "https://shop.localhost https://feature.shop.localhost"}) {
+		t.Fatalf("expanded configure command %q", got)
 	}
 	if got := m.Expand(b.List, nil); !slices.Equal(got, []string{"sh", "-c", "list --password=laneway"}) {
 		t.Fatalf("expanded list command %q", got)
@@ -78,7 +82,10 @@ func TestBucketCommandsLanewayCannotUseAreRefusedSayingWhy(t *testing.T) {
 	}{
 		{"no exists", without("exists"), "bucket.exists is missing"},
 		{"no create", without("create"), "bucket.create is missing"},
-		{"no clone", without("clone"), "bucket.clone is missing: the Bucket commands are exists, create, clone, drop, list and size"},
+		{"no clone", without("clone"), "bucket.clone is missing: the Bucket commands are exists, create, clone, configure, drop, list and size"},
+		{"no configure", without("configure"), "bucket.configure is missing"},
+		{"a copy's source in configure", strings.Replace(objectsManifest, `"{bucket}", "{public}"`, `"{from}", "{public}"`, 1), "bucket.configure uses {from}"},
+		{"origins in create", strings.Replace(objectsManifest, `"{bucket}", "{user}"`, `"{bucket}", "{origins}"`, 1), "bucket.create uses {origins}"},
 		{"no size", without("size"), "bucket.size is missing"},
 		{"a Bucket in clone", strings.Replace(objectsManifest, `"{from}", "{to}"`, `"{bucket}", "{to}"`, 1), "bucket.clone uses {bucket}"},
 		{"a copy's source in size", strings.Replace(objectsManifest, `"size", "sh", "{bucket}"`, `"size", "sh", "{from}"`, 1), "bucket.size uses {from}"},

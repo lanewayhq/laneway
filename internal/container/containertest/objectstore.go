@@ -2,6 +2,7 @@ package containertest
 
 import (
 	"context"
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -26,11 +27,18 @@ import (
 //	HEAD, PUT, DELETE /<bucket>              DELETE needs x-rustfs-force-delete unless it's empty
 //	GET /<bucket>                            ListBucketResult (prefix= narrows it)
 //	GET, PUT, DELETE /<bucket>?tagging
+//	GET, PUT, DELETE /<bucket>?policy        the policy JSON, kept as it was put
+//	GET, PUT, DELETE /<bucket>?cors          CORSConfiguration; its AllowedOrigins are kept
 //	HEAD, GET, PUT, DELETE /<bucket>/<key>
+//	OPTIONS /<bucket>[/<key>]                a CORS preflight (no signature needed)
 //
-// Every request but the health check must be signed: it needs an
+// Every other request but the health check must be signed: it needs an
 // Authorization header or an X-Amz-Signature query parameter, which the fake
-// doesn't check further. Errors are S3's XML errors with their codes.
+// doesn't check further. Only a GET or HEAD of an object in a Bucket whose
+// policy lets anyone (Principal "*") s3:GetObject its objects needs none. A
+// request whose Origin the Bucket's CORS configuration allows gets RustFS's
+// CORS headers, whatever its answer. Errors are S3's XML errors with their
+// codes.
 func ObjectStore(ln net.Listener, spec container.Spec, data *Volume) {
 	store := objectStoreOf(data)
 	http.Serve(ln, http.HandlerFunc(store.serveHTTP))
@@ -43,11 +51,19 @@ type objectStore struct {
 	buckets map[string]*fakeBucket
 }
 
-// fakeBucket is one Bucket in the fake object store. Later fields (its
-// policy, its CORS origins) record what the Bucket commands configure.
+// fakeBucket is one Bucket in the fake object store.
 type fakeBucket struct {
 	objects map[string]fakeObject
 	tags    map[string]string
+	// policy is its bucket policy, the JSON as it was put; "" for none.
+	policy string
+	// origins are the origins its CORS configuration allows; nil for no
+	// CORS configuration.
+	origins []string
+}
+
+func newFakeBucket() *fakeBucket {
+	return &fakeBucket{objects: map[string]fakeObject{}, tags: map[string]string{}}
 }
 
 // fakeObject is one object in a fakeBucket.
@@ -96,13 +112,26 @@ func (s *objectStore) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/health/ready" {
 		return
 	}
-	if !signed(r) {
-		writeS3Error(w, http.StatusForbidden, "AccessDenied", "Access Denied.")
-		return
-	}
 	bucket, key, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	b := s.buckets[bucket]
+	if r.Method == http.MethodOptions && b != nil {
+		b.servePreflight(w, r)
+		return
+	}
+	if origin := r.Header.Get("Origin"); b != nil && slices.Contains(b.origins, origin) {
+		// Even an error lets the page read it.
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Expose-Headers", "ETag")
+		w.Header().Set("Vary", "Origin")
+	}
+	anonymousRead := key != "" && (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
+		b != nil && b.anonymousRead(bucket)
+	if !signed(r) && !anonymousRead {
+		writeS3Error(w, http.StatusForbidden, "AccessDenied", "Access Denied.")
+		return
+	}
 	switch {
 	case bucket == "":
 		s.serveService(w, r)
@@ -136,14 +165,14 @@ func (s *objectStore) serveService(w http.ResponseWriter, r *http.Request) {
 // serveBucket answers a request for the Bucket called name.
 func (s *objectStore) serveBucket(w http.ResponseWriter, r *http.Request, name string) {
 	b := s.buckets[name]
-	if r.Method == http.MethodPut && !r.URL.Query().Has("tagging") {
+	if q := r.URL.Query(); r.Method == http.MethodPut && !q.Has("tagging") && !q.Has("policy") && !q.Has("cors") {
 		switch {
 		case !validBucketName(name):
 			writeS3Error(w, http.StatusBadRequest, "InvalidBucketName", "The specified bucket is not valid.")
 		case b != nil:
 			writeS3Error(w, http.StatusConflict, "BucketAlreadyOwnedByYou", "Your previous request to create the named bucket succeeded and you already own it.")
 		default:
-			s.buckets[name] = &fakeBucket{objects: map[string]fakeObject{}, tags: map[string]string{}}
+			s.buckets[name] = newFakeBucket()
 		}
 		return
 	}
@@ -155,8 +184,15 @@ func (s *objectStore) serveBucket(w http.ResponseWriter, r *http.Request, name s
 		writeS3Error(w, http.StatusNotFound, "NoSuchBucket", "The specified bucket does not exist")
 		return
 	}
-	if r.URL.Query().Has("tagging") {
+	switch q := r.URL.Query(); {
+	case q.Has("tagging"):
 		b.serveTagging(w, r)
+		return
+	case q.Has("policy"):
+		b.servePolicy(w, r)
+		return
+	case q.Has("cors"):
+		b.serveCORS(w, r)
 		return
 	}
 	switch r.Method {
@@ -234,6 +270,138 @@ func (b *fakeBucket) serveTagging(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (b *fakeBucket) servePolicy(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		if b.policy == "" {
+			writeS3Error(w, http.StatusNotFound, "NoSuchBucketPolicy", "The bucket policy does not exist")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, b.policy)
+	case http.MethodPut:
+		body, err := io.ReadAll(r.Body)
+		if err != nil || !json.Valid(body) {
+			writeS3Error(w, http.StatusBadRequest, "MalformedPolicy", "Policies must be valid JSON.")
+			return
+		}
+		b.policy = string(body)
+		w.WriteHeader(http.StatusNoContent)
+	case http.MethodDelete:
+		b.policy = ""
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		writeS3Error(w, http.StatusMethodNotAllowed, "MethodNotAllowed", "The specified method is not allowed.")
+	}
+}
+
+// bucketPolicy is the part of an S3 bucket policy the fake reads.
+type bucketPolicy struct {
+	Statement []struct {
+		Effect    string
+		Principal json.RawMessage
+		Action    stringOrList
+		Resource  stringOrList
+	}
+}
+
+// stringOrList is a policy value that may be one string or a list of them.
+type stringOrList []string
+
+func (s *stringOrList) UnmarshalJSON(data []byte) error {
+	var one string
+	if json.Unmarshal(data, &one) == nil {
+		*s = []string{one}
+		return nil
+	}
+	return json.Unmarshal(data, (*[]string)(s))
+}
+
+// anonymousRead reports whether b's policy lets anyone, unsigned, get the
+// objects in it (b is called name): a statement allowing s3:GetObject on
+// arn:aws:s3:::<name>/* to the Principal "*" or {"AWS": "*"}.
+func (b *fakeBucket) anonymousRead(name string) bool {
+	var p bucketPolicy
+	if b.policy == "" || json.Unmarshal([]byte(b.policy), &p) != nil {
+		return false
+	}
+	for _, st := range p.Statement {
+		var aws struct{ AWS stringOrList }
+		anyone := string(st.Principal) == `"*"` ||
+			json.Unmarshal(st.Principal, &aws) == nil && slices.Contains(aws.AWS, "*")
+		if st.Effect == "Allow" && anyone && slices.Contains(st.Action, "s3:GetObject") &&
+			slices.Contains(st.Resource, "arn:aws:s3:::"+name+"/*") {
+			return true
+		}
+	}
+	return false
+}
+
+// corsConfiguration is S3's CORSConfiguration document, as far as the fake
+// keeps it: the origins its rules allow.
+type corsConfiguration struct {
+	XMLName xml.Name `xml:"CORSConfiguration"`
+	Rules   []struct {
+		Origins []string `xml:"AllowedOrigin"`
+	} `xml:"CORSRule"`
+}
+
+func (b *fakeBucket) serveCORS(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		if b.origins == nil {
+			writeS3Error(w, http.StatusNotFound, "NoSuchCORSConfiguration", "The CORS configuration does not exist")
+			return
+		}
+		var c corsConfiguration
+		c.Rules = append(c.Rules, struct {
+			Origins []string `xml:"AllowedOrigin"`
+		}{b.origins})
+		w.Header().Set("Content-Type", "application/xml")
+		xml.NewEncoder(w).Encode(c)
+	case http.MethodPut:
+		var c corsConfiguration
+		if err := xml.NewDecoder(r.Body).Decode(&c); err != nil {
+			writeS3Error(w, http.StatusBadRequest, "MalformedXML", err.Error())
+			return
+		}
+		// Each PUT replaces the whole configuration.
+		b.origins = []string{}
+		for _, rule := range c.Rules {
+			b.origins = append(b.origins, rule.Origins...)
+		}
+	case http.MethodDelete:
+		b.origins = nil
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		writeS3Error(w, http.StatusMethodNotAllowed, "MethodNotAllowed", "The specified method is not allowed.")
+	}
+}
+
+// servePreflight answers a browser's CORS preflight for b as RustFS does:
+// from an origin its CORS configuration allows, 200 with the CORS headers;
+// from any other, 403; and with no CORS configuration, 200 without them,
+// which the browser refuses.
+func (b *fakeBucket) servePreflight(w http.ResponseWriter, r *http.Request) {
+	if b.origins == nil {
+		return
+	}
+	origin := r.Header.Get("Origin")
+	if !slices.Contains(b.origins, origin) {
+		writeS3Error(w, http.StatusForbidden, "AccessForbidden", "CORSResponse: This CORS request is not allowed.")
+		return
+	}
+	h := w.Header()
+	h.Set("Access-Control-Allow-Origin", origin)
+	h.Set("Access-Control-Allow-Methods", "GET, HEAD, PUT, POST, DELETE")
+	if headers := r.Header.Get("Access-Control-Request-Headers"); headers != "" {
+		h.Set("Access-Control-Allow-Headers", headers)
+	}
+	h.Set("Access-Control-Expose-Headers", "ETag")
+	h.Set("Access-Control-Max-Age", "3600")
+	h.Set("Vary", "Origin")
+}
+
 // serveObject answers a request for the object key in the Bucket called
 // bucket.
 func (s *objectStore) serveObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
@@ -291,10 +459,12 @@ type objectScript struct {
 //	exists: sh -c '… curl -I …/<bucket>; curl …/<bucket>?tagging …' sh <bucket>
 //	clone:  sh -c '<rc fetch> … rc … cp --recursive … local/<from>/ local/<to>/ …' sh <from> <to>
 //	size:   sh -c '<rc fetch> … rc --json … bucket list --recursive --summarize …' sh <bucket>
+//	configure: sh -c '… curl -X PUT|DELETE …/<bucket>?policy; curl -X PUT|DELETE …/<bucket>?cors' sh <bucket> <public> <origins>
 //
 // The rc fetch at the top of clone and size needs no network here: the
 // fake answers the whole script.
 var objectScripts = []objectScript{
+	{"configure", 3, "?policy", (*objectStore).configureScript},
 	{"clone", 2, "cp --recursive", (*objectStore).cloneScript},
 	{"size", 1, "--summarize", (*objectStore).sizeScript},
 	{"list", 0, "<Name>", (*objectStore).listScript},
@@ -359,7 +529,7 @@ func (s *objectStore) createScript(args []string) container.Output {
 		return s3Failure("InvalidBucketName", "The specified bucket is not valid.")
 	}
 	// exists said no, so a Bucket already here is a leftover.
-	s.buckets[name] = &fakeBucket{objects: map[string]fakeObject{}, tags: map[string]string{}}
+	s.buckets[name] = newFakeBucket()
 	return container.Output{}
 }
 
@@ -387,7 +557,7 @@ func (s *objectStore) cloneScript(args []string) container.Output {
 	if src == nil {
 		return container.Output{ExitCode: 1, Stderr: fmt.Appendf(nil, "Error: Bucket not found: %s\n", from)}
 	}
-	copied := &fakeBucket{objects: map[string]fakeObject{}, tags: map[string]string{}}
+	copied := newFakeBucket()
 	for key, o := range src.objects {
 		copied.objects[key] = fakeObject{body: slices.Clone(o.body), contentType: o.contentType}
 	}
@@ -410,6 +580,34 @@ func (s *objectStore) sizeScript(args []string) container.Output {
 		size += len(o.body)
 	}
 	return container.Output{Stdout: fmt.Appendf(nil, "%d\n", size)}
+}
+
+// configureScript sets the Bucket args[0]'s policy and CORS configuration
+// as the script does: with args[1] true, the policy letting anyone get its
+// objects (the script's JSON), with false none, and anything else exits 2;
+// then a CORS configuration allowing exactly the origins in args[2],
+// separated by spaces, or none if there are none. Each run replaces both.
+func (s *objectStore) configureScript(args []string) container.Output {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	name, public, origins := args[0], args[1], strings.Fields(args[2])
+	b := s.buckets[name]
+	if b == nil {
+		return s3Failure("NoSuchBucket", "The specified bucket does not exist")
+	}
+	switch public {
+	case "true":
+		b.policy = fmt.Sprintf(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":["s3:GetObject"],"Resource":["arn:aws:s3:::%s/*"]}]}`, name)
+	case "false":
+		b.policy = ""
+	default:
+		return container.Output{ExitCode: 2, Stderr: fmt.Appendf(nil, "public must be true or false, not %s\n", public)}
+	}
+	b.origins = nil
+	if len(origins) > 0 {
+		b.origins = origins
+	}
+	return container.Output{}
 }
 
 // s3Failure is how the scripts fail on an S3 error: curl exits 1 with the
