@@ -175,6 +175,44 @@ func TestAddingOrRemovingAnAliasChangesTheOriginsTheWorktreesBucketsAllow(t *tes
 	}
 }
 
+func TestABucketThatCouldntFollowAnAliasChangeIsAWarningOnItsWorktreeUntilLinkingAgainConfiguresIt(t *testing.T) {
+	t.Parallel()
+	d := objectsDaemon(t)
+	repo := serviceProject(t, "ba-alias-err", `objects = "1"`, "")
+	d.MustRunCLI(repo.Dir, "link")
+	wt := repo.AddWorktree("feature")
+	d.MustRunCLI(wt.Dir, "worktree", "ready")
+	var broken atomic.Bool
+	broken.Store(true)
+	d.Engine.AnswerCommands(objectsImage, func(ctx context.Context, spec container.Spec, data *containertest.Volume, cmd []string) container.Output {
+		if broken.Load() && len(cmd) == 7 && strings.Contains(cmd[2], "?policy") {
+			return container.Output{ExitCode: 1, Stderr: []byte("<Error><Code>InternalError</Code></Error>\n")}
+		}
+		return containertest.ObjectStoreCommands(ctx, spec, data, cmd)
+	})
+
+	d.MustRunCLI(wt.Dir, "worktree", "alias", "checkout")
+
+	warning := "the Bucket ba-alias-err--feature may not allow browsers on the Worktree's Aliases since they changed"
+	var info string
+	eventually(t, "lane info to warn about the Bucket", func() bool {
+		info = d.MustRunCLI(wt.Dir, "info").Stdout
+		return strings.Contains(info, warning)
+	})
+	assertContains(t, info, "configuring the Bucket ba-alias-err--feature: objects's configure command exited with status 1")
+	assertContains(t, info, "run `lane link` to try again")
+	assertOrigins(t, d, "ba-alias-err--feature", "https://feature.ba-alias-err.localhost")
+
+	broken.Store(false)
+	d.MustRunCLI(repo.Dir, "link")
+	d.MustRunCLI(wt.Dir, "worktree", "ready")
+
+	assertOrigins(t, d, "ba-alias-err--feature", "https://feature.ba-alias-err.localhost", "https://checkout.ba-alias-err.localhost")
+	if info := d.MustRunCLI(wt.Dir, "info").Stdout; strings.Contains(info, warning) {
+		t.Fatalf("lane info still warns about the Bucket once it is configured:\n%s", info)
+	}
+}
+
 func TestANewWorktreesDeclaredBucketStartsAsACopyOfTheMainWorktreesAndStaysPublic(t *testing.T) {
 	t.Parallel()
 	d := objectsDaemon(t)

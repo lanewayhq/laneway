@@ -434,12 +434,3 @@ func (s Set) Names() []string {
 	}
 	return names
 }
-
-// Variables are every Engine's Variables.
-func (s Set) Variables() []string {
-	var vars []string
-	for _, m := range s {
-		vars = append(vars, m.Variables()...)
-	}
-	return vars
-}

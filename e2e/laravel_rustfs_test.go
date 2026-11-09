@@ -78,3 +78,26 @@ AWS_PUBLIC_BUCKET = "{rustfs_bucket_public}"
 		t.Errorf("GET %s answered %d, want 404: the object is in the other Worktree's Bucket", main, get.StatusCode)
 	}
 }
+
+// flysystemWarning is how the Laravel Recipe's warning about the package
+// Laravel's s3 disk needs begins.
+const flysystemWarning = "composer.json doesn't require league/flysystem-aws-s3-v3"
+
+func TestLinkingALaravelAppDeclaringRustFSWithoutTheS3PackageWarnsAboutIt(t *testing.T) {
+	t.Parallel()
+	d := rustfsDaemon(t, "lrfs-warn")
+	laravelStubs(t, d)
+	repo := laravelRepo(t, "lara-rfs-warn").
+		WriteFile("laneway.toml", "[services]\nrustfs = \"1\"\n").
+		Commit("store uploads in S3")
+
+	preview := d.RunCLIWithInput(repo.Dir, "n\n", "link")
+	res := d.MustRunCLI(repo.Dir, "link", "--yes")
+	doctor := d.RunCLI(repo.Dir, "doctor")
+
+	assertContains(t, preview.Stderr, "lane link: warning: ")
+	assertContains(t, preview.Stderr, flysystemWarning)
+	assertContains(t, res.Stderr, "lane link: warning: ")
+	assertContains(t, res.Stderr, flysystemWarning)
+	assertContains(t, doctor.Stdout, flysystemWarning)
+}

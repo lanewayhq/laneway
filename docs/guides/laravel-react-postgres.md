@@ -573,7 +573,7 @@ Laravel's `s3` disk needs Flysystem's S3 adapter, which the starter kit doesn't 
 lane exec composer require league/flysystem-aws-s3-v3 "^3.0"
 ```
 
-Without it, `Storage::disk('s3')` fails with `Class "League\Flysystem\AwsS3V3\PortableVisibilityConverter" not found`. The Laravel Recipe warns about it, naming `composer.json`, when `lane init` writes `laneway.toml` for a Project that declares RustFS.
+Without it, `Storage::disk('s3')` fails with `Class "League\Flysystem\AwsS3V3\PortableVisibilityConverter" not found`. The Laravel Recipe warns about it, naming `composer.json`, for a Project that declares RustFS: `lane link` shows the warning (`lane link: warning: composer.json doesn't require league/flysystem-aws-s3-v3, …`), and so do `lane doctor` and `lane init`.
 
 Then add `rustfs` to the `[services]` table of `laneway.toml`:
 
@@ -590,11 +590,11 @@ Commit, then give the Worktrees their Buckets:
 
 ```sh
 git add -A && git commit -m "chore: object storage with RustFS"
-lane unlink && lane link
+lane link
 lane worktree ready
 ```
 
-Preparing makes the Buckets, but a Worktree that is already Ready isn't prepared again on its own, so `shop` needs `lane unlink` and `lane link`. Its database comes straight back from Orphans. A Project that declares `rustfs` before its first `lane link` needs only the `lane link`. The first time a Project on this machine declares it, Laneway fetches the Plugin from the Catalog (`Fetched Plugin rustfs … from the Catalog`), and RustFS's first start pulls its image.
+Preparing makes the Buckets. `shop` is already Ready, so linking it again prepares its Ready Worktrees once more, running only the Bucket steps: they are Preparing until their Buckets exist (`lane worktree ready` waits for that), and nothing else of theirs runs again. Linking it again is also how a Ready Project gets a Bucket it declares later, under `[buckets.<name>]`. The first time a Project on this machine declares it, Laneway fetches the Plugin from the Catalog (`Fetched Plugin rustfs … from the Catalog`), and RustFS's first start pulls its image.
 
 Each Worktree reads `laneway.toml` from its own checkout, so a Worktree whose branch doesn't have this commit gets no Buckets.
 
@@ -661,7 +661,7 @@ Add the disk to `config/filesystems.php`, and `AWS_PUBLIC_BUCKET=` and `AWS_PUBL
 ],
 ```
 
-Commit, then run `lane unlink && lane link` again so the Ready Worktrees get the new Bucket (§10.1).
+Commit, then run `lane link` again so the Ready Worktrees get the new Bucket (§10.1).
 
 Anyone may read a public Bucket's objects, so `Storage::disk('public_s3')->url('avatars/1.jpg')` opens in the browser without signing. Listing, writing and deleting still need the credentials.
 
@@ -669,11 +669,11 @@ Anyone may read a public Bucket's objects, so `Storage::disk('public_s3')->url('
 
 ### 10.4 Uploads from the browser (CORS)
 
-Each Bucket allows browser requests from its Worktree's Domain and Aliases, such as `https://feature-x.shop.localhost` and, once you add that Alias, `https://checkout.shop.localhost`. Laneway updates the Buckets whenever an Alias is added or removed. So presigned uploads from `temporaryUploadUrl()`, such as Livewire's direct-to-S3 uploads, work from the app's pages. Process subdomains such as `vite.feature-x.shop.localhost` aren't allowed.
+Each Bucket allows browser requests from its Worktree's Domain and Aliases, such as `https://feature-x.shop.localhost` and, once you add that Alias, `https://checkout.shop.localhost`. Laneway updates the Buckets whenever an Alias is added or removed. So presigned uploads from `temporaryUploadUrl()`, such as Livewire's direct-to-S3 uploads, work from the app's pages. Process subdomains such as `vite.feature-x.shop.localhost` aren't allowed. If updating a Bucket after an Alias change fails, `lane info`, `lane worktree ready` and the Dashboard show a warning on the Worktree (`the Bucket shop--feature-x may not allow browsers on the Worktree's Aliases since they changed: …`); `lane link` tries again.
 
 ### 10.5 Buckets in new Worktrees
 
-A new Worktree's Buckets start as copies of the main Worktree's, so the records its cloned database copied still find their files. Preparing makes them after the Test Database and before `.env`, one step per Bucket, and the Worktree isn't Ready until they exist. While a copy runs, `lane info` and the Dashboard show Preparing at the step `bucket shop--feature-x`. If a step fails, `lane worktree ready` and the Domain show its output, which starts like this:
+A new Worktree's Buckets start as copies of the main Worktree's, so the records its cloned database copied still find their files. Preparing makes them after the Test Database and before `.env`, one step per Bucket, and the Worktree isn't Ready until they exist. While a copy runs, `lane info` and the Dashboard show Preparing at the step `bucket shop--feature-x, copying shop`. If a step fails, `lane worktree ready` and the Domain show its output, which starts like this:
 
 ```
 copying the main Worktree's Bucket shop (12.4 MB) to shop--feature-x
@@ -697,7 +697,7 @@ How long a copy takes follows the number of objects more than their size: a thou
 
 A failed copy fails Preparing with its output, like a failed database copy. Fix the cause, then `lane worktree ready --retry`.
 
-`lane info` lists the Worktree's Buckets (`Buckets  shop--feature-x on rustfs:1`, and `(public)` after a public one), and `lane info --json` has them under `buckets`. A removed Worktree's Buckets become Orphans with its databases: kept for 24 hours, then dropped. `lane gc` lists them with the kind `bucket`.
+`lane info` lists the Worktree's Buckets (`Buckets  shop--feature-x on rustfs:1`, and `(public)` after a public one), and `lane info --json` has them under `buckets`. A removed Worktree's Buckets become Orphans with its databases: kept for 24 hours, then dropped. Only Buckets Laneway made count: the private one, and one for each `[buckets.<name>]` the Project declares or has declared. A bucket you make yourself in the console, such as `shop-backup`, is never an Orphan, unless the Project declares `[buckets.backup]`. `lane gc` lists them with the kind `bucket`.
 
 ### 10.6 The console and other clients
 
@@ -731,9 +731,9 @@ S3 clients outside the app, such as a GUI, can use `http://127.0.0.1:9000` with 
 | Generated links, redirects or Boost's browser logger use `http://`; console shows "Redirect is not allowed for a preflight request" | Your Laneway is older than the fix that tells PHP's built-in server its requests came over HTTPS. Update Laneway, run `lane install` again, then `lane restart web`. Don't add `trustProxies` to the app for this. |
 | A setup step failed | The Domain shows the setup error page with the failed step's output, as does `lane worktree ready`. Fix the cause, then `lane worktree ready --retry`, which starts again from the first step. |
 | `Storage::disk('s3')`: `Class "League\Flysystem\AwsS3V3\PortableVisibilityConverter" not found` | The app doesn't require Flysystem's S3 adapter. `lane exec composer require league/flysystem-aws-s3-v3 "^3.0"` (§10.1). |
-| S3 calls fail with `NoSuchBucket` after declaring `rustfs` or a `[buckets.<name>]` | The Worktree was Ready before, so it got the new `.env` keys but not the Bucket. Run `lane unlink && lane link` (§10.1). |
+| S3 calls fail with `NoSuchBucket` after declaring `rustfs` or a `[buckets.<name>]` | The Worktree was Ready before and the Project wasn't linked again since. Run `lane link`, then `lane worktree ready` (§10.1). A Worktree whose checkout doesn't have the change gets the Buckets once it does and you link again. |
 | S3 calls from PHP fail with `cURL error 60: SSL certificate problem` | PHP's curl doesn't trust Laneway's CA. Run `lane install` again so the CA is in the system store. If it still fails, point `curl.cainfo` and `openssl.cafile` at your distribution's CA bundle in the `php.ini` that `lane exec php --ini` names. |
-| `lane worktree ready` exits 1 at `bucket shop--feature-x` with "downloading rc" | Copying a Bucket the first time downloads RustFS's `rc` client (§10.5), and Laneway couldn't reach GitHub. Get online, then `lane worktree ready --retry`. |
+| `lane worktree ready` exits 1 at `bucket shop--feature-x, copying shop` with "downloading rc" | Copying a Bucket the first time downloads RustFS's `rc` client (§10.5), and Laneway couldn't reach GitHub. Get online, then `lane worktree ready --retry`. |
 | `Storage::put(…, 'public')` returns `true` locally, but `false` (or throws) on AWS | RustFS ignores per-object ACLs, while AWS buckets with ACLs disabled refuse them. Use a public Bucket for public files (§10.3). |
 
 ---

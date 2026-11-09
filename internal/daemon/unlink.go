@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/registry"
 )
 
@@ -28,14 +29,15 @@ func (d *Daemon) unlink(ctx context.Context, dir string) (api.UnlinkResponse, er
 	var orphans []registry.Orphan
 	var gone []goneWorktree
 	for _, w := range worktrees {
-		gone = append(gone, goneWorktree{p.Name, w})
 		cfg, err := d.plugins.ResolveDir(w.dir)
 		if err != nil {
 			if cfg, err = d.plugins.ResolveDir(p.Path); err != nil {
 				d.log.Error("finding the databases of an unlinked Worktree", "project", p.Name, "dir", w.dir, "err", err)
+				gone = append(gone, d.goneWorktreeOf(p, w, recipe.Resolved{}))
 				continue
 			}
 		}
+		gone = append(gone, d.goneWorktreeOf(p, w, cfg))
 		orphans = append(orphans, d.worktreeOrphans(p, w, cfg, now)...)
 	}
 	// Forgotten first, so a Worktree Watcher report meanwhile finds no
@@ -47,6 +49,7 @@ func (d *Daemon) unlink(ctx context.Context, dir string) (api.UnlinkResponse, er
 	for _, w := range worktrees {
 		d.stopWorktree(ctx, w.domain, w.dir)
 		d.preparer.Forget(w.dir)
+		d.forgetMadeBuckets(w.dir)
 	}
 	d.addOrphans(orphans, gone)
 	d.projectUnlinked(p)

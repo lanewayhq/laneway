@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/lanewayhq/laneway/internal/api"
@@ -81,11 +82,16 @@ const DefaultBucketCopyLimit config.Size = 1e9
 // other Worktree's as a copy of the main Worktree's, unless that is over
 // the limit (bucket_copy_limit). Then, made or not, the Bucket is
 // configured: public or private, and allowing CORS from the Worktree's
-// Domains and Aliases, which the copy doesn't bring along.
+// Domains and Aliases, which the copy doesn't bring along. The Buckets
+// config declares are recorded as the Project's (recordDeclaredBuckets).
 func (d *Daemon) bucketSteps(p registry.Project, w worktreeRef, cfg recipe.Resolved) []prepare.Step {
+	buckets := d.worktreeBuckets(p, w, cfg)
+	if len(buckets) > 0 {
+		d.recordDeclaredBuckets(p, cfg)
+	}
 	var steps []prepare.Step
-	for _, b := range d.worktreeBuckets(p, w, cfg) {
-		steps = append(steps, prepare.Step{Name: "bucket " + b.Name, Run: func(ctx context.Context, out io.Writer) error {
+	for _, b := range buckets {
+		steps = append(steps, prepare.Step{Name: bucketStepName(b, w), Run: func(ctx context.Context, out io.Writer) error {
 			var from bucket.Source
 			if !w.main {
 				var err error
@@ -93,7 +99,7 @@ func (d *Daemon) bucketSteps(p registry.Project, w worktreeRef, cfg recipe.Resol
 					return err
 				}
 			}
-			server, release, err := d.databaseServer(ctx, b.Service, out)
+			server, release, err := d.startService(ctx, b.Service, out)
 			if err != nil {
 				return err
 			}
@@ -106,10 +112,78 @@ func (d *Daemon) bucketSteps(p registry.Project, w worktreeRef, cfg recipe.Resol
 			if err != nil {
 				return err
 			}
-			return configureBucket(ctx, c, b, d.worktreeOrigins(p, w), out)
+			if err := configureBucket(ctx, c, b, d.worktreeOrigins(p, w), out); err != nil {
+				return err
+			}
+			d.bucketMade(w.dir, b.Name)
+			return nil
 		}})
 	}
 	return steps
+}
+
+// bucketMade records that the setup of the Worktree at dir has made its
+// Bucket name (and configured it), while this daemon ran.
+func (d *Daemon) bucketMade(dir, name string) {
+	d.madeBucketsMu.Lock()
+	defer d.madeBucketsMu.Unlock()
+	if d.madeBuckets == nil {
+		d.madeBuckets = map[string][]string{}
+	}
+	if !slices.Contains(d.madeBuckets[dir], name) {
+		d.madeBuckets[dir] = append(d.madeBuckets[dir], name)
+	}
+}
+
+// bucketsMade reports whether the setup of the Worktree at dir has made
+// every Bucket in buckets while this daemon ran.
+func (d *Daemon) bucketsMade(dir string, buckets []worktreeBucket) bool {
+	d.madeBucketsMu.Lock()
+	defer d.madeBucketsMu.Unlock()
+	return !slices.ContainsFunc(buckets, func(b worktreeBucket) bool { return !slices.Contains(d.madeBuckets[dir], b.Name) })
+}
+
+// bucketUnmade records that the Bucket name of the Worktree at dir isn't as
+// its setup made it any more, such as when configuring it again failed, so
+// that linking its Project again runs its Bucket steps (prepareNewBuckets).
+func (d *Daemon) bucketUnmade(dir, name string) {
+	d.madeBucketsMu.Lock()
+	defer d.madeBucketsMu.Unlock()
+	d.madeBuckets[dir] = slices.DeleteFunc(slices.Clone(d.madeBuckets[dir]), func(n string) bool { return n == name })
+}
+
+// forgetMadeBuckets forgets what bucketMade recorded for the Worktree at
+// dir, which is gone or Preparing anew.
+func (d *Daemon) forgetMadeBuckets(dir string) {
+	d.madeBucketsMu.Lock()
+	defer d.madeBucketsMu.Unlock()
+	delete(d.madeBuckets, dir)
+}
+
+// prepareNewBuckets makes the Buckets the config of the Project p's Ready
+// Worktrees gives them and their setup hasn't made, such as once p declares
+// an object storage Service or another [buckets.<name>], and configures again
+// those that couldn't follow an Alias change (bucketUnmade): a Ready Worktree
+// isn't prepared again, so each such one runs its Bucket steps again
+// (Preparer.Refresh), Preparing until they end. A Bucket that exists is left
+// as it is and configured again, so a Worktree whose Buckets this daemon
+// hasn't seen made (it started since) does no harm by running them.
+func (d *Daemon) prepareNewBuckets(p registry.Project) {
+	for _, w := range d.worktreesOf(p) {
+		cfg, err := d.plugins.ResolveDir(w.dir)
+		if err != nil {
+			continue
+		}
+		if buckets := d.worktreeBuckets(p, w, cfg); len(buckets) > 0 && !d.bucketsMade(w.dir, buckets) {
+			d.preparer.Refresh(w.dir, func(ctx context.Context) ([]prepare.Step, error) {
+				cfg, err := d.plugins.ResolveDir(w.dir)
+				if err != nil {
+					return nil, err
+				}
+				return d.bucketSteps(p, w, cfg), nil
+			})
+		}
+	}
 }
 
 // worktreeOrigins are the origins browsers reach the Worktree w at: its own
@@ -154,9 +228,16 @@ func (d *Daemon) worktreeOriginsChanged(p registry.Project, w worktreeRef) {
 			return
 		}
 		for _, b := range d.worktreeBuckets(p, w, cfg) {
-			if err := d.reconfigureBucket(s.ctx, p, w, b); err != nil {
-				d.log.Warn("updating a Bucket's CORS origins", "project", p.Name, "worktree", w.dir, "bucket", b.Name, "error", err)
+			err := d.reconfigureBucket(s.ctx, p, w, b)
+			if err == nil || s.ctx.Err() != nil {
+				continue
 			}
+			d.log.Warn("updating a Bucket's CORS origins", "project", p.Name, "worktree", w.dir, "bucket", b.Name, "err", err)
+			// Linking the Project again runs its Bucket steps
+			// (prepareNewBuckets), which configure it.
+			d.bucketUnmade(w.dir, b.Name)
+			d.preparer.AddWarning(w.dir, fmt.Sprintf("the Bucket %s may not allow browsers on the Worktree's Aliases since they changed: %v; "+
+				"run `lane link` to try again", b.Name, err))
 		}
 	})
 }
@@ -164,7 +245,7 @@ func (d *Daemon) worktreeOriginsChanged(p registry.Project, w worktreeRef) {
 // reconfigureBucket sets who may reach the Worktree w's Bucket b again,
 // starting its Service if it has stopped.
 func (d *Daemon) reconfigureBucket(ctx context.Context, p registry.Project, w worktreeRef, b worktreeBucket) error {
-	server, release, err := d.databaseServer(ctx, b.Service, io.Discard)
+	server, release, err := d.startService(ctx, b.Service, io.Discard)
 	if err != nil {
 		return err
 	}
@@ -195,6 +276,17 @@ func (d *Daemon) bucketSource(b worktreeBucket, cfg recipe.Resolved) (bucket.Sou
 	}
 	return bucket.Source{Main: b.Main, Limit: limit,
 		Setting: fmt.Sprintf("raise bucket_copy_limit (now %s) in %s", limit, where)}, nil
+}
+
+// bucketStepName is the name of the step making the Bucket b of the
+// Worktree w, which Preparing shows while it runs: in a Worktree other than
+// the main one, it names the Bucket b starts as a copy of, since copying
+// can take a while.
+func bucketStepName(b worktreeBucket, w worktreeRef) string {
+	if w.main {
+		return "bucket " + b.Name
+	}
+	return "bucket " + b.Name + ", copying " + b.Main
 }
 
 // bucketInfo is the API view of the Worktree w's Buckets.

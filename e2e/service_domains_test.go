@@ -118,7 +118,7 @@ func TestAServiceDomainExplainsHowToDeclareItsEngineWhenNoProjectUsesIt(t *testi
 	if res.StatusCode != http.StatusBadGateway {
 		t.Fatalf("GET the Service Domain with no store Service = %d, want 502:\n%s", res.StatusCode, res.Body)
 	}
-	assertContains(t, res.Body, "no Project uses Store yet")
+	assertContains(t, res.Body, "no Project uses store yet")
 	assertContains(t, res.Body, "store = &#34;1&#34;")
 	if calls := d.Engine.Calls(); containsCall(calls, "start") {
 		t.Fatalf("visiting the Service Domain started a container: %v", calls)

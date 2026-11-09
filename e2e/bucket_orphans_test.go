@@ -59,26 +59,27 @@ func createBuckets(t *testing.T, d *testkit.Daemon, names ...string) {
 	}
 }
 
-func TestEveryBucketTheNamingRuleGivesARemovedWorktreeIsAnOrphanButNoOtherWorktreesOrProjects(t *testing.T) {
+func TestEveryBucketTheProjectHasDeclaredIsARemovedWorktreesOrphanButNoHandMadeOnesOrOtherProjects(t *testing.T) {
 	t.Parallel()
 	d, _ := bucketOrphanDaemon(t)
-	repo := serviceProject(t, "bo-rule", `objects = "1"`, "")
+	repo := serviceProject(t, "bo-rule", `objects = "1"`, "[buckets.uploads]\n[buckets.public]\n\n")
 	d.MustRunCLI(repo.Dir, "link")
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
 	kept := repo.AddWorktree("kept")
 	d.MustRunCLI(kept.Dir, "worktree", "ready")
 	wt := repo.AddWorktree("feature")
 	d.MustRunCLI(wt.Dir, "worktree", "ready")
+	// It declares them no longer, but the Buckets made while it did are
+	// still its own.
+	repo.WriteFile("laneway.toml", "[services]\nobjects = \"1\"\n")
 	// A Project named like bo-rule's Bucket "public", with a Worktree of
-	// the same name.
+	// the same name, whose private Bucket is bo-rule-public--feature.
 	other := serviceProject(t, "bo-rule-public", `objects = "1"`, "")
 	d.MustRunCLI(other.Dir, "link")
 	otherWt := other.AddWorktree("feature")
 	d.MustRunCLI(otherWt.Dir, "worktree", "ready")
-	// Buckets the Project declared (or declares no longer).
-	createBuckets(t, d, "bo-rule-uploads", "bo-rule-uploads--kept", "bo-rule-uploads--feature",
-		// Not the Project's.
-		"elsewhere--feature", "bo-rules--feature")
+	// Not the Project's: made by hand, or another Project's.
+	createBuckets(t, d, "bo-rule-backup", "bo-rule-backup--feature", "elsewhere--feature", "bo-rules--feature")
 
 	repo.Git("worktree", "remove", wt.Dir)
 
@@ -88,7 +89,8 @@ func TestEveryBucketTheNamingRuleGivesARemovedWorktreeIsAnOrphanButNoOtherWorktr
 		t.Errorf("Orphan = %+v, want the bucket of Worktree feature of bo-rule in objects:1 since %v", o, orphanEpoch)
 	}
 	assertBuckets(t, d, "bo-rule", "bo-rule--kept", "bo-rule--feature", "bo-rule-uploads", "bo-rule-uploads--kept",
-		"bo-rule-uploads--feature", "elsewhere--feature", "bo-rules--feature", "bo-rule-public", "bo-rule-public--feature")
+		"bo-rule-uploads--feature", "bo-rule-public", "bo-rule-public--kept", "bo-rule-public--feature",
+		"bo-rule-backup", "bo-rule-backup--feature", "elsewhere--feature", "bo-rules--feature")
 }
 
 func TestOrphanedBucketsAreDropped24HoursAfterTheyWereMadeWithWhatIsInThem(t *testing.T) {
@@ -168,14 +170,12 @@ func TestGcDropsOrphanedBucketsByHandAndSaysTheyAreBuckets(t *testing.T) {
 func TestUnlinkTurnsAllTheProjectsBucketsIntoOrphansAndLinkingAgainTakesThemBack(t *testing.T) {
 	t.Parallel()
 	d, clk := bucketOrphanDaemon(t)
-	repo := serviceProject(t, "bo-relink", `objects = "1"`, "")
+	repo := serviceProject(t, "bo-relink", `objects = "1"`, "[buckets.uploads]\n\n")
 	d.MustRunCLI(repo.Dir, "link")
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
 	wt := repo.AddWorktree("feature")
 	d.MustRunCLI(wt.Dir, "worktree", "ready")
 	s3(t, d, "PUT", "/bo-relink/kept.txt", "still here")
-	// Buckets the Project declares.
-	createBuckets(t, d, "bo-relink-uploads", "bo-relink-uploads--feature")
 
 	res := d.MustRunCLI(repo.Dir, "unlink")
 
@@ -193,5 +193,29 @@ func TestUnlinkTurnsAllTheProjectsBucketsIntoOrphansAndLinkingAgainTakesThemBack
 	assertBuckets(t, d, "bo-relink", "bo-relink--feature", "bo-relink-uploads", "bo-relink-uploads--feature")
 	if status, body := s3(t, d, "GET", "/bo-relink/kept.txt", ""); status != 200 || body != "still here" {
 		t.Fatalf("after linking again the main Worktree's object answered %d %q, want it kept", status, body)
+	}
+}
+
+func TestABucketMadeByHandThatTheProjectNeverDeclaredSurvivesUnlinkingIt(t *testing.T) {
+	t.Parallel()
+	d, clk := bucketOrphanDaemon(t)
+	repo := serviceProject(t, "shop", `objects = "1"`, "")
+	d.MustRunCLI(repo.Dir, "link")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	wt := repo.AddWorktree("feature")
+	d.MustRunCLI(wt.Dir, "worktree", "ready")
+	// Made by hand, in the RustFS console say: shop declares no Bucket
+	// called backup, but these are named as if it did.
+	createBuckets(t, d, "shop-backup", "shop-backup--feature")
+	s3(t, d, "PUT", "/shop-backup/db.sql", "the dump")
+
+	d.MustRunCLI(repo.Dir, "unlink")
+	waitForOrphans(t, d, "shop", "shop--feature")
+	clk.Advance(daemon.OrphanGrace)
+
+	waitForOrphans(t, d)
+	assertBuckets(t, d, "shop-backup", "shop-backup--feature")
+	if status, body := s3(t, d, "GET", "/shop-backup/db.sql", ""); status != 200 || body != "the dump" {
+		t.Fatalf("the hand-made Bucket's object answered %d %q, want it kept", status, body)
 	}
 }

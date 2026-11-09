@@ -2,9 +2,14 @@ package e2e
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"net/url"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +24,11 @@ import (
 // The slow tier for the rustfs Plugin: the first-party Plugin, at the
 // version go.mod pins, against the RustFS image it maps "1" to, on Docker
 // and Podman. Its clone and size commands fetch rc from GitHub, so these
-// tests need the network.
+// tests need the network. With LANEWAY_PHP set to a php with the curl
+// extension (as for TestARealLaravelApp...), PHP reaches the s3 Service
+// Domain over HTTPS too:
+//
+//	LANEWAY_SLOW=1 LANEWAY_PHP=/path/to/php go test ./e2e -run TestRustFS
 
 // rustfsImage is the image the first-party rustfs Plugin runs at version
 // "1", read from its manifest.
@@ -82,6 +91,73 @@ func anonymousRequest(t *testing.T, d *testkit.Daemon, method, url string, heade
 		t.Fatalf("%s %s: %v", method, url, err)
 	}
 	return readResponse(t, res)
+}
+
+// presignedRequest sends body to the presigned URL url through the daemon's
+// HTTPS proxy, unsigned otherwise, as a browser would.
+func presignedRequest(t *testing.T, d *testkit.Daemon, method, url, body string) testkit.Response {
+	t.Helper()
+	req, err := http.NewRequest(method, url, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := d.HTTPS().Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, url, err)
+	}
+	return readResponse(t, res)
+}
+
+// phpCurl is a PHP script sending a request with cURL, as PHP S3 clients
+// do: argv is the method, the URL, where to connect for the URL's host and
+// port (CURLOPT_CONNECT_TO), the CA file to trust and the body. It prints
+// the answer's status on a line, then its body.
+const phpCurl = `<?php
+[, $method, $url, $connectTo, $ca, $body] = $argv;
+$c = curl_init($url);
+curl_setopt_array($c, [
+    CURLOPT_CUSTOMREQUEST => $method,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_CONNECT_TO => [$connectTo],
+    CURLOPT_CAINFO => $ca,
+]);
+if ($body !== '') {
+    curl_setopt($c, CURLOPT_POSTFIELDS, $body);
+}
+$out = curl_exec($c);
+if ($out === false) {
+    fwrite(STDERR, curl_error($c) . "\n");
+    exit(1);
+}
+echo curl_getinfo($c, CURLINFO_RESPONSE_CODE), "\n", $out;
+`
+
+// phpRequest sends body to url from php over HTTPS, through the daemon's
+// proxy, trusting only Laneway's CA, and returns the answer's status and
+// body.
+func phpRequest(t *testing.T, d *testkit.Daemon, php, method, rawURL, body string) (int, string) {
+	t.Helper()
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(t.TempDir(), "request.php")
+	writeFile(t, script, phpCurl)
+	connectTo := u.Hostname() + ":443:" + d.ProxyAddr()
+	out, err := exec.Command(php, script, method, rawURL, connectTo, d.Paths.CARootCert(), body).Output()
+	if err != nil {
+		var stderr []byte
+		if exit, ok := errors.AsType[*exec.ExitError](err); ok {
+			stderr = exit.Stderr
+		}
+		t.Fatalf("php %s %s: %v\n%s", method, rawURL, err, stderr)
+	}
+	status, answer, _ := strings.Cut(string(out), "\n")
+	code, err := strconv.Atoi(status)
+	if err != nil {
+		t.Fatalf("php printed %q, not a status", out)
+	}
+	return code, answer
 }
 
 // realPreflight is a browser's CORS preflight for a PUT to url from origin;
@@ -147,6 +223,36 @@ func TestRustFSOnARealContainerEngine(t *testing.T) {
 			if res := readResponse(t, res); res.StatusCode != http.StatusForbidden {
 				t.Fatalf("a request signed with the wrong password answered %d, want 403:\n%s", res.StatusCode, res.Body)
 			}
+			// Presigned URLs, as temporaryUrl() and temporaryUploadUrl()
+			// make them, work through the s3 Domain: RustFS checks the
+			// signature in the query against the Host the proxy kept.
+			presignedPut := presignedS3URL(t, "PUT", s3URL+"/"+project+"/presigned.txt", "laneway", "laneway", time.Now(), 5*time.Minute)
+			if res := presignedRequest(t, d, "PUT", presignedPut, "uploaded by a browser"); res.StatusCode != http.StatusOK {
+				t.Fatalf("a PUT to a presigned URL answered %d:\n%s", res.StatusCode, res.Body)
+			}
+			presignedGet := presignedS3URL(t, "GET", s3URL+"/"+project+"/presigned.txt", "laneway", "laneway", time.Now(), 5*time.Minute)
+			if res := presignedRequest(t, d, "GET", presignedGet, ""); res.StatusCode != http.StatusOK || res.Body != "uploaded by a browser" {
+				t.Fatalf("a GET of a presigned URL answered %d %q, want the object", res.StatusCode, res.Body)
+			}
+			if res := presignedRequest(t, d, "GET", strings.Replace(presignedGet, "presigned.txt", "invoices/1.txt", 1), ""); res.StatusCode != http.StatusForbidden {
+				t.Fatalf("a GET of a URL presigned for another object answered %d, want 403:\n%s", res.StatusCode, res.Body)
+			}
+			// And from PHP, over HTTPS trusting Laneway's CA, as an app's
+			// S3 client reaches the s3 Domain.
+			t.Run("php", func(t *testing.T) {
+				php := os.Getenv("LANEWAY_PHP")
+				if php == "" {
+					t.Skip("LANEWAY_PHP isn't set: set it to a php with the curl extension to reach the s3 Service Domain from PHP")
+				}
+				upload := presignedS3URL(t, "PUT", s3URL+"/"+project+"/from-php.txt", "laneway", "laneway", time.Now(), 5*time.Minute)
+				if status, body := phpRequest(t, d, php, "PUT", upload, "uploaded by PHP"); status != http.StatusOK {
+					t.Fatalf("PHP's PUT to a presigned URL answered %d:\n%s", status, body)
+				}
+				download := presignedS3URL(t, "GET", s3URL+"/"+project+"/from-php.txt", "laneway", "laneway", time.Now(), 5*time.Minute)
+				if status, body := phpRequest(t, d, php, "GET", download, ""); status != http.StatusOK || body != "uploaded by PHP" {
+					t.Fatalf("PHP's GET of a presigned URL answered %d %q, want the object", status, body)
+				}
+			})
 			copied := s3Request(t, d, "GET", s3URL+"/"+project+"--feature/invoices/1.txt", "")
 			if copied.StatusCode != http.StatusOK || copied.Body != "private invoice" ||
 				copied.Header.Get("Content-Type") != "text/plain" || copied.Header.Get("X-Amz-Meta-Owner") != "alice" {

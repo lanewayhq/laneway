@@ -5,8 +5,10 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/lanewayhq/laneway/internal/container"
 	"github.com/lanewayhq/laneway/internal/container/containertest"
@@ -148,6 +150,40 @@ func breakClone(d *testkit.Daemon, code int, stderr string) *atomic.Bool {
 	return &broken
 }
 
+func TestWhileABucketIsCopiedPreparingSaysWhichBucketItIsCopying(t *testing.T) {
+	t.Parallel()
+	d := objectsDaemon(t)
+	repo := serviceProject(t, "bkc-slow", `objects = "1"`, "")
+	d.MustRunCLI(repo.Dir, "link")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	putObject(t, d, "/bkc-slow/report.csv", "id,total")
+	// The copy runs until finish is closed.
+	copying, finish := make(chan struct{}, 1), make(chan struct{})
+	var finished sync.Once
+	t.Cleanup(func() { finished.Do(func() { close(finish) }) })
+	d.Engine.AnswerCommands(objectsImage, func(ctx context.Context, spec container.Spec, data *containertest.Volume, cmd []string) container.Output {
+		if len(cmd) == 6 && strings.Contains(cmd[2], "cp --recursive") {
+			copying <- struct{}{}
+			<-finish
+		}
+		return containertest.ObjectStoreCommands(ctx, spec, data, cmd)
+	})
+
+	wt := repo.AddWorktree("feature")
+	select {
+	case <-copying:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the Worktree's Bucket wasn't being copied after 10s")
+	}
+
+	info := infoJSON(t, d, wt.Dir)
+	finished.Do(func() { close(finish) })
+	assertAt(t, info, "preparing", "setup", "state")
+	assertAt(t, info, "bucket bkc-slow--feature, copying bkc-slow", "setup", "step")
+	d.MustRunCLI(wt.Dir, "worktree", "ready")
+	assertObject(t, d, "/bkc-slow--feature/report.csv", "id,total")
+}
+
 func TestAFailedBucketCopyFailsPreparingWithItsOutputAndRetryingCopiesIt(t *testing.T) {
 	t.Parallel()
 	d := objectsDaemon(t)
@@ -163,7 +199,7 @@ func TestAFailedBucketCopyFailsPreparingWithItsOutputAndRetryingCopiesIt(t *test
 	if res.ExitCode != 1 {
 		t.Fatalf("worktree ready exited %d, want 1:\n%s", res.ExitCode, res.Output())
 	}
-	assertContains(t, res.Stderr, `failed at step "bucket bkc-fail--feature"`)
+	assertContains(t, res.Stderr, `failed at step "bucket bkc-fail--feature, copying bkc-fail"`)
 	assertContains(t, res.Stderr, "copying the main Worktree's Bucket bkc-fail to bkc-fail--feature: objects's clone command exited with status 4")
 	assertContains(t, res.Stderr, "Access denied: local/bkc-fail/report.csv")
 	// Preparing's output shows the copy it was making.

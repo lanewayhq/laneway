@@ -47,14 +47,14 @@ func runGC(ctx context.Context, env Env, args []string) error {
 	}
 	req := api.GCRequest{}
 	for _, o := range preview.Orphans {
-		req.Databases = append(req.Databases, api.OrphanRef{Service: o.Service, Database: o.Database})
+		req.Orphans = append(req.Orphans, api.OrphanRef{Service: o.Service, Name: o.Name})
 	}
 	res, err := c.GC(ctx, req)
 	if err != nil {
 		return err
 	}
 	for _, o := range res.Orphans {
-		fmt.Fprintf(env.Stdout, "Dropped %s (%s)\n", o.Database, o.Service)
+		fmt.Fprintf(env.Stdout, "Dropped %s (%s)\n", o.Name, o.Service)
 	}
 	if len(res.Errors) > 0 {
 		return errors.New(strings.Join(res.Errors, "\nlane gc: "))
@@ -67,7 +67,7 @@ func runGC(ctx context.Context, env Env, args []string) error {
 func orphansNoun(orphans []api.Orphan) string {
 	var databases, buckets bool
 	for _, o := range orphans {
-		if o.Kind == "bucket" {
+		if o.Kind == api.OrphanBucket {
 			buckets = true
 		} else {
 			databases = true
@@ -94,7 +94,7 @@ func printOrphans(w io.Writer, orphans []api.Orphan) {
 		if !o.Since.IsZero() {
 			since = o.Since.Local().Format(time.DateTime)
 		}
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\n", o.Database, o.Service, o.Project, worktree, o.Kind, since)
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\n", o.Name, o.Service, o.Project, worktree, o.Kind, since)
 	}
 	tw.Flush()
 }
