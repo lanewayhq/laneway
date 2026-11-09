@@ -20,10 +20,14 @@ func runGenerate(ctx context.Context, env Env, args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return parseFlags(fs, args)
 	}
-	if fs.NArg() != 1 {
+	if fs.NArg() == 0 {
 		return usageError{"name one Plugin: `lane generate <plugin>`"}
 	}
-	return generate(ctx, env, fs.Arg(0), "lane generate")
+	name := fs.Arg(0)
+	if err := parseFlags(fs, fs.Args()[1:]); err != nil {
+		return err
+	}
+	return generate(ctx, env, name, "lane generate")
 }
 
 // generate runs the Generators of the Plugin name on the current Worktree

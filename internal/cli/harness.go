@@ -22,10 +22,13 @@ func runHarness(ctx context.Context, env Env, args []string) error {
 	if err := fs.Parse(args[1:]); err != nil {
 		return parseFlags(fs, args[1:])
 	}
-	if fs.NArg() != 1 {
+	if fs.NArg() == 0 {
 		return usageError{fmt.Sprintf("name one Harness: `lane harness add <%s>`", names)}
 	}
 	name := fs.Arg(0)
+	if err := parseFlags(fs, fs.Args()[1:]); err != nil {
+		return err
+	}
 	if !slices.Contains(harnesses, name) {
 		return usageError{fmt.Sprintf("unknown Harness %q; use one of: %s", name, strings.Join(harnesses, ", "))}
 	}
