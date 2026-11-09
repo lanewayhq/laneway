@@ -33,8 +33,8 @@ func (fixtureStack) Name() string { return "fixture-stack" }
 
 func (fixtureStack) Detection() detect.Rule { return detect.Rule{File: "fixture-stack"} }
 
-func (fixtureStack) Defaults(dir string) (config.Layer, error) {
-	return config.ParseLayer("the fixture-stack Recipe", []byte(`
+func (fixtureStack) Defaults(dir string) (recipe.Result, error) {
+	return layered(config.ParseLayer("the fixture-stack Recipe", []byte(`
 [processes.web]
 command = "serve --port={port}"
 primary = true
@@ -49,7 +49,13 @@ command = "scheduler"
 [env]
 APP_URL = "{url}"
 APP_ENV = "local"
-`))
+`)))
+}
+
+// layered is the answer of a Recipe giving the layer l and deciding nothing
+// else.
+func layered(l config.Layer, err error) (recipe.Result, error) {
+	return recipe.Result{Layer: l}, err
 }
 
 func mustResolveFixture(t *testing.T, name string, recipes ...recipe.Recipe) recipe.Resolved {
@@ -303,7 +309,7 @@ func TestAProjectWithNoConfigAndNoRecipeResolvesToNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(res, recipe.Resolved{}) {
-		t.Errorf("ResolveDir = %+v, want nothing", res)
+		t.Errorf("Resolve = %+v, want nothing", res)
 	}
 }
 
@@ -342,4 +348,16 @@ func TestTheResolvedConfigWrittenAsALayerResolvesToItself(t *testing.T) {
 			}
 		})
 	}
+}
+
+// process is the resolved Process called name, failing the test without it.
+func process(t *testing.T, res recipe.Resolved, name string) recipe.Process {
+	t.Helper()
+	for _, p := range res.Processes {
+		if p.Name == name {
+			return p
+		}
+	}
+	t.Fatalf("no Process %q in %+v", name, res.Processes)
+	return recipe.Process{}
 }

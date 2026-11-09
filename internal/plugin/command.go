@@ -1,9 +1,7 @@
 package plugin
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"slices"
 )
 
@@ -54,11 +52,7 @@ func (h *Host) Command(p Plugin, command string, args []string, dir string) ([]E
 	if !p.HasCommand(command) {
 		return nil, fmt.Errorf("Plugin %s has no command %s", p.Name, command)
 	}
-	in, err := json.Marshal(request{APIVersion: APIVersion, Call: callCommand, Name: command, Dir: projectMount, Args: args})
-	if err != nil {
-		return nil, err
-	}
-	out, err := h.runtime.run(p, in, os.DirFS(dir))
+	out, err := h.runtime.callFresh(p, request{Call: callCommand, Name: command, Args: args}, dir)
 	var res commandResponse
 	if err := decode(what, out, err, &res); err != nil {
 		return nil, err
