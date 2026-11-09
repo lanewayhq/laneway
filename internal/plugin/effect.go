@@ -28,6 +28,9 @@ type Effect struct {
 	// File is a file effect's block, merged into the Worktree's files by
 	// fileblock.Apply. Only Generators' file effects are applied today.
 	File *fileblock.Block `json:"file,omitempty"`
+	// HTTP is an http effect's request, which Laneway sends (see
+	// HTTPRequest).
+	HTTP *HTTPRequest `json:"http,omitempty"`
 }
 
 // envKey is what an env file key may be, as in laneway.toml's env.
@@ -58,6 +61,8 @@ func (e Effect) check() error {
 			return errors.New("it has no file")
 		}
 		return e.File.Validate()
+	case EffectHTTP:
+		return e.HTTP.check()
 	}
 	return nil
 }
@@ -76,7 +81,11 @@ func (p Plugin) CheckEffects(source string, effects []Effect) (allowed []Effect,
 				source, Article(e.Kind), EffectKinds[e.Kind]))
 			continue
 		}
-		if err := e.check(); err != nil {
+		err := e.check()
+		if err == nil && e.Kind == EffectHTTP {
+			err = p.checkHost(e.HTTP)
+		}
+		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("%s returned %s effect that Laneway refused: %v", source, Article(e.Kind), err))
 			continue
 		}
@@ -85,9 +94,10 @@ func (p Plugin) CheckEffects(source string, effects []Effect) (allowed []Effect,
 	return allowed, warnings
 }
 
-// Article is the effect kind with "a" or "an" before it: "an exec".
+// Article is the effect kind with "a" or "an" before it, as it's read
+// aloud: "an exec", "an http".
 func Article(kind string) string {
-	if strings.ContainsRune("aeiou", rune(kind[0])) {
+	if strings.ContainsRune("aeiou", rune(kind[0])) || kind == EffectHTTP {
 		return "an " + kind
 	}
 	return "a " + kind

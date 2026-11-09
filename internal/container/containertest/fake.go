@@ -36,31 +36,30 @@ type Command func(ctx context.Context, spec container.Spec, data *Volume, cmd []
 
 // Volume is a fake container's data. It is safe for concurrent use.
 type Volume struct {
-	mu     sync.Mutex
-	data   map[string]string
-	lists  map[string][]string
-	shared map[string]any
+	mu    sync.Mutex
+	data  map[string]string
+	lists map[string][]string
+
+	sharedMu sync.Mutex // held while make runs, so it runs once per key
+	shared   map[string]any
 }
 
 // Shared is the value kept under key for the fake container's Servers and
 // Commands to share in memory, such as the sessions connected to its
-// server, made with make the first time. make may use the Volume; if two callers race, one's value is kept.
+// server, made with make the first time. make runs once per key, even when
+// a container's Server and its first command ask at the same time, so it
+// may set up the Volume (what the image's initialisation makes). make may
+// use the Volume but not call Shared.
 func (v *Volume) Shared(key string, make func() any) any {
-	v.mu.Lock()
-	value, ok := v.shared[key]
-	v.mu.Unlock()
-	if ok {
+	v.sharedMu.Lock()
+	defer v.sharedMu.Unlock()
+	if value, ok := v.shared[key]; ok {
 		return value
 	}
-	value = make()
-	v.mu.Lock()
-	defer v.mu.Unlock()
 	if v.shared == nil {
 		v.shared = map[string]any{}
 	}
-	if kept, ok := v.shared[key]; ok {
-		return kept
-	}
+	value := make()
 	v.shared[key] = value
 	return value
 }

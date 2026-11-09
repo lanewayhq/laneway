@@ -349,6 +349,9 @@ const (
 	CodeUnknownPlugin = "unknown_plugin"
 	// CodeUnknownCommand: the Plugin has no command of the name.
 	CodeUnknownCommand = "unknown_command"
+	// CodePluginInUse: a Plugin can't be removed while Linked Projects use
+	// it; the message lists them.
+	CodePluginInUse = "plugin_in_use"
 
 	// CodePluginsUnavailable: Linking needs Catalog Plugins that couldn't
 	// be fetched, such as when offline; the message names them.
@@ -490,6 +493,9 @@ type Plugin struct {
 	Effects []PluginEffect `json:"effects"`
 	// HTTPHosts are the hosts its http effects may reach.
 	HTTPHosts []string `json:"httpHosts"`
+	// Global is true for a machine-wide Plugin (`lane plugin add
+	// --global`), which only personal config turns on.
+	Global bool `json:"global,omitempty"`
 	// Update is the release `lane plugin update` would update it to, if
 	// the Catalog lists a newer one.
 	Update *PluginUpdate `json:"update,omitempty"`
@@ -549,6 +555,9 @@ type AddPluginRequest struct {
 	// Preview only reads and checks the Plugin, adding nothing, so the
 	// developer can confirm what it may do first.
 	Preview bool `json:"preview,omitempty"`
+	// Global adds it as a machine-wide Plugin, which only the global
+	// config or a Project's laneway.local.toml turns on.
+	Global bool `json:"global,omitempty"`
 }
 
 // AddPluginResponse is the Plugin added (or, previewing, that would be).
@@ -557,6 +566,22 @@ type AddPluginResponse struct {
 	// Replaces is the installed Plugin of the same name it replaced (or
 	// would replace), if any.
 	Replaces *Plugin `json:"replaces,omitempty"`
+}
+
+// RemovePluginResponse is the body of DELETE /v1/plugins/{plugin}: the
+// Plugin removed.
+type RemovePluginResponse struct {
+	Plugin Plugin `json:"plugin"`
+	// Kept are the Services of the Plugin's Engines, stopped but with their
+	// data kept: adding the Plugin again brings them back as they were.
+	Kept []KeptService `json:"kept"`
+}
+
+// KeptService is a Service whose Engine's Plugin was removed, and the
+// volume its data is kept in.
+type KeptService struct {
+	Name   string `json:"name"`
+	Volume string `json:"volume"`
 }
 
 // PluginCommandRequest is the body of POST

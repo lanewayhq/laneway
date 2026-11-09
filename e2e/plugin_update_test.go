@@ -47,18 +47,12 @@ func hookedRelease(t *testing.T, version, capabilities string) string {
   "capabilities": %s}`, version, capabilities))
 }
 
-// hookedProject is a Project the hooked Plugin's Recipe detects.
-func hookedProject(t *testing.T, name string) *gitfixture.Repo {
-	t.Helper()
-	return gitfixture.New(t, name).WriteFile("hooked", "").Commit("hooked")
-}
-
 func TestAnUpdateAskingForNewCapabilitiesNeedsConfirming(t *testing.T) {
 	t.Parallel()
 	cat := testkit.NewCatalog(t)
 	cat.Publish(hookedRelease(t, "1.0.0", `{"effects": ["env", "warning"]}`))
 	d := catalogDaemon(t, cat)
-	d.MustRunCLI(hookedProject(t, "hooked-caps").Dir, "link", "--yes")
+	d.MustRunCLI(hookedProject(t, "hooked-caps", "", "{}").Dir, "link", "--yes")
 	cat.Publish(hookedRelease(t, "1.1.0", `{"effects": ["env", "exec", "http", "warning"], "http": ["ntfy.sh"]}`))
 
 	declined := d.RunCLIWithInput(d.Home, "n\n", "plugin", "update")
@@ -89,7 +83,7 @@ func TestYesSkipsConfirmingAnUpdatesNewCapabilities(t *testing.T) {
 	cat := testkit.NewCatalog(t)
 	cat.Publish(hookedRelease(t, "1.0.0", `{"effects": ["warning"]}`))
 	d := catalogDaemon(t, cat)
-	d.MustRunCLI(hookedProject(t, "hooked-yes").Dir, "link", "--yes")
+	d.MustRunCLI(hookedProject(t, "hooked-yes", "", "{}").Dir, "link", "--yes")
 	cat.Publish(hookedRelease(t, "2.0.0", `{"effects": ["exec", "warning"]}`))
 
 	out := d.MustRunCLI(d.Home, "plugin", "update", "hooked", "--yes").Stdout

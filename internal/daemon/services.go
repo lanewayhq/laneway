@@ -26,7 +26,9 @@ func (d *Daemon) serveRecordedServices() {
 	for _, rs := range d.registry.Services() {
 		e, ok := d.plugins.Engines().Lookup(rs.Engine)
 		if !ok {
-			d.log.Warn("unknown Service in the Registry", "engine", rs.Engine)
+			// Its Engine's Plugin was removed: its data is kept for
+			// when the Plugin is added again.
+			d.log.Info("not serving a Service whose Engine isn't installed", "service", rs.Name())
 			continue
 		}
 		d.services.Serve(service.Service{Engine: e, Version: rs.Version, Port: rs.Port})

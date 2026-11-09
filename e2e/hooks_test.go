@@ -63,7 +63,7 @@ func TestAPluginHookingAnEventLanewayDoesNotHaveIsRefused(t *testing.T) {
 	if res.ExitCode == 0 {
 		t.Fatalf("adding a Plugin hooking an unknown event exited 0:\n%s", res.Output())
 	}
-	assertContains(t, res.Stderr, `hooks[1]: "deployed" isn't an event a Plugin can hook; use preparing, ready, worktree_removed`)
+	assertContains(t, res.Stderr, `hooks[1]: "deployed" isn't an event a Plugin can hook; use link, unlink, preparing, ready, worktree_removed, primary_domain_changed, process_started, process_stopped, process_crashed, idle, woken, service_started, service_stopped`)
 }
 
 func TestAPreparingHookSetsEnvKeysInTheWorktreeBeforeItIsReady(t *testing.T) {
