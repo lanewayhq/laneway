@@ -12,6 +12,7 @@ import (
 	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/catalog"
 	"github.com/lanewayhq/laneway/internal/engine"
+	"github.com/lanewayhq/laneway/internal/envpatch"
 	"github.com/lanewayhq/laneway/internal/plugin"
 	"github.com/lanewayhq/laneway/internal/recipe"
 )
@@ -202,8 +203,9 @@ func (d *Daemon) withRelease(ctx context.Context, name string, r catalog.Release
 }
 
 // enginePlugins are the Catalog Plugins (not installed) adding the Engines
-// that the Project in dir names in its resolved config, as a Service or as
-// its database's engine. The config is resolved as if every Catalog Engine
+// that the Project in dir names in its resolved config: as a Service, as its
+// database's engine, or in an env template's Service variable, such as
+// {redis_port}. The config is resolved as if every Catalog Engine
 // were installed; if it doesn't resolve for another reason, none are
 // needed, and Linking reports that reason.
 func (f *catalogFetch) enginePlugins(dir string) []string {
@@ -230,9 +232,20 @@ func (f *catalogFetch) enginePlugins(dir string) []string {
 		return nil
 	}
 	var names []string
-	for _, s := range res.Services {
-		if p, ok := by[s.Engine]; ok && !slices.Contains(names, p) {
+	need := func(e string) {
+		if p, ok := by[e]; ok && !slices.Contains(names, p) {
 			names = append(names, p)
+		}
+	}
+	for _, s := range res.Services {
+		need(s.Engine)
+	}
+	templates := slices.Concat(slices.Collect(maps.Values(res.Env)), slices.Collect(maps.Values(res.LinkedEnv)))
+	for _, e := range assumed {
+		for _, v := range e.Variables() {
+			if slices.ContainsFunc(templates, func(t string) bool { return envpatch.Uses(t, v) }) {
+				need(e.Name)
+			}
 		}
 	}
 	return names
