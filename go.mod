@@ -6,9 +6,8 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/caddyserver/caddy/v2 v2.11.7
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/lanewayhq/plugins v0.0.0-20261109040628-57edf8f6489f
+	github.com/lanewayhq/plugins v0.0.0-20261109043745-4c6aca2b19c9
 	github.com/tetratelabs/wazero v1.12.0
-	go.yaml.in/yaml/v3 v3.0.5
 )
 
 require (
@@ -137,6 +136,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.28.0 // indirect
 	go.uber.org/zap/exp v0.3.0 // indirect
+	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20260929172509-b39ff6d641ec // indirect
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect

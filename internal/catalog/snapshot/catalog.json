@@ -1,0 +1,172 @@
+{
+  "format": 1,
+  "plugins": [
+    {
+      "name": "boost",
+      "releases": [
+        {
+          "version": "1.0.0",
+          "api_version": 1,
+          "url": "https://github.com/lanewayhq/plugins/releases/download/boost/v1.0.0/boost-1.0.0.tar.gz",
+          "sha256": "4360e3c125a06bea2a0bd89cf0760266ffc455537ae696e3520ea683ea9d5886"
+        }
+      ]
+    },
+    {
+      "name": "claude",
+      "releases": [
+        {
+          "version": "1.0.0",
+          "api_version": 1,
+          "url": "https://github.com/lanewayhq/plugins/releases/download/claude/v1.0.0/claude-1.0.0.tar.gz",
+          "sha256": "118ea85e987a3ce80ea598ea7b9c3a31d9ef9371ef3fce8f06dfe7db9ed72598"
+        }
+      ]
+    },
+    {
+      "name": "laravel",
+      "releases": [
+        {
+          "version": "0.1.0",
+          "api_version": 1,
+          "url": "https://github.com/lanewayhq/plugins/releases/download/laravel/v0.1.0/laravel-0.1.0.tar.gz",
+          "sha256": "86e48b81b7363300f2b59fd093101ca16cb3d74c4b8ca601b70dbf1236cad8e5",
+          "recipes": [
+            {
+              "name": "laravel",
+              "detect": {
+                "file": "artisan"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "mailpit",
+      "releases": [
+        {
+          "version": "1.0.0",
+          "api_version": 1,
+          "url": "https://github.com/lanewayhq/plugins/releases/download/mailpit/v1.0.0/mailpit-1.0.0.tar.gz",
+          "sha256": "5d5acfd689fd7190b6f48fdf1e7ec7966dd9715621991f9517f4af2ad7b03fe9",
+          "engines": [
+            "mailpit"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "mysql",
+      "releases": [
+        {
+          "version": "1.0.0",
+          "api_version": 1,
+          "url": "https://github.com/lanewayhq/plugins/releases/download/mysql/v1.0.0/mysql-1.0.0.tar.gz",
+          "sha256": "c1ded1e341c169f0d5159df360391f5ed1747e52276b01ed79f7f6e61ca4c4ee",
+          "engines": [
+            "mysql"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "postgres",
+      "releases": [
+        {
+          "version": "1.0.0",
+          "api_version": 1,
+          "url": "https://github.com/lanewayhq/plugins/releases/download/postgres/v1.0.0/postgres-1.0.0.tar.gz",
+          "sha256": "21b41df1a5e050b205a1eca07606578ef634f02c3d1a3ad7081ec3c38f8cfe33",
+          "engines": [
+            "postgres"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "rails",
+      "releases": [
+        {
+          "version": "0.1.0",
+          "api_version": 1,
+          "url": "https://github.com/lanewayhq/plugins/releases/download/rails/v0.1.0/rails-0.1.0.tar.gz",
+          "sha256": "d1c160aeac63ab885b4a161b1b9aba218ccf572a71c8c7f645450614a1e1880c",
+          "recipes": [
+            {
+              "name": "rails",
+              "detect": {
+                "all": [
+                  {
+                    "file": "config/application.rb"
+                  },
+                  {
+                    "any": [
+                      {
+                        "gem": "rails"
+                      },
+                      {
+                        "gem": "railties"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "redis",
+      "releases": [
+        {
+          "version": "1.0.0",
+          "api_version": 1,
+          "url": "https://github.com/lanewayhq/plugins/releases/download/redis/v1.0.0/redis-1.0.0.tar.gz",
+          "sha256": "e08829e39d0bc39ea6ab65171e51ec6c7b6b18d9d264a42eb7af3d4d9694c818",
+          "engines": [
+            "redis"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "t3",
+      "releases": [
+        {
+          "version": "1.0.0",
+          "api_version": 1,
+          "url": "https://github.com/lanewayhq/plugins/releases/download/t3/v1.0.0/t3-1.0.0.tar.gz",
+          "sha256": "3f4f899b910827d8147e446eb73a9df07ca040422aeaa803fca6ed751e5bbda1"
+        }
+      ]
+    },
+    {
+      "name": "vite",
+      "releases": [
+        {
+          "version": "0.1.0",
+          "api_version": 1,
+          "url": "https://github.com/lanewayhq/plugins/releases/download/vite/v0.1.0/vite-0.1.0.tar.gz",
+          "sha256": "15633c10d58e1a07f3eedd7d55daaf6697a95f8c602533c2d441e82747544fdc",
+          "integrations": [
+            {
+              "name": "vite",
+              "detect": {
+                "any": [
+                  {
+                    "package": "vite"
+                  },
+                  {
+                    "package": "laravel-vite-plugin"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
