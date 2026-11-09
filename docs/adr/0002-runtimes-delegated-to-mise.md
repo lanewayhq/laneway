@@ -4,4 +4,4 @@ Laneway does not install or manage language Runtimes. It resolves each Runtime t
 
 Owning Runtimes for every language would mean rebuilding mise, asdf or nix. The PATH fallback exists because mise compiles PHP from source, which is slow and makes extensions awkward to add; insisting on mise alone would make Laravel's first run worse than Herd's. Prebuilt PHP downloads (Herd's approach) were rejected because they would make Laneway a Runtime distributor.
 
-Instead of a "config vs version file" mismatch warning, Laneway checks the resolved Runtime against the Project's declared constraints and required extensions. It reports problems in `lane doctor` and when a Worktree starts.
+Instead of a "config vs version file" mismatch warning, Laneway checks the resolved Runtime against the Project's declared constraints and required extensions, and checks a PHP Project's PHP loads the PDO driver its database Engine needs (`pdo_mysql`, `pdo_pgsql` or `pdo_sqlite`). It reports problems in `lane link`, in `lane doctor` and when a Worktree starts.
