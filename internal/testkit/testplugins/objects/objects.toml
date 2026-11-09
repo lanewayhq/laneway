@@ -60,3 +60,75 @@ set -eu
 xml=$(curl -sS --fail-with-body --aws-sigv4 aws:amz:us-east-1:s3 --user "$OBJECTS_ACCESS_KEY:$OBJECTS_SECRET_KEY" http://127.0.0.1:7490/) || { echo "$xml" >&2; exit 1; }
 printf '%s' "$xml" | grep -o '<Name>[^<]*</Name>' | sed 's/<[^>]*>//g' || :
 ''']
+# Copies every object of {from} into a new Bucket {to} on the server with
+# rc, fetched into the container first. {to} is tagged laneway-clone until
+# the copy is complete (so exists doesn't see it), and dropped if it fails.
+clone = ["sh", "-c", '''
+set -eu
+case $(uname -m) in
+x86_64) arch=amd64 sum=31e79fe7697c870e60f5b5c9008adbb3ad5af7f9f2ab45a3d68585c5f87238d1 ;;
+aarch64) arch=arm64 sum=a02091205fe4d9fbf0d16a0dac3d46ad7fac7d5266024b5b17e76327a4e88aa8 ;;
+*) echo "rc: no release for $(uname -m)" >&2; exit 1 ;;
+esac
+rc=$HOME/.cache/laneway/rc-$sum
+if [ ! -x "$rc" ]; then
+  mkdir -p "${rc%/*}"
+  tmp=$(mktemp -d "${rc%/*}/fetch.XXXXXX")
+  trap 'rm -rf "$tmp"' EXIT
+  url=https://github.com/rustfs/cli/releases/download/v0.1.37/rustfs-cli-linux-$arch-v0.1.37.tar.gz
+  echo "downloading rc 0.1.37 for $arch from $url" >&2
+  curl -fsSL --retry 3 -o "$tmp/rc.tar.gz" "$url"
+  got=$(sha256sum "$tmp/rc.tar.gz" | cut -d ' ' -f 1)
+  if [ "$got" != "$sum" ]; then
+    echo "rc: $url has SHA-256 $got, not $sum" >&2
+    exit 1
+  fi
+  tar -xzf "$tmp/rc.tar.gz" -C "$tmp" rc
+  chmod 0755 "$tmp/rc"
+  mv -f "$tmp/rc" "$rc"
+  for old in "${rc%/*}"/rc-*; do [ "$old" = "$rc" ] || rm -f "$old"; done
+fi
+export RC_HOST_local="http://$OBJECTS_ACCESS_KEY:$OBJECTS_SECRET_KEY@127.0.0.1:7490"
+from=$1 to=$2
+s3() { curl -sS --fail-with-body -o /dev/stderr --aws-sigv4 aws:amz:us-east-1:s3 --user "$OBJECTS_ACCESS_KEY:$OBJECTS_SECRET_KEY" "$@"; }
+drop() { s3 -X DELETE -H 'x-rustfs-force-delete: true' "http://127.0.0.1:7490/$1"; }
+drop "$to" 2>/dev/null || :
+s3 -X PUT "http://127.0.0.1:7490/$to"
+s3 -X PUT --data-binary '<Tagging><TagSet><Tag><Key>laneway-clone</Key><Value>incomplete</Value></Tag></TagSet></Tagging>' "http://127.0.0.1:7490/$to?tagging"
+if ! "$rc" --quiet --no-progress cp --recursive --concurrency 16 "local/$from/" "local/$to/"; then
+  drop "$to" || :
+  exit 1
+fi
+s3 -X DELETE "http://127.0.0.1:7490/$to?tagging"
+''', "sh", "{from}", "{to}"]
+# Prints the total bytes of {bucket}'s objects, from a full listing by rc.
+size = ["sh", "-c", '''
+set -eu
+case $(uname -m) in
+x86_64) arch=amd64 sum=31e79fe7697c870e60f5b5c9008adbb3ad5af7f9f2ab45a3d68585c5f87238d1 ;;
+aarch64) arch=arm64 sum=a02091205fe4d9fbf0d16a0dac3d46ad7fac7d5266024b5b17e76327a4e88aa8 ;;
+*) echo "rc: no release for $(uname -m)" >&2; exit 1 ;;
+esac
+rc=$HOME/.cache/laneway/rc-$sum
+if [ ! -x "$rc" ]; then
+  mkdir -p "${rc%/*}"
+  tmp=$(mktemp -d "${rc%/*}/fetch.XXXXXX")
+  trap 'rm -rf "$tmp"' EXIT
+  url=https://github.com/rustfs/cli/releases/download/v0.1.37/rustfs-cli-linux-$arch-v0.1.37.tar.gz
+  echo "downloading rc 0.1.37 for $arch from $url" >&2
+  curl -fsSL --retry 3 -o "$tmp/rc.tar.gz" "$url"
+  got=$(sha256sum "$tmp/rc.tar.gz" | cut -d ' ' -f 1)
+  if [ "$got" != "$sum" ]; then
+    echo "rc: $url has SHA-256 $got, not $sum" >&2
+    exit 1
+  fi
+  tar -xzf "$tmp/rc.tar.gz" -C "$tmp" rc
+  chmod 0755 "$tmp/rc"
+  mv -f "$tmp/rc" "$rc"
+  for old in "${rc%/*}"/rc-*; do [ "$old" = "$rc" ] || rm -f "$old"; done
+fi
+export RC_HOST_local="http://$OBJECTS_ACCESS_KEY:$OBJECTS_SECRET_KEY@127.0.0.1:7490"
+b=$1
+out=$("$rc" --json --no-progress bucket list --recursive --summarize "local/$b/") || exit 1
+printf '%s\n' "$out" | sed -n 's/^ *"total_size_bytes": \([0-9]*\),\{0,1\}$/\1/p'
+''', "sh", "{bucket}"]
