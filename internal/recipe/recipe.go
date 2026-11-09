@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/detect"
 	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/runtimes"
 	"github.com/lanewayhq/laneway/internal/service"
@@ -41,8 +42,8 @@ type Input struct {
 type Recipe interface {
 	// Name identifies the Recipe, such as "laravel".
 	Name() string
-	// Detect reports whether the Project in dir is this Recipe's kind.
-	Detect(dir string) bool
+	// Detection is the rule a Project of this Recipe's kind matches.
+	Detection() detect.Rule
 	// Defaults is the bottom config layer for the Project in dir.
 	Defaults(dir string) (config.Layer, error)
 }
@@ -66,14 +67,47 @@ type TestDatabaseWarner interface {
 	TestDatabaseWarnings(dir string) []string
 }
 
+// TestEnvRecipe is a Recipe whose Projects' tests read their settings from
+// an env file other than DefaultTestEnv.
+type TestEnvRecipe interface {
+	Recipe
+	// TestEnv is the env file the tests of the Recipe's Projects read.
+	TestEnv() TestEnv
+}
+
+// TestEnv is the env file a Project's tests read their settings from, which
+// Laneway patches to point them at the Worktree's Test Database.
+type TestEnv struct {
+	// File is the env file's name in the Worktree, such as ".env.testing".
+	File string
+	// Layered means the tests read File over .env, so a File holding only
+	// the Env Patch is complete and Laneway may create it. Otherwise File
+	// replaces .env for the tests, and Laneway only patches one the
+	// Worktree has, or a copy of the main Worktree's.
+	Layered bool
+}
+
+// DefaultTestEnv is the test env file of a Project whose Recipe names none:
+// Laravel's .env.testing, which replaces .env when the tests run.
+var DefaultTestEnv = TestEnv{File: ".env.testing"}
+
 // Resolved is the Project's resolved config.
 type Resolved struct {
 	// Recipe is the name of the Recipe that detected the Project; "" if
 	// none did.
 	Recipe string
+	// RecipeRule is the part of the Recipe's detection rule the Project
+	// matched, described for people, such as "artisan exists"; "" with
+	// Recipe.
+	RecipeRule string
 	// Integrations are the names of the Integrations that detected the
 	// Project, in the order their layers apply (by name); nil if none did.
 	Integrations []string
+	// IntegrationRules are, by Integration name, the part of each detected
+	// Integration's detection rule the Project matched, described for
+	// people, such as "package.json depends on vite"; nil with
+	// Integrations.
+	IntegrationRules map[string]string
 	// Name is the configured Project name; "" means use the directory name.
 	Name string
 	// Processes are the enabled Processes, sorted by name.
@@ -120,6 +154,10 @@ type Resolved struct {
 	// (DatabaseService) and database.test is on, or auto and the Recipe
 	// decides so (TestDatabaseRecipe).
 	TestDatabase bool
+	// TestEnv is the env file the Project's tests read, which Laneway
+	// points at the Test Database (TestEnvRecipe, else DefaultTestEnv).
+	// Zero when TestDatabase is false.
+	TestEnv TestEnv
 	// TestDatabaseWarnings are why the Project's tests may not use the
 	// Test Database although there is one, such as a phpunit.xml that
 	// hard-codes DB_DATABASE (TestDatabaseWarner). Each names the file it
@@ -346,23 +384,24 @@ func Resolve(in Input) (Resolved, error) {
 	var layers []config.Layer // the Recipe's, then the Integrations', then in.Layers
 	var detected Recipe
 	for _, r := range in.Recipes {
-		if !r.Detect(in.Dir) {
+		matched, ok := r.Detection().Match(in.Dir)
+		if !ok {
 			continue
 		}
 		defaults, err := r.Defaults(in.Dir)
 		if err != nil {
 			return Resolved{}, err
 		}
-		res.Recipe, detected = r.Name(), r
+		res.Recipe, res.RecipeRule, detected = r.Name(), matched, r
 		layers = append(layers, defaults)
 		break
 	}
 	recipeLayers := len(layers)
-	integrations, names, err := detectIntegrations(in.Dir, in.Integrations)
+	integrations, names, rules, err := detectIntegrations(in.Dir, in.Integrations)
 	if err != nil {
 		return Resolved{}, err
 	}
-	res.Integrations = names
+	res.Integrations, res.IntegrationRules = names, rules
 	if err := checkIntegrations(integrations, in.Layers); err != nil {
 		return Resolved{}, err
 	}
@@ -513,6 +552,12 @@ func Resolve(in Input) (Resolved, error) {
 	case "", "auto":
 		r, ok := detected.(TestDatabaseRecipe)
 		res.TestDatabase = inService && ok && r.AutoTestDatabase(in.Dir)
+	}
+	if res.TestDatabase {
+		res.TestEnv = DefaultTestEnv
+		if r, ok := detected.(TestEnvRecipe); ok {
+			res.TestEnv = r.TestEnv()
+		}
 	}
 	if w, ok := detected.(TestDatabaseWarner); ok && res.TestDatabase {
 		res.TestDatabaseWarnings = w.TestDatabaseWarnings(in.Dir)

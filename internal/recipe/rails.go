@@ -1,7 +1,6 @@
 package recipe
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"maps"
@@ -15,6 +14,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/detect"
 	"github.com/lanewayhq/laneway/internal/dotenv"
 	"github.com/lanewayhq/laneway/internal/engine"
 )
@@ -27,8 +27,11 @@ type Rails struct{}
 
 func (Rails) Name() string { return "rails" }
 
-func (Rails) Detect(dir string) bool {
-	return exists(dir, filepath.Join("config", "application.rb")) && gemfileDeclares(dir, "rails", "railties")
+func (Rails) Detection() detect.Rule {
+	return detect.Rule{All: []detect.Rule{
+		{File: "config/application.rb"},
+		{Any: []detect.Rule{{Gem: "rails"}, {Gem: "railties"}}},
+	}}
 }
 
 // withEnv loads the Worktree's .env into the environment of the command
@@ -44,9 +47,11 @@ const railsServer = withEnv + "exec bin/rails server -b 127.0.0.1 -p {port}"
 
 func (Rails) Defaults(dir string) (config.Layer, error) {
 	l := config.Layer{Source: "the rails Recipe", Processes: map[string]config.ProcessLayer{}}
+	railsProcfileProcesses(&l, dir)
 	l.Processes["web"] = config.ProcessLayer{Command: ptr(railsServer), Primary: ptr(true)}
 	l.Env = map[string]string{}
 	railsDatabase(&l, dir)
+	railsRedis(&l, dir)
 	// A new Worktree has no gems installed yet. Laneway makes its database
 	// itself, so there is no db:prepare.
 	l.Worktree = &config.WorktreeLayer{OnCreate: []string{"bundle install"}}
@@ -126,28 +131,38 @@ func railsDevelopmentDatabase(dir string) (db railsDB, from string, err error) {
 		}
 		return db, from, nil
 	}
-	from = "config/database.yml"
-	data, err := os.ReadFile(filepath.Join(dir, "config", "database.yml"))
+	db, err = railsYmlDatabase(dir, "development")
+	return db, railsDatabaseYml, err
+}
+
+// railsDatabaseYml is the Rails app's database config, relative to it.
+const railsDatabaseYml = "config/database.yml"
+
+// railsYmlDatabase reads the database config/database.yml gives the Rails
+// environment env (development, test): with several databases, the primary
+// one, the app's own. It is empty if the file has none for env.
+func railsYmlDatabase(dir, env string) (railsDB, error) {
+	data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(railsDatabaseYml)))
 	if os.IsNotExist(err) {
-		return railsDB{}, from, nil
+		return railsDB{}, nil
 	}
 	if err != nil {
-		return railsDB{}, from, err
+		return railsDB{}, err
 	}
 	var doc map[string]any
 	if err := yaml.Unmarshal(withoutERB(data), &doc); err != nil {
-		return railsDB{}, from, err
+		return railsDB{}, err
 	}
-	dev, _ := doc["development"].(map[string]any)
-	if _, ok := dev["adapter"]; !ok {
-		// Several databases: the primary one is the app's own.
-		if primary, ok := dev["primary"].(map[string]any); ok {
-			dev = primary
+	config, _ := doc[env].(map[string]any)
+	if _, ok := config["adapter"]; !ok {
+		if primary, ok := config["primary"].(map[string]any); ok {
+			config = primary
 		}
 	}
-	db.adapter, _ = dev["adapter"].(string)
-	db.database, _ = dev["database"].(string)
-	return db, from, nil
+	var db railsDB
+	db.adapter, _ = config["adapter"].(string)
+	db.database, _ = config["database"].(string)
+	return db, nil
 }
 
 // erbTag matches an ERB tag in database.yml, such as <%= ENV["X"] %>.
@@ -201,26 +216,8 @@ func railsSQLitePath(dir, file string) string {
 	return filepath.ToSlash(rel)
 }
 
-// gemLine matches a Gemfile line declaring a gem: gem "name", ….
-var gemLine = regexp.MustCompile(`^\s*gem\s*\(?\s*["']([^"']+)["']`)
-
 // gemfileDeclares reports whether the Gemfile in dir declares any of gems.
 func gemfileDeclares(dir string, gems ...string) bool {
-	data, err := os.ReadFile(filepath.Join(dir, "Gemfile"))
-	if err != nil {
-		return false
-	}
-	sc := bufio.NewScanner(bytes.NewReader(data))
-	for sc.Scan() {
-		m := gemLine.FindStringSubmatch(sc.Text())
-		if m == nil {
-			continue
-		}
-		for _, gem := range gems {
-			if m[1] == gem {
-				return true
-			}
-		}
-	}
-	return false
+	declared := detect.Gems(dir)
+	return slices.ContainsFunc(gems, func(gem string) bool { return declared[gem] })
 }

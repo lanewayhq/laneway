@@ -19,16 +19,17 @@ func (d *Daemon) info(ctx context.Context, dir string) (api.Info, error) {
 		return api.Info{}, err
 	}
 	info := api.Info{
-		SchemaVersion: api.InfoSchemaVersion,
-		Project:       api.InfoProject{Name: wt.Project.Name, Path: wt.Project.Path},
-		Worktree:      api.InfoWorktree{Name: wt.Worktree.Name, Path: wt.Worktree.Path, Main: wt.Worktree.Main},
-		Domain:        wt.Domain,
-		URL:           wt.URL,
-		Aliases:       []api.InfoAlias{},
-		State:         d.worktreeState(wt.Domain),
-		Processes:     []api.InfoProcess{},
-		Services:      []api.InfoService{},
-		Integrations:  []string{},
+		SchemaVersion:    api.InfoSchemaVersion,
+		Project:          api.InfoProject{Name: wt.Project.Name, Path: wt.Project.Path},
+		Worktree:         api.InfoWorktree{Name: wt.Worktree.Name, Path: wt.Worktree.Path, Main: wt.Worktree.Main},
+		Domain:           wt.Domain,
+		URL:              wt.URL,
+		Aliases:          []api.InfoAlias{},
+		State:            d.worktreeState(wt.Domain),
+		Processes:        []api.InfoProcess{},
+		Services:         []api.InfoService{},
+		Integrations:     []string{},
+		IntegrationRules: []api.InfoIntegrationRule{},
 	}
 	for _, domain := range wt.Worktree.Aliases {
 		info.Aliases = append(info.Aliases, api.InfoAlias{Domain: domain, URL: domainURL(domain)})
@@ -52,8 +53,11 @@ func (d *Daemon) info(ctx context.Context, dir string) (api.Info, error) {
 	}
 	if cfgErr == nil {
 		info.Services = d.infoServices(cfg.Services)
-		info.Recipe = cfg.Recipe
+		info.Recipe, info.RecipeRule = cfg.Recipe, cfg.RecipeRule
 		info.Integrations = orEmpty(cfg.Integrations)
+		for _, name := range cfg.Integrations {
+			info.IntegrationRules = append(info.IntegrationRules, api.InfoIntegrationRule{Name: name, Rule: cfg.IntegrationRules[name]})
+		}
 	} else {
 		info.ConfigError = cfgErr.Error()
 	}

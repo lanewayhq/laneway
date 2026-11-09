@@ -1,13 +1,13 @@
 package recipe_test
 
 import (
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/detect"
 	"github.com/lanewayhq/laneway/internal/recipe"
 )
 
@@ -18,10 +18,7 @@ type databaseStack struct{}
 
 func (databaseStack) Name() string { return "database-stack" }
 
-func (databaseStack) Detect(dir string) bool {
-	_, err := os.Stat(filepath.Join(dir, "database-stack"))
-	return err == nil
-}
+func (databaseStack) Detection() detect.Rule { return detect.Rule{File: "database-stack"} }
 
 func (databaseStack) Defaults(dir string) (config.Layer, error) {
 	return config.ParseLayer("the database-stack Recipe", []byte(`

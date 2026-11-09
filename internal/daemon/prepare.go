@@ -61,12 +61,12 @@ func (d *Daemon) setupPlan(p registry.Project, w worktreeRef) prepare.Plan {
 			if err := d.applyPlan(p, plan); err != nil {
 				return err
 			}
-			testPlan, missing, err := d.planTestEnvPatch(p, w)
+			testPlan, warning, err := d.planTestEnvPatch(p, w)
 			if err != nil {
-				return fmt.Errorf("the Env Patch for %s: %w", filepath.Join(w.dir, testEnvFileName), err)
+				return fmt.Errorf("the Env Patch for %s: %w", filepath.Join(w.dir, cfg.TestEnv.File), err)
 			}
-			if missing != "" {
-				prepare.Warn(ctx, testEnvWarning(p, missing))
+			if warning != "" {
+				prepare.Warn(ctx, warning)
 			}
 			return d.applyPlan(p, testPlan)
 		}})

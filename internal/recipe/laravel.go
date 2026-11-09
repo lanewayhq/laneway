@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/detect"
 	"github.com/lanewayhq/laneway/internal/dotenv"
 	"github.com/lanewayhq/laneway/internal/engine"
 )
@@ -23,10 +24,7 @@ var _ TestDatabaseRecipe = Laravel{}
 
 func (Laravel) Name() string { return "laravel" }
 
-func (Laravel) Detect(dir string) bool {
-	fi, err := os.Stat(filepath.Join(dir, "artisan"))
-	return err == nil && fi.Mode().IsRegular()
-}
+func (Laravel) Detection() detect.Rule { return detect.Rule{File: "artisan"} }
 
 // webCommand serves the app with PHP's built-in server and 8 workers, which
 // spike #4 found matches PHP-FPM once Laneway serves public/ itself (see
