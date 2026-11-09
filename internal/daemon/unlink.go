@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/lanewayhq/laneway/internal/api"
-	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/registry"
 )
 
@@ -31,9 +30,9 @@ func (d *Daemon) unlink(ctx context.Context, dir string) (api.UnlinkResponse, er
 	now := d.cfg.Clock.Now()
 	var orphans []registry.Orphan
 	for _, w := range worktrees {
-		cfg, err := recipe.ResolveDir(w.dir)
+		cfg, err := d.plugins.ResolveDir(w.dir)
 		if err != nil {
-			if cfg, err = recipe.ResolveDir(p.Path); err != nil {
+			if cfg, err = d.plugins.ResolveDir(p.Path); err != nil {
 				d.log.Error("finding the databases of an unlinked Worktree", "project", p.Name, "dir", w.dir, "err", err)
 				continue
 			}

@@ -10,7 +10,6 @@ import (
 	"github.com/lanewayhq/laneway/internal/envpatch"
 	"github.com/lanewayhq/laneway/internal/gitrepo"
 	"github.com/lanewayhq/laneway/internal/naming"
-	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/registry"
 )
 
@@ -30,7 +29,7 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 	if err != nil {
 		return api.LinkResponse{}, err
 	}
-	cfg, err := recipe.ResolveDir(checkout.MainDir)
+	cfg, err := d.plugins.ResolveDir(checkout.MainDir)
 	if err != nil {
 		return api.LinkResponse{}, &api.Error{Code: api.CodeInvalidConfig, Message: err.Error()}
 	}

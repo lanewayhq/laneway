@@ -39,7 +39,7 @@ func (d *Daemon) info(ctx context.Context, dir string) (api.Info, error) {
 			Output: orEmpty(s.Output), Warnings: orEmpty(s.Warnings)}
 	}
 	dir = wt.Worktree.Path
-	cfg, cfgErr := recipe.ResolveDir(dir)
+	cfg, cfgErr := d.plugins.ResolveDir(dir)
 	if cfgErr == nil {
 		info.Processes = processInfo(cfg.Processes, d.supervisor.Processes(dir), wt.Worktree.PrimaryDomain)
 	}

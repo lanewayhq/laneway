@@ -29,6 +29,8 @@ func (d *Daemon) routes() http.Handler {
 	mux.HandleFunc("POST /v1/services/{action}", d.handleControlServices)
 	mux.HandleFunc("GET /v1/orphans", d.handleListOrphans)
 	mux.HandleFunc("POST /v1/gc", d.handleGC)
+	mux.HandleFunc("GET /v1/plugins", d.handleListPlugins)
+	mux.HandleFunc("POST /v1/plugins", d.handleAddPlugin)
 	return mux
 }
 
@@ -229,6 +231,8 @@ var statusFor = map[string]int{
 
 	api.CodeUnknownService: http.StatusNotFound,
 	api.CodeServiceFailed:  http.StatusBadGateway,
+
+	api.CodeInvalidPlugin: http.StatusUnprocessableEntity,
 }
 
 // writeError sends err to the client. An *api.Error is passed through as is;
@@ -251,4 +255,21 @@ func (d *Daemon) writeError(w http.ResponseWriter, err error) {
 func (d *Daemon) queryDir(r *http.Request) (string, error) {
 	q := r.URL.Query()
 	return d.worktreeDir(r.Context(), q.Get("dir"), q.Get("worktree"))
+}
+
+func (d *Daemon) handleListPlugins(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, d.listPlugins())
+}
+
+func (d *Daemon) handleAddPlugin(w http.ResponseWriter, r *http.Request) {
+	var req api.AddPluginRequest
+	if !readJSON(w, r, &req) {
+		return
+	}
+	res, err := d.addPlugin(req)
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }

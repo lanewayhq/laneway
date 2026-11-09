@@ -52,7 +52,7 @@ func (d *Daemon) serveServices(services []recipe.Service) {
 // serveServicesOf serves the Services the config of the Worktree at dir
 // declares. A config error is reported when the Worktree starts.
 func (d *Daemon) serveServicesOf(dir string) {
-	if cfg, err := recipe.ResolveDir(dir); err == nil {
+	if cfg, err := d.plugins.ResolveDir(dir); err == nil {
 		d.serveServices(cfg.Services)
 	}
 }

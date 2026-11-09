@@ -367,8 +367,9 @@ var Builtin = []Recipe{Laravel{}, Rails{}}
 
 // ResolveDir resolves the Project in dir from its laneway.toml and
 // laneway.local.toml with the Builtin Recipes and BuiltinIntegrations,
-// checking the Runtimes found for dir if any are given. It is how the daemon
-// reads config, every time it is about to start a Worktree's Processes.
+// checking the Runtimes found for dir if any are given. The daemon and the
+// CLI read config through plugin.Host.ResolveDir instead, which adds the
+// installed Plugins' Recipes.
 func ResolveDir(dir string, found ...runtimes.Runtime) (Resolved, error) {
 	layers, err := config.LoadLayers(dir)
 	if err != nil {

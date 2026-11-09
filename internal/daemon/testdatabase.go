@@ -65,7 +65,7 @@ func (d *Daemon) databaseInfo(p registry.Project, dir string) *api.Database {
 	if !ok {
 		return nil
 	}
-	cfg, err := recipe.ResolveDir(dir)
+	cfg, err := d.plugins.ResolveDir(dir)
 	if err != nil {
 		return nil
 	}

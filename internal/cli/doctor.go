@@ -16,7 +16,6 @@ import (
 	"github.com/lanewayhq/laneway/internal/gitrepo"
 	"github.com/lanewayhq/laneway/internal/paths"
 	"github.com/lanewayhq/laneway/internal/platform"
-	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/runtimes"
 )
 
@@ -154,7 +153,12 @@ func checkRuntimes(ctx context.Context, r *report, env Env) {
 // DB_DATABASE. A config that can't be resolved isn't reported here: link
 // and starts report it.
 func checkTestDatabase(ctx context.Context, r *report, env Env) {
-	res, err := recipe.ResolveDir(worktreeDir(ctx, env))
+	plugins, err := openPlugins(env)
+	if err != nil {
+		return
+	}
+	defer plugins.Close()
+	res, err := plugins.ResolveDir(worktreeDir(ctx, env))
 	if err != nil {
 		return
 	}

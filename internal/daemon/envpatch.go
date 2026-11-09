@@ -64,7 +64,7 @@ func (d *Daemon) envVars(p registry.Project, w worktreeRef, db recipe.Database) 
 // Patch, from the templates in the Worktree's own config. A Project without
 // templates gets no Env Patch: its env files are never touched.
 func (d *Daemon) planEnvPatch(p registry.Project, w worktreeRef) (envpatch.Plan, error) {
-	cfg, err := recipe.ResolveDir(w.dir)
+	cfg, err := d.plugins.ResolveDir(w.dir)
 	templates := cfg.EnvFor(w.main)
 	if err != nil || len(templates) == 0 {
 		return envpatch.Plan{}, err
@@ -105,7 +105,7 @@ func (d *Daemon) envPatchVars(p registry.Project, w worktreeRef, cfg recipe.Reso
 // main Worktree has one, test config is left alone and warning says why
 // the tests won't use the Test Database.
 func (d *Daemon) planTestEnvPatch(p registry.Project, w worktreeRef) (plan envpatch.Plan, warning string, err error) {
-	cfg, err := recipe.ResolveDir(w.dir)
+	cfg, err := d.plugins.ResolveDir(w.dir)
 	templates := cfg.EnvFor(w.main)
 	if err != nil || len(templates) == 0 {
 		return envpatch.Plan{}, "", err
@@ -210,7 +210,7 @@ func (d *Daemon) projectWorktreeRefs(ctx context.Context, p registry.Project) ([
 	if err != nil {
 		return nil, err
 	}
-	changes := d.registry.PlanWorktrees(p.Path, found, reservedLabels(p))
+	changes := d.registry.PlanWorktrees(p.Path, found, d.reservedLabels(p))
 	removed := map[string]bool{}
 	for _, w := range changes.Removed {
 		removed[w.Path] = true

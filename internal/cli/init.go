@@ -34,7 +34,12 @@ func runInit(ctx context.Context, env Env, args []string) error {
 	}
 	path := filepath.Join(checkout.Dir, config.FileName)
 
-	in := recipe.Input{Dir: checkout.Dir, Recipes: recipe.Builtin, Integrations: recipe.BuiltinIntegrations}
+	plugins, err := openPlugins(env)
+	if err != nil {
+		return err
+	}
+	defer plugins.Close()
+	in := recipe.Input{Dir: checkout.Dir, Recipes: plugins.Recipes(), Integrations: recipe.BuiltinIntegrations}
 	committed, err := config.LoadLayer(path)
 	switch {
 	case err == nil && !*force:

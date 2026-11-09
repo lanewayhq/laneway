@@ -84,3 +84,15 @@ func (p Paths) GlobalConfig() string {
 func (p Paths) Setup() string {
 	return filepath.Join(p.StateDir, "setup.json")
 }
+
+// Plugins is the directory installed Plugins are kept in, one directory
+// each, named after the Plugin.
+func (p Paths) Plugins() string {
+	return filepath.Join(p.StateDir, "plugins")
+}
+
+// PluginCache is the directory Plugins' compiled WASM modules are kept in,
+// so a module is compiled once, not every time Laneway starts.
+func (p Paths) PluginCache() string {
+	return filepath.Join(p.StateDir, "plugin-cache")
+}

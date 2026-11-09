@@ -328,6 +328,9 @@ const (
 	// CodeServiceFailed: a Service could not be started or stopped, such
 	// as when no container engine is available.
 	CodeServiceFailed = "service_failed"
+
+	// CodeInvalidPlugin: a Plugin can't be added; the message says why.
+	CodeInvalidPlugin = "invalid_plugin"
 )
 
 // Service is a shared Service, such as redis:7, and how to connect to it.
@@ -433,3 +436,60 @@ type Error struct {
 }
 
 func (e *Error) Error() string { return e.Message }
+
+// Plugin is an installed Plugin, or one about to be added: the body of
+// GET /v1/plugins (in a PluginList) and of POST /v1/plugins.
+type Plugin struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	// Source is where it was added from, such as a directory.
+	Source string `json:"source"`
+	// SHA256 is the hash of its module it is pinned to; "" without one.
+	SHA256 string `json:"sha256,omitempty"`
+	// Recipes are the Recipes it adds.
+	Recipes []PluginRecipe `json:"recipes"`
+	// Effects are the kinds of effect it may return, each with what it
+	// lets the Plugin do; empty if it only returns config.
+	Effects []PluginEffect `json:"effects"`
+	// HTTPHosts are the hosts its http effects may reach.
+	HTTPHosts []string `json:"httpHosts"`
+}
+
+// PluginRecipe is a Recipe a Plugin adds.
+type PluginRecipe struct {
+	Name string `json:"name"`
+	// Detects describes the Projects its detection rule matches, such as
+	// "Procfile exists".
+	Detects string `json:"detects"`
+}
+
+// PluginEffect is a kind of effect a Plugin may return.
+type PluginEffect struct {
+	Kind string `json:"kind"`
+	// Description says what it lets the Plugin do, such as "run commands
+	// in Worktrees".
+	Description string `json:"description"`
+}
+
+// PluginList is every installed Plugin, sorted by name.
+type PluginList struct {
+	Plugins []Plugin `json:"plugins"`
+}
+
+// AddPluginRequest is the body of POST /v1/plugins: add the Plugin in a
+// directory.
+type AddPluginRequest struct {
+	// Source is the Plugin's directory, an absolute path.
+	Source string `json:"source"`
+	// Preview only reads and checks the Plugin, adding nothing, so the
+	// developer can confirm what it may do first.
+	Preview bool `json:"preview,omitempty"`
+}
+
+// AddPluginResponse is the Plugin added (or, previewing, that would be).
+type AddPluginResponse struct {
+	Plugin Plugin `json:"plugin"`
+	// Replaces is the installed Plugin of the same name it replaced (or
+	// would replace), if any.
+	Replaces *Plugin `json:"replaces,omitempty"`
+}

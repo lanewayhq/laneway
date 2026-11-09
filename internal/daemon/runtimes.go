@@ -25,7 +25,7 @@ type worktreeConfig struct {
 // Like the config, Runtimes are resolved on every start.
 func (d *Daemon) resolveWorktree(ctx context.Context, dir string) (worktreeConfig, error) {
 	env := runtimes.Environ(ctx, dir, d.cfg.Env)
-	res, err := recipe.ResolveDir(dir, env.Find(ctx)...)
+	res, err := d.plugins.ResolveDir(dir, env.Find(ctx)...)
 	if err != nil {
 		return worktreeConfig{}, err
 	}

@@ -126,7 +126,8 @@ func (d *Daemon) Start() {
 	// Port 0: tests never bind fixed ports.
 	cfg := daemon.Config{Paths: d.Paths, ProxyAddr: "127.0.0.1:0", HTTPAddr: "127.0.0.1:0",
 		Env:             []string{"HOME=" + d.Home, "PATH=" + d.Path},
-		ContainerEngine: d.Engine, ServiceHosts: []string{d.serviceHost}, Platform: d.Platform}
+		ContainerEngine: d.Engine, ServiceHosts: []string{d.serviceHost}, Platform: d.Platform,
+		PluginCacheDir: pluginCacheDir}
 	for _, opt := range d.opts {
 		opt(&cfg)
 	}
