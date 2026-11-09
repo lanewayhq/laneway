@@ -33,6 +33,9 @@ const APIVersion = 1
 const (
 	// CallRecipe asks a Recipe for the Project's config layer.
 	CallRecipe = "recipe"
+	// CallIntegration asks an Integration for the config layer it adds to
+	// the Project.
+	CallIntegration = "integration"
 )
 
 // Request is what Laneway sends a Plugin's module on stdin.
@@ -41,8 +44,8 @@ type Request struct {
 	APIVersion int `json:"api_version"`
 	// Call is what Laneway asks for, such as CallRecipe.
 	Call string `json:"call"`
-	// Name names what answers the call, such as the Recipe's name as the
-	// manifest declares it.
+	// Name names what answers the call, such as the Recipe's or
+	// Integration's name as the manifest declares it.
 	Name string `json:"name"`
 	// Dir is the Project's directory as the module sees it: mounted
 	// read-only, and the module's working directory.
@@ -56,8 +59,29 @@ type Response struct {
 	Error string `json:"error,omitempty"`
 	// RecipeResult answers a CallRecipe.
 	*RecipeResult
+	// IntegrationResult answers a CallIntegration.
+	*IntegrationResult
 	// GeneratorResult answers a CallGenerator.
 	*GeneratorResult
+}
+
+// MarshalJSON writes the Error alone, or the one result that is set. (Two
+// embedded results with the same fields, such as layer, would otherwise
+// cancel each other out.)
+func (r Response) MarshalJSON() ([]byte, error) {
+	switch {
+	case r.Error != "":
+		return json.Marshal(struct {
+			Error string `json:"error"`
+		}{r.Error})
+	case r.RecipeResult != nil:
+		return json.Marshal(r.RecipeResult)
+	case r.IntegrationResult != nil:
+		return json.Marshal(r.IntegrationResult)
+	case r.GeneratorResult != nil:
+		return json.Marshal(r.GeneratorResult)
+	}
+	return []byte("{}"), nil
 }
 
 // RecipeResult is what a Recipe returns for a Project it detected.
@@ -71,6 +95,20 @@ type RecipeResult struct {
 	// TestDatabaseWarnings are reasons the Project's tests may bypass their
 	// Test Database, each naming the file at fault.
 	TestDatabaseWarnings []string `json:"test_database_warnings,omitempty"`
+	// Warnings are problems worth telling the developer about that don't
+	// stop the Project running, each naming the file at fault.
+	Warnings []string `json:"warnings,omitempty"`
+}
+
+// IntegrationResult is what an Integration returns for a Project it
+// detected.
+type IntegrationResult struct {
+	// Layer is the Integration's config layer, applied over the Recipe's
+	// and under the Project's laneway.toml and laneway.local.toml. It may
+	// not choose the Primary Process, and a key another Integration sets
+	// to a different value is an error unless the Project's config sets
+	// it.
+	Layer Layer `json:"layer"`
 	// Warnings are problems worth telling the developer about that don't
 	// stop the Project running, each naming the file at fault.
 	Warnings []string `json:"warnings,omitempty"`
@@ -135,11 +173,16 @@ func (p Project) Exists(name string) bool {
 // matched.
 type Recipe func(Project) (RecipeResult, error)
 
+// Integration answers a CallIntegration for a Project the Integration's
+// detection rule matched.
+type Integration func(Project) (IntegrationResult, error)
+
 // Plugin is what a Plugin's module handles, by the names its manifest
 // declares.
 type Plugin struct {
-	Recipes    map[string]Recipe
-	Generators map[string]Generator
+	Recipes      map[string]Recipe
+	Integrations map[string]Integration
+	Generators   map[string]Generator
 }
 
 // Run answers the request on stdin and exits: it is a Plugin module's whole
@@ -182,6 +225,16 @@ func handle(p Plugin, req Request) (Response, error) {
 			return Response{}, err
 		}
 		return Response{RecipeResult: &res}, nil
+	case CallIntegration:
+		integration, ok := p.Integrations[req.Name]
+		if !ok {
+			return Response{}, fmt.Errorf("this Plugin has no Integration %q", req.Name)
+		}
+		res, err := integration(project)
+		if err != nil {
+			return Response{}, err
+		}
+		return Response{IntegrationResult: &res}, nil
 	case CallGenerator:
 		generator, ok := p.Generators[req.Name]
 		if !ok {

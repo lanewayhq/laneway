@@ -46,6 +46,8 @@ type Manifest struct {
 	Module string `json:"module,omitempty"`
 	// Recipes are the Recipes it adds, in the order they detect Projects.
 	Recipes []RecipeDecl `json:"recipes,omitempty"`
+	// Integrations are the Integrations it adds.
+	Integrations []IntegrationDecl `json:"integrations,omitempty"`
 	// Generators are the Generators it adds, run in this order by
 	// `lane generate <plugin>`.
 	Generators []GeneratorDecl `json:"generators,omitempty"`
@@ -161,8 +163,8 @@ func (m Manifest) validate() error {
 	if m.Module != "" && (path.IsAbs(m.Module) || !fs.ValidPath(m.Module)) {
 		return fmt.Errorf("module %q must be a path inside the Plugin's directory, such as %q", m.Module, DefaultModule)
 	}
-	if len(m.Recipes) == 0 && len(m.Generators) == 0 {
-		return errors.New("the Plugin adds nothing; declare what it adds, such as a Recipe under recipes")
+	if len(m.Recipes) == 0 && len(m.Integrations) == 0 && len(m.Generators) == 0 {
+		return errors.New("the Plugin adds nothing; declare what it adds, such as a Recipe under recipes, an Integration under integrations or a Generator under generators")
 	}
 	seen := map[string]bool{}
 	for i, r := range m.Recipes {
@@ -178,6 +180,9 @@ func (m Manifest) validate() error {
 		}
 	}
 	if err := m.validateGenerators(); err != nil {
+		return err
+	}
+	if err := validateIntegrations(m.Integrations); err != nil {
 		return err
 	}
 	for _, kind := range m.Capabilities.Effects {
@@ -201,5 +206,5 @@ func (m Manifest) module() string {
 
 // needsModule reports whether the Plugin has calls to answer.
 func (m Manifest) needsModule() bool {
-	return len(m.Recipes) > 0 || len(m.Generators) > 0
+	return len(m.Recipes) > 0 || len(m.Integrations) > 0 || len(m.Generators) > 0
 }

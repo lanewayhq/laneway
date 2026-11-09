@@ -90,6 +90,9 @@ func printPlugin(w io.Writer, res api.AddPluginResponse) {
 	for _, r := range p.Recipes {
 		fmt.Fprintf(w, "  adds the Recipe %s, for Projects where %s\n", r.Name, r.Detects)
 	}
+	for _, in := range p.Integrations {
+		fmt.Fprintf(w, "  adds the Integration %s, for Projects where %s\n", in.Name, in.Detects)
+	}
 	for _, g := range p.Generators {
 		fmt.Fprintf(w, "  adds the Generator %s, run with `lane generate %s`\n", g, p.Name)
 	}
@@ -128,6 +131,9 @@ func runPluginList(ctx context.Context, env Env, args []string) error {
 		var adds []string
 		for _, r := range p.Recipes {
 			adds = append(adds, "Recipe "+r.Name)
+		}
+		for _, in := range p.Integrations {
+			adds = append(adds, "Integration "+in.Name)
 		}
 		for _, g := range p.Generators {
 			adds = append(adds, "Generator "+g)
