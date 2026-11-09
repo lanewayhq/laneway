@@ -232,6 +232,30 @@ func TestAnEnvEffectLeavesKeysTheEnvPatchSetsToIt(t *testing.T) {
 	assertContains(t, res.Stderr, "warning: Plugin hooked's Preparing hook set APP_URL, which the Env Patch sets")
 }
 
+func TestAPluginsHooksFireForProjectsItsIntegrationDetects(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	plugin := withManifest(t, testkit.Plugin(t, "hooked"), `{
+  "name": "hooked",
+  "version": "0.1.0",
+  "api_version": 1,
+  "integrations": [{"name": "hooked-tool", "detect": {"file": "hooked-tool"}}],
+  "hooks": ["preparing"],
+  "capabilities": {"effects": ["env"]}
+}`)
+	d.MustRunCLI(d.Home, "plugin", "add", "--yes", plugin)
+	repo := gitfixture.New(t, "hook-integration").
+		WriteFile(".gitignore", ".env\n").
+		WriteFile("hooked-tool", "").
+		WriteFile("hooks.json", `{"preparing": {"effects": [{"kind": "env", "env": {"HOOKED": "{project}"}}]}}`).
+		Commit("a Project using the hooked-tool Integration")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+
+	assertContains(t, readFile(t, filepath.Join(repo.Dir, ".env")), "HOOKED=hook-integration\n")
+}
+
 func TestAPluginsHooksDoNotFireForProjectsThatDoNotUseIt(t *testing.T) {
 	t.Parallel()
 	d := hookedDaemon(t)

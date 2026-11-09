@@ -1,5 +1,7 @@
 // Command hooked is a test Plugin that hooks Preparing, Ready and Worktree
-// removed. Its Recipe detects Projects with a hooked file and adds nothing.
+// removed. Its Recipe detects Projects with a hooked file and adds nothing;
+// its Integration hooked-tool, which its manifest doesn't declare (tests
+// that need it do), adds nothing either.
 // Each hook does what the mounted Worktree's hooks.json says for its event:
 //
 //	{"ready": {"effects": [{"kind": "exec", "command": "touch ran"}], "error": "…"}}
@@ -21,6 +23,9 @@ import (
 func main() {
 	sdk.Run(sdk.Plugin{
 		Recipes: map[string]sdk.Recipe{"hooked": func(sdk.Project) (sdk.RecipeResult, error) { return sdk.RecipeResult{}, nil }},
+		Integrations: map[string]sdk.Integration{
+			"hooked-tool": func(sdk.Project) (sdk.IntegrationResult, error) { return sdk.IntegrationResult{}, nil },
+		},
 		Hooks: map[string]sdk.Hook{
 			sdk.EventPreparing:       hook,
 			sdk.EventReady:           hook,
