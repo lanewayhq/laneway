@@ -287,3 +287,17 @@ func TestLinkingWithoutEverReachingTheCatalogWarnsThatPluginsItNeedsMayNotBeTher
 	assertContains(t, res.Stderr, "so it couldn't fetch any Plugin from it this Project needs")
 	assertContains(t, res.Stderr, "run `lane link` again")
 }
+
+func TestARecipeServiceWhoseEngineIsntInstalledOrInTheCatalogIsNamedAsUnknown(t *testing.T) {
+	t.Parallel()
+	d := catalogDaemon(t, testkit.NewCatalog(t))
+	d.MustRunCLI(d.Home, "plugin", "add", "--yes", testkit.FirstPartyPlugin(t, "laravel"))
+	repo := laravelRepo(t, "lara-no-engines")
+
+	res := d.RunCLI(repo.Dir, "link", "--yes")
+
+	if res.ExitCode == 0 {
+		t.Fatalf("Linking exited 0 without the Engines the Recipe names:\n%s", res.Output())
+	}
+	assertContains(t, res.Stderr, `the laravel Recipe (Plugin laravel): services.mailpit: Laneway has no Service "mailpit"`)
+}
