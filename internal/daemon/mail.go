@@ -2,7 +2,9 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/lanewayhq/laneway/internal/config"
 	"github.com/lanewayhq/laneway/internal/service"
@@ -19,13 +21,20 @@ func (d *Daemon) mailDomain() string {
 	return "mail." + d.cfg.DashboardDomain
 }
 
-// mailService is the name of the Mailpit Service the inbox shows: the
+// mailLink is the Dashboard link a Plugin declares (as Mailpit's does) on
+// the Services of its Engine whose web UI is the inbox at the mail Domain.
+const mailLink = "https://mail.{dashboard_domain}/"
+
+// mailService is the name of the Service the inbox shows: one of an Engine
+// whose Plugin links its Services to the mail Domain (see mailLink), the
 // default version's if it is served, else the first served one.
 func (d *Daemon) mailService() (string, bool) {
 	var found []service.Status
-	for _, st := range d.services.List() {
-		if st.Engine.Name == "mailpit" {
-			found = append(found, st)
+	for _, e := range d.plugins.EnginesLinkedAt(mailLink) {
+		for _, st := range d.services.List() {
+			if st.Engine.Name == e.Name {
+				found = append(found, st)
+			}
 		}
 	}
 	for _, st := range found {
@@ -44,8 +53,13 @@ func (d *Daemon) mailService() (string, bool) {
 func (d *Daemon) mailUpstream(ctx context.Context) (string, error) {
 	name, ok := d.mailService()
 	if !ok {
-		return "", fmt.Errorf("no Project uses Mailpit yet: declare it in the [services] table of %s (mailpit = %q) and link the Project",
-			config.FileName, d.mailpitVersion())
+		engines := d.plugins.EnginesLinkedAt(mailLink)
+		if len(engines) == 0 {
+			return "", errors.New("no installed Plugin serves an inbox here, such as Mailpit's")
+		}
+		e := engines[0]
+		return "", fmt.Errorf("no Project uses %s yet: declare it in the [services] table of %s (%s = %q) and link the Project",
+			strings.ToUpper(e.Name[:1])+e.Name[1:], config.FileName, e.Name, e.DefaultVersion)
 	}
 	return d.services.Web(ctx, name)
 }
@@ -58,12 +72,4 @@ func (d *Daemon) useMail() func() {
 		return func() {}
 	}
 	return d.services.Use(name)
-}
-
-// mailpitVersion is the Mailpit Engine's default version.
-func (d *Daemon) mailpitVersion() string {
-	if e, ok := d.plugins.Engines().Lookup("mailpit"); ok {
-		return e.DefaultVersion
-	}
-	return ""
 }

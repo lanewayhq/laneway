@@ -100,6 +100,25 @@ func (h *Host) Engines() engine.Set {
 	return set
 }
 
+// EnginesLinkedAt are the Engines with a web UI (engine.Manifest.WebPort)
+// added by Plugins that link their Services to url, a Dashboard link's URL
+// as the manifest writes it, such as "https://mail.{dashboard_domain}/":
+// those whose web UI Laneway serves there. Built-in Plugins' come first.
+func (h *Host) EnginesLinkedAt(url string) []*engine.Manifest {
+	var engines []*engine.Manifest
+	for _, p := range append(builtin(), h.List()...) {
+		if !slices.ContainsFunc(p.Dashboard.Links, func(l LinkDecl) bool { return l.Scope == ScopeService && l.URL == url }) {
+			continue
+		}
+		for _, e := range p.Engines {
+			if e.WebPort > 0 {
+				engines = append(engines, e)
+			}
+		}
+	}
+	return engines
+}
+
 // checkEngineNames reports an Engine p adds that takes the name of a
 // built-in Engine or of another installed Plugin's, and p taking the name of
 // a built-in Plugin.
