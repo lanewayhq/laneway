@@ -44,7 +44,7 @@ func TestAServiceWhoseEngineIsInTheCatalogButNotInstalledSaysToRunLaneDoctor(t *
 	upgrade(t, d)
 
 	want := "laneway.toml: services.kv: " + notInstalled("kv")
-	eventually(t, "lane info to say kv isn't installed", func() bool { return strings.Contains(configError(t, d, repo.Dir), want) })
+	eventuallyInBackground(t, "lane info to say kv isn't installed", func() bool { return strings.Contains(configError(t, d, repo.Dir), want) })
 
 	cat.Online()
 	d.RunCLI(repo.Dir, "doctor")
@@ -68,7 +68,7 @@ func TestADatabaseEngineInTheCatalogButNotInstalledSaysToRunLaneDoctorRatherThan
 	upgrade(t, d)
 
 	want := "laneway.toml: database.engine: " + notInstalled("postgres")
-	eventually(t, "lane info to say postgres isn't installed", func() bool { return strings.Contains(configError(t, d, repo.Dir), want) })
+	eventuallyInBackground(t, "lane info to say postgres isn't installed", func() bool { return strings.Contains(configError(t, d, repo.Dir), want) })
 	// The new Worktree is prepared as the daemon starts, before it has
 	// loaded the Catalog, and its setup fails saying so too.
 	assertContains(t, d.RunCLI(wt.Dir, "worktree", "ready").Stderr, want)
@@ -90,7 +90,7 @@ func TestARecipeServiceWhoseEngineIsInTheCatalogButNotInstalledSaysToRunLaneDoct
 	d.Start()
 
 	want := "the laravel Recipe (Plugin laravel): services.mailpit: " + notInstalled("mailpit")
-	eventually(t, "lane info to say mailpit isn't installed", func() bool { return strings.Contains(configError(t, d, repo.Dir), want) })
+	eventuallyInBackground(t, "lane info to say mailpit isn't installed", func() bool { return strings.Contains(configError(t, d, repo.Dir), want) })
 }
 
 func TestCommandsReadingConfigWithoutTheDaemonSayToRunLaneDoctorForAnEngineInTheCatalogButNotInstalled(t *testing.T) {
