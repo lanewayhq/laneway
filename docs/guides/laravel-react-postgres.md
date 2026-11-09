@@ -1,6 +1,6 @@
 # Manual: a new Laravel + Inertia + React + PostgreSQL app on Laneway
 
-This manual takes a fresh Linux or WSL2 machine that only has the `lane` binary and ends with a Laravel app (the official React starter kit: Inertia, React, TypeScript, Tailwind) running on PostgreSQL. Along the way it uses everything Laneway does for a Laravel Project:
+This manual takes a fresh Linux or WSL2 machine and ends with a Laravel app (the official React starter kit: Inertia, React, TypeScript, Tailwind) running on PostgreSQL. Along the way it uses everything Laneway does for a Laravel Project:
 
 - HTTPS Domains: `https://shop.localhost`, with Vite's dev server and live reload at `https://vite.shop.localhost`
 - Processes that start lazily: the web server, the queue worker and Vite start on the first request and stop when the Worktree is Idle
@@ -67,6 +67,12 @@ mise settings add trusted_config_paths ~/code
 ---
 
 ## 2. Set up Laneway
+
+Install the `lane` binary into `~/.local/bin` (it checks the download against the release's checksums):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/lanewayhq/laneway/main/install.sh | sh
+```
 
 `lane install` writes the systemd unit with the `PATH` of the shell you run it from. The daemon only needs `mise` on that `PATH`: it asks mise for each Worktree's Runtimes itself. So run this after §1.2:
 
