@@ -54,6 +54,12 @@ func runStatus(ctx context.Context, env Env, args []string) error {
 	if err := tw.Flush(); err != nil {
 		return err
 	}
+	// Below the table, which scripts read by column.
+	for _, p := range projects {
+		for _, w := range p.Warnings {
+			fmt.Fprintf(env.Stdout, "\nwarning: Project %q: %s\n", p.Name, w)
+		}
+	}
 	printPluginUpdates(ctx, env, c)
 	return nil
 }

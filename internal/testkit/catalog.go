@@ -171,6 +171,13 @@ func (c *Catalog) Offline() {
 	c.offline = true
 }
 
+// Online makes the Catalog and its releases reachable again, after Offline.
+func (c *Catalog) Online() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.offline = false
+}
+
 // Forge signs the Catalog with a key other than its own from now on, as a
 // Catalog served by someone who took over where it's downloaded from would
 // be.

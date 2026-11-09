@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/activity"
@@ -54,6 +55,10 @@ type served struct {
 	// Worktree's Services (holdAlwaysServices); nil when there is none.
 	// Guarded by lifecycle.
 	alwaysServices func()
+
+	// pluginsGen is the daemon's pluginsGen when the Worktree was served,
+	// or the one it last caught up to (see catchUp).
+	pluginsGen atomic.Uint64
 
 	mu    sync.Mutex
 	start *startAttempt // the running or last start; nil until the first request
@@ -130,6 +135,7 @@ func (d *Daemon) serveProject(p registry.Project) {
 // the first request for the Domain.
 func (d *Daemon) serveWorktree(p registry.Project, w worktreeRef) {
 	s := &served{worktreeRef: w, project: p.Name, group: w.dir}
+	s.pluginsGen.Store(d.pluginsGen.Load())
 	s.ctx, s.cancel = context.WithCancel(d.stopping)
 	s.activity = activity.New(d.cfg.Clock, DefaultIdleTimeout, func() { d.goIdle(s) })
 	d.servedMu.Lock()

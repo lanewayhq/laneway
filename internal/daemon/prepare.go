@@ -39,6 +39,7 @@ import (
 // the first step, and so is one the daemon stopped in the middle of.
 func (d *Daemon) setupPlan(p registry.Project, w worktreeRef) prepare.Plan {
 	return func(ctx context.Context) ([]prepare.Step, error) {
+		d.setupReadsConfig(w.dir)
 		cfg, err := d.plugins.ResolveDir(w.dir)
 		if err != nil {
 			return nil, err
@@ -91,6 +92,9 @@ func (d *Daemon) prepare(p registry.Project, w worktreeRef, retry bool) {
 // Worktree's directory in the background.
 func (d *Daemon) teardown(p registry.Project, w worktreeRef) {
 	d.preparer.Forget(w.dir)
+	d.setupGensMu.Lock()
+	delete(d.setupGens, w.dir)
+	d.setupGensMu.Unlock()
 	d.preparer.Go(fmt.Sprintf("on_remove for Worktree %q of Project %q", w.name, p.Name),
 		func(ctx context.Context) ([]prepare.Step, error) {
 			cfg, err := d.plugins.ResolveDir(p.Path)
@@ -132,10 +136,13 @@ func (d *Daemon) setupEnv(ctx context.Context, p registry.Project, w worktreeRef
 	return env
 }
 
-// setupOf is the API view of the setup state of the Worktree at dir.
+// setupOf is the API view of the setup state of the Worktree at dir. Its
+// warnings include the Catalog Plugins Laneway couldn't fetch for its
+// Project when it started, which may be why its setup failed.
 func (d *Daemon) setupOf(dir string) *api.Setup {
 	st := d.preparer.Status(dir)
-	return &api.Setup{State: string(st.State), Step: st.Step, Error: st.Error, Output: st.Output, Warnings: st.Warnings}
+	return &api.Setup{State: string(st.State), Step: st.Step, Error: st.Error, Output: st.Output,
+		Warnings: append(d.unfetchedWarnings(dir), st.Warnings...)}
 }
 
 // worktreeReady finds the Worktree containing req.Dir (discovering it at once

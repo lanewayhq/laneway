@@ -142,16 +142,22 @@ func (s *Source) Load(ctx context.Context) (cat *Catalog, err error) {
 		}
 		return cat, nil
 	}
-	err = fmt.Errorf("the Catalog at %s: %w", s.loc.URL, err)
-	if kept, kerr := s.kept(); kerr == nil {
-		return kept, err
+	return s.Cached(), fmt.Errorf("the Catalog at %s: %w", s.loc.URL, err)
+}
+
+// Cached returns what Load falls back on, without fetching the Catalog: the
+// copy kept last time, or else the Location's snapshot. It is nil if there
+// is neither.
+func (s *Source) Cached() *Catalog {
+	if kept, err := s.kept(); err == nil {
+		return kept
 	}
 	if s.loc.Snapshot != nil {
-		if snap, serr := Verify(s.loc.Snapshot, s.loc.SnapshotSig, s.loc.Key); serr == nil {
-			return snap, err
+		if snap, err := Verify(s.loc.Snapshot, s.loc.SnapshotSig, s.loc.Key); err == nil {
+			return snap
 		}
 	}
-	return nil, err
+	return nil
 }
 
 func (s *Source) fetch(ctx context.Context) (*Catalog, []byte, []byte, error) {

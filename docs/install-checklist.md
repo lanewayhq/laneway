@@ -52,7 +52,7 @@ The binary carries no Recipes, Integrations, Engines or Generators: a fresh inst
 - [ ] Link a fresh Laravel app (`laravel new`, then `git init`) with `lane link`. It prints `Fetched Plugin laravel … from the Catalog`, plus one line for each Engine its `.env.example` uses (such as `mysql`, `redis` and `mailpit`; none for SQLite), and the app is served at `https://<project>.localhost/`.
 - [ ] `lane plugin list` shows them, with source `Catalog`.
 - [ ] `lane harness add claude` in that app prints `Fetched Plugin claude … from the Catalog` the first time, and not the second.
-- [ ] Offline on a fresh install: remove `~/.local/state/laneway/plugins` and `~/.local/state/laneway/catalog` with the daemon stopped, start it, disconnect from the network, and `lane link` a Laravel app. It fails with "this Project needs Plugins from the Catalog that Laneway couldn't fetch: laravel" (named from the Catalog snapshot built into Laneway). If no snapshot was built in yet, it Links with a warning that Laneway has never been able to fetch the Catalog instead.
+- [ ] Offline on a fresh install: remove `~/.local/state/laneway/plugins` and `~/.local/state/laneway/catalog` with the daemon stopped, disconnect from the network (before starting it, since it fetches what Linked Projects need when it starts), start it, and `lane link` a Laravel app. It fails with "this Project needs Plugins from the Catalog that Laneway couldn't fetch: laravel" (named from the Catalog snapshot built into Laneway). If no snapshot was built in yet, it Links with a warning that Laneway has never been able to fetch the Catalog instead.
 - [ ] A Project with only a SQLite database (`[database] engine = "sqlite"`) Links and serves with Podman and Docker stopped, and fetches no Plugins.
 
 ## `lane open`
@@ -76,6 +76,11 @@ The binary carries no Recipes, Integrations, Engines or Generators: a fresh inst
 - [ ] Reboot (WSL2: `wsl.exe --shutdown` from Windows, then open a new shell).
 - [ ] `sysctl net.ipv4.ip_unprivileged_port_start` is still `80`.
 - [ ] The service started on its own (`systemctl --user is-active laneway` prints `active`), and `lane doctor` is all `ok`.
+
+## After an upgrade
+
+- [ ] With a Project Linked, remove the installed Plugins (`systemctl --user stop laneway`, `rm -r ~/.local/state/laneway/plugins`, `systemctl --user start laneway`), as an upgrade that leaves them behind does. Without running anything else, `lane plugin list` lists the Project's Plugins again within a few seconds, and `lane info` in the Project shows its Recipe and no `Config` error.
+- [ ] Do the same offline. `lane status` and `lane info` warn that Laneway couldn't fetch the Project's Plugins and say to run `lane doctor`. If the Project's config names an Engine, such as `engine = "postgres"` under `[database]`, `lane info`'s `Config` line says "the postgres Engine isn't installed; run `lane doctor` to fetch it from the Catalog", not `must be sqlite`. Back online, `lane doctor` fetches them and the warning and the `Config` error go.
 
 ## Results
 

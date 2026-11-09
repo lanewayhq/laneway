@@ -24,7 +24,7 @@ type pluginRecipe struct {
 	plugin Plugin
 	decl   RecipeDecl
 	// engines are the Engines its layer's Services may name.
-	engines engine.Set
+	engines engine.Known
 }
 
 // recipeResponse is a module's answer to a Recipe call (see
@@ -80,8 +80,10 @@ func (r pluginRecipe) Defaults(dir string) (recipe.Result, error) {
 
 // parseLayer reads a layer a module returned as JSON keyed like
 // laneway.toml, checking it exactly as laneway.toml is checked: it goes
-// through TOML so that config.ParseLayer's validation and errors apply.
-func parseLayer(source string, raw json.RawMessage, engines engine.Set) (config.Layer, error) {
+// through TOML so that config.ParseLayer's validation and errors apply. A
+// Service without a version takes its Engine's default one, so its Engine
+// must be installed (see engine.Known.Lookup).
+func parseLayer(source string, raw json.RawMessage, engines engine.Known) (config.Layer, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return config.Layer{Source: source}, nil
 	}
@@ -102,10 +104,9 @@ func parseLayer(source string, raw json.RawMessage, engines engine.Set) (config.
 			if services[name] != "" {
 				continue
 			}
-			e, known := engines.Lookup(name)
-			if !known {
-				return config.Layer{}, fmt.Errorf("%s: services.%s: Laneway has no Service %q; the Services are %s",
-					source, name, name, strings.Join(engines.Names(), ", "))
+			e, err := engines.Lookup(name)
+			if err != nil {
+				return config.Layer{}, fmt.Errorf("%s: services.%s: %w", source, name, err)
 			}
 			services[name] = e.DefaultVersion
 		}

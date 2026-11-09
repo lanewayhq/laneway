@@ -55,8 +55,12 @@ type Step struct {
 
 // Plan works out a Worktree's steps when its setup starts, so config (and the
 // environment, such as the Runtimes) is read then. An error fails setup at
-// the step "config". It must stop when ctx is cancelled.
+// the step StepConfig. It must stop when ctx is cancelled.
 type Plan func(ctx context.Context) ([]Step, error)
+
+// StepConfig is the step a setup fails at when its Plan fails: the
+// Worktree's config couldn't be read.
+const StepConfig = "config"
 
 // Status is a Worktree's setup state.
 type Status struct {
@@ -171,6 +175,25 @@ func (p *Preparer) Begin(dir string, plan Plan, retry bool) {
 			return
 		}
 	}
+	p.startLocked(dir, plan)
+}
+
+// Again prepares the Worktree at dir anew, from the first step, if its
+// setup has finished, Ready or Failed: for one that read its config before
+// something the config needs, such as a Plugin, was installed. It does
+// nothing while setup is running.
+func (p *Preparer) Again(dir string, plan Plan) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed || p.running[dir] != nil || !p.statuses[dir].Done() {
+		return
+	}
+	p.startLocked(dir, plan)
+}
+
+// startLocked starts preparing the Worktree at dir in the background with
+// the steps plan gives. p.mu is held.
+func (p *Preparer) startLocked(dir string, plan Plan) {
 	ctx, cancel := context.WithCancel(p.ctx)
 	j := &job{cancel: cancel, done: make(chan struct{})}
 	p.running[dir] = j
@@ -234,7 +257,7 @@ func (p *Preparer) run(ctx context.Context, dir string, j *job, plan Plan) Statu
 	ctx = context.WithValue(ctx, warningsKey{}, warned)
 	steps, err := plan(ctx)
 	if err != nil {
-		return Status{State: Failed, Step: "config", Error: err.Error(), Warnings: warned.list()}
+		return Status{State: Failed, Step: StepConfig, Error: err.Error(), Warnings: warned.list()}
 	}
 	for _, step := range steps {
 		p.mu.Lock()
@@ -345,7 +368,7 @@ func (p *Preparer) Go(what string, plan Plan) {
 	p.jobs.Go(func() {
 		steps, err := plan(p.ctx)
 		if err != nil {
-			p.log.Error(what+" failed", "step", "config", "err", err)
+			p.log.Error(what+" failed", "step", StepConfig, "err", err)
 			return
 		}
 		for _, step := range steps {

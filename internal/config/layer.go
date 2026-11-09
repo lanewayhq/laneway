@@ -269,38 +269,50 @@ func processKeys(l Layer) []toml.Key {
 }
 
 // CheckEngines checks what in the layer needs an Engine Laneway can run,
-// engines: the Services it declares, database.engine, and the Service
-// variables its templates use. Engines come from Plugins, so this is checked
-// once they are known, when the Recipe Resolver merges the layer, not when
-// it's parsed. Errors name the layer's Source and the key at fault.
-func (l Layer) CheckEngines(engines engine.Set) error {
+// one of engines.Installed: the Services it declares, database.engine, and
+// the Service variables its templates use. Engines come from Plugins, so
+// this is checked once they are known, when the Recipe Resolver merges the
+// layer, not when it's parsed. Naming one Laneway can fetch from the
+// Catalog is an engine.NotInstalled error rather than an unknown Engine.
+// Errors name the layer's Source and the key at fault.
+func (l Layer) CheckEngines(engines engine.Known) error {
 	if err := l.checkEngines(engines); err != nil {
 		return fmt.Errorf("%s: %w", l.Source, err)
 	}
 	return nil
 }
 
-func (l Layer) checkEngines(engines engine.Set) error {
+func (l Layer) checkEngines(engines engine.Known) error {
 	if db := l.Database; db != nil && db.Engine != nil {
-		if names := database.EngineNames(engines); !slices.Contains(names, *db.Engine) {
+		if names := database.EngineNames(engines.Installed); !slices.Contains(names, *db.Engine) {
+			if engines.CanFetch(*db.Engine) {
+				return fmt.Errorf("database.engine: %w", engine.NotInstalled(*db.Engine))
+			}
 			return fmt.Errorf("database.engine must be %s, not %q", oneOf(names), *db.Engine)
 		}
 	}
-	serviceVars := engines.Variables()
+	serviceVars := engines.Installed.Variables()
 	for _, env := range []struct {
 		table     string
 		templates map[string]string
 	}{{"env", l.Env}, {"linked_env", l.LinkedEnv}} {
 		for _, k := range slices.Sorted(maps.Keys(env.templates)) {
-			if err := envpatch.CheckTemplate(env.templates[k], serviceVars); err != nil {
-				return fmt.Errorf("%s.%s: %w", env.table, key(k), err)
+			tmpl := env.templates[k]
+			err := envpatch.CheckTemplate(tmpl, serviceVars)
+			if err == nil {
+				continue
 			}
+			// A Service variable of an Engine Laneway can fetch, such as
+			// {redis_port}, isn't unknown.
+			if fetchErr := engines.TemplateError(func(v string) bool { return envpatch.Uses(tmpl, v) }); fetchErr != nil {
+				err = fetchErr
+			}
+			return fmt.Errorf("%s.%s: %w", env.table, key(k), err)
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(l.Services)) {
-		if _, ok := engines.Lookup(name); !ok {
-			return fmt.Errorf("services.%s: Laneway has no Service %q; the Services are %s",
-				key(name), name, strings.Join(engines.Names(), ", "))
+		if _, err := engines.Lookup(name); err != nil {
+			return fmt.Errorf("services.%s: %w", key(name), err)
 		}
 	}
 	return nil

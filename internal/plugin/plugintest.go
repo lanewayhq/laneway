@@ -220,7 +220,7 @@ func (o *layerOutput) check(source string, engines engine.Set, err error) {
 		*o = layerOutput{Detected: o.Detected, Error: err.Error()}
 		return
 	}
-	l, err := parseLayer(source, o.Layer, assumeServices(o.Layer, engines))
+	l, err := parseLayer(source, o.Layer, engine.Known{Installed: assumeServices(o.Layer, engines)})
 	if err != nil {
 		o.Error = err.Error()
 		return

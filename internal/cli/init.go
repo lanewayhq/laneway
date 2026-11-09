@@ -35,7 +35,11 @@ func runInit(ctx context.Context, env Env, args []string) error {
 	}
 	path := filepath.Join(checkout.Dir, config.FileName)
 
-	daemon, err := fetchProjectPlugins(ctx, env, checkout.Dir)
+	command := "lane init"
+	if *force {
+		command += " --force"
+	}
+	daemon, err := fetchProjectPlugins(ctx, env, checkout.Dir, command)
 	if err != nil {
 		return err
 	}
@@ -44,7 +48,8 @@ func runInit(ctx context.Context, env Env, args []string) error {
 		return err
 	}
 	defer plugins.Close()
-	in := recipe.Input{Dir: checkout.Dir, Recipes: plugins.Recipes(), Integrations: plugins.Integrations(), Engines: plugins.Engines()}
+	in := recipe.Input{Dir: checkout.Dir, Recipes: plugins.Recipes(), Integrations: plugins.Integrations(), Engines: plugins.Engines(),
+		FetchableEngines: plugins.FetchableEngines()}
 	committed, err := config.LoadLayer(path)
 	switch {
 	case err == nil && !*force:

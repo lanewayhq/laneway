@@ -29,6 +29,7 @@ func runDaemon(ctx context.Context, env Env, args []string) error {
 		Logger:    slog.New(slog.NewTextHandler(env.Stderr, nil)),
 		ProxyAddr: *httpsAddr,
 		HTTPAddr:  *httpAddr,
+		Catalog:   env.Catalog,
 	})
 	if err != nil {
 		return err

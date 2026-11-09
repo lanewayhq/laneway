@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/catalog"
@@ -145,9 +146,28 @@ type Daemon struct {
 	// catalog is where Catalog Plugins are fetched from, see catalog.go.
 	catalog   *catalog.Source
 	catalogMu sync.Mutex // serialises fetches from the Catalog
-	// checked is the Catalog last loaded, for Plugin updates, see
-	// updates.go. Guarded by catalogMu.
+	// checked is when the Catalog was last loaded, and what that gave
+	// (nil if nothing), for Plugin update checks, see updates.go. Guarded
+	// by catalogMu.
 	checked checkedCatalog
+	// lastCatalog is the latest Catalog Laneway has: the last one loaded,
+	// or, until one is, the copy kept or the snapshot. The Plugin Host
+	// reads it, without catalogMu, which a fetch may hold, to tell an
+	// Engine Laneway can fetch from an unknown one (see
+	// plugin.Options.Catalog).
+	lastCatalog *atomic.Pointer[catalog.Catalog]
+	// pluginsGen counts the Catalog Plugins fetched since the daemon
+	// started, so that what read config before one was can catch up with
+	// it (see pluginsFetched); setupGens is its value when each Worktree's
+	// setup, by directory, last read config.
+	pluginsGen  atomic.Uint64
+	setupGensMu sync.Mutex
+	setupGens   map[string]uint64
+	// unfetched is why Laneway couldn't fetch the Catalog Plugins each
+	// Linked Project needs when it started, by Project path, until a later
+	// fetch for it succeeds (see startfetch.go).
+	unfetchedMu sync.Mutex
+	unfetched   map[string]string
 	// handChecked is what the sources of Plugins added by hand had when
 	// last checked for updates, by Plugin name (see pinned.go).
 	handMu      sync.Mutex
@@ -222,6 +242,12 @@ func Start(cfg Config) (*Daemon, error) {
 		ln.Close()
 		return nil, err
 	}
+	source := catalog.NewSource(cfg.Catalog, cfg.Paths.Catalog())
+	// Until the Catalog is fetched, the copy kept last time, or else the
+	// snapshot, tells which Engines Laneway can fetch: config resolved
+	// before then, such as a Worktree's setup, already says so.
+	lastCatalog := new(atomic.Pointer[catalog.Catalog])
+	lastCatalog.Store(source.Cached())
 	plugins, err := plugin.Open(plugin.Options{
 		Dir:      cfg.Paths.Plugins(),
 		CacheDir: cmp.Or(cfg.PluginCacheDir, cfg.Paths.PluginCache()),
@@ -229,26 +255,28 @@ func Start(cfg Config) (*Daemon, error) {
 		Timeout:  cfg.PluginTimeout,
 		// The global config may turn on machine-wide Plugins.
 		GlobalConfig: cfg.Paths.GlobalConfig(),
+		Catalog:      lastCatalog.Load,
 	})
 	if err != nil {
 		ln.Close()
 		return nil, err
 	}
 	d := &Daemon{
-		cfg:      cfg,
-		log:      log,
-		registry: reg,
-		listener: ln,
-		served:   map[string]*served{},
-		closing:  make(chan struct{}),
-		done:     make(chan struct{}),
+		cfg:         cfg,
+		log:         log,
+		registry:    reg,
+		listener:    ln,
+		served:      map[string]*served{},
+		closing:     make(chan struct{}),
+		done:        make(chan struct{}),
+		catalog:     source,
+		lastCatalog: lastCatalog,
 	}
 	d.supervisor = supervisor.New(log, supervisor.Options{Clock: cfg.Clock, LogMaxBytes: cfg.LogFileMaxBytes,
 		OnEvent: d.processEvent})
 	d.preparer = prov
 	prov.OnReady(d.worktreeBecameReady)
 	d.plugins = plugins
-	d.catalog = catalog.NewSource(cfg.Catalog, cfg.Paths.Catalog())
 	d.github = github.New(cfg.GitHub)
 	d.services = service.New(service.Options{
 		Engine:      cfg.ContainerEngine,
@@ -304,6 +332,7 @@ func Start(cfg Config) (*Daemon, error) {
 		d.serveKnownWorktrees(p)
 	}
 	d.serveOrphans()
+	d.fetchLinkedProjectsPlugins()
 	d.server = &http.Server{
 		Handler:           d.routes(),
 		ReadHeaderTimeout: 10 * time.Second,

@@ -39,6 +39,15 @@ func linkedWorktreeRef(p registry.Project, w registry.Worktree) worktreeRef {
 	return worktreeRef{name: w.Name, label: w.Label, dir: w.Path, domain: worktreeDomain(p, w)}
 }
 
+// worktreesOf are the Project p's Worktrees, its main one first.
+func (d *Daemon) worktreesOf(p registry.Project) []worktreeRef {
+	worktrees := []worktreeRef{mainWorktreeRef(p)}
+	for _, w := range d.registry.Worktrees(p.Path) {
+		worktrees = append(worktrees, linkedWorktreeRef(p, w))
+	}
+	return worktrees
+}
+
 // envVars are the template variables' values for the Worktree w. {domain}
 // and {url} are its Primary Domain's, so its Aliases are inputs too: when
 // one changes them, primaryDomainMoved applies the Env Patch again. Its

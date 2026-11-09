@@ -83,7 +83,8 @@ func printInfo(env Env, info api.Info) error {
 		}
 		fmt.Fprintf(tw, "  Readiness\t%s\n", state)
 		for _, w := range s.Warnings {
-			fmt.Fprintf(tw, "  \twarning: %s\n", w)
+			// A warning's later lines line up under its first.
+			fmt.Fprintf(tw, "  \twarning: %s\n", strings.ReplaceAll(w, "\n", "\n  \t"))
 		}
 	}
 	fmt.Fprintf(tw, "  State\t%s\n", cmp.Or(info.State, "-"))

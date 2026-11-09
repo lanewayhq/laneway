@@ -60,6 +60,9 @@ export default {
       h("header", {}, h("h3", {}, p.name), h("span", { class: "path" }, p.path),
         ...pluginBadges(p), ...pluginLinks(p),
         ...extra(`${p.path}:project`, pluginActions(dash, p, p.path))),
+      // Problems with the whole Project, such as Catalog Plugins it needs
+      // that Laneway couldn't fetch when it started.
+      ...(p.warnings ?? []).map((w) => h("p", { class: "warning" }, "warning: ", w)),
       h("table", {},
         h("thead", {}, h("tr", {}, ...["Worktree", "Domain", "Readiness", "State", "Processes", ""].map((c) => h("th", {}, c)))),
         h("tbody", {}, ...p.worktrees.map((w) => worktree(p, w)))));

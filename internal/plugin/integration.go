@@ -58,11 +58,11 @@ func (h *Host) integrationsTaken(p Plugin) error {
 // installed Plugins'. The Recipe Resolver applies the detected ones by name,
 // whichever Plugin adds them.
 func (h *Host) Integrations() []recipe.Integration {
-	return h.integrations(h.Engines())
+	return h.integrations(h.knownEngines())
 }
 
 // integrations are Integrations, whose layers' Services may name engines.
-func (h *Host) integrations(engines engine.Set) []recipe.Integration {
+func (h *Host) integrations(engines engine.Known) []recipe.Integration {
 	var integrations []recipe.Integration
 	for _, p := range h.List() {
 		for _, in := range p.Integrations {
@@ -80,7 +80,7 @@ type pluginIntegration struct {
 	plugin Plugin
 	decl   IntegrationDecl
 	// engines are the Engines its layer's Services may name.
-	engines engine.Set
+	engines engine.Known
 }
 
 // integrationResponse is a module's answer to an Integration call (see

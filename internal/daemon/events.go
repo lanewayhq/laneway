@@ -22,6 +22,7 @@ func (d *Daemon) projectList() api.ProjectList {
 	list := api.ProjectList{Projects: []api.Project{}}
 	for _, p := range d.registry.Projects() {
 		ap := d.apiProject(p)
+		ap.Warnings = d.unfetchedWarnings(p.Path)
 		for i, w := range ap.Worktrees {
 			w = d.withState(w)
 			if cfg, err := d.plugins.ResolveDir(w.Path); err == nil {

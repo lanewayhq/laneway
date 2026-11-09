@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lanewayhq/laneway/internal/catalog"
 	"github.com/lanewayhq/laneway/internal/config"
 	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/recipe"
@@ -58,6 +59,13 @@ type Options struct {
 	// GlobalConfig is the global config file, whose plugins turn on
 	// machine-wide Plugins in every Project; "" for none.
 	GlobalConfig string
+	// Catalog, if set, returns the latest Catalog Laneway has, or nil. An
+	// Engine that a Catalog Plugin not installed adds is one Laneway can
+	// fetch, such as after an upgrade left the installed Plugins behind:
+	// config naming it says to fetch it, rather than that the Engine is
+	// unknown. It is called on every resolve, so it must not wait on the
+	// network.
+	Catalog func() *catalog.Catalog
 }
 
 // Plugin is a Plugin: its manifest, and where it came from.
@@ -324,11 +332,11 @@ func (h *Host) List() []Plugin {
 // the installed Plugins', by Plugin name, then in the order each declares
 // them.
 func (h *Host) Recipes() []recipe.Recipe {
-	return h.recipes(h.Engines())
+	return h.recipes(h.knownEngines())
 }
 
 // recipes are Recipes, whose layers' Services may name engines.
-func (h *Host) recipes(engines engine.Set) []recipe.Recipe {
+func (h *Host) recipes(engines engine.Known) []recipe.Recipe {
 	var recipes []recipe.Recipe
 	for _, p := range h.List() {
 		for _, r := range p.Recipes {
@@ -364,17 +372,49 @@ func (h *Host) resolveDir(dir string, assumed []*engine.Manifest, found []runtim
 	if err != nil {
 		return recipe.Resolved{}, err
 	}
-	engines := append(h.Engines(), assumed...)
+	engines := engine.Known{Installed: append(h.Engines(), assumed...), Fetchable: h.FetchableEngines()}
 	res, err := recipe.Resolve(recipe.Input{
-		Dir:          dir,
-		Layers:       layers,
-		Recipes:      h.recipes(engines),
-		Engines:      engines,
-		Integrations: h.integrations(engines),
-		Runtimes:     found,
+		Dir:              dir,
+		Layers:           layers,
+		Recipes:          h.recipes(engines),
+		Engines:          engines.Installed,
+		FetchableEngines: engines.Fetchable,
+		Integrations:     h.integrations(engines),
+		Runtimes:         found,
 	})
 	res.Plugins = on
 	return res, err
+}
+
+// knownEngines are the installed Engines and those Laneway can fetch.
+func (h *Host) knownEngines() engine.Known {
+	return engine.Known{Installed: h.Engines(), Fetchable: h.FetchableEngines()}
+}
+
+// FetchableEngines are the names of the Engines Laneway hasn't installed but
+// can fetch from the Catalog (see Options.Catalog): those that each Catalog
+// Plugin not installed adds at its latest release for this Laneway's Plugin
+// API.
+func (h *Host) FetchableEngines() []string {
+	if h.opts.Catalog == nil {
+		return nil
+	}
+	cat := h.opts.Catalog()
+	if cat == nil {
+		return nil
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var engines []string
+	for _, p := range cat.Plugins {
+		if _, installed := h.plugins[p.Name]; installed {
+			continue
+		}
+		if releases := cat.Releases(p.Name, APIVersion); len(releases) > 0 {
+			engines = append(engines, releases[0].Engines...)
+		}
+	}
+	return engines
 }
 
 // call runs p's module for req about the Project in dir, decoding its

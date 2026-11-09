@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lanewayhq/laneway/internal/catalog"
 	"github.com/lanewayhq/laneway/internal/cli"
 	"github.com/lanewayhq/laneway/internal/client"
 	"github.com/lanewayhq/laneway/internal/clock"
@@ -74,6 +75,10 @@ type Daemon struct {
 	// in 127.0.0.0/8 per daemon, so tests see Services' real ports (6379)
 	// without clashing with each other or with the machine's own.
 	serviceHost string
+
+	// catalog is the Catalog the daemon fetches from, which the CLI checks
+	// the copy the daemon keeps against.
+	catalog catalog.Location
 
 	running *daemon.Daemon
 }
@@ -141,6 +146,7 @@ func (d *Daemon) Start() {
 		}
 		cat.Option()(&cfg)
 	}
+	d.catalog = cfg.Catalog
 	running, err := daemon.Start(cfg)
 	if err != nil {
 		d.t.Fatalf("testkit: starting daemon: %v", err)
@@ -250,6 +256,7 @@ func (d *Daemon) runCLI(dir, input string, terminal bool, args []string) CLIResu
 		Stdout:   &stdout,
 		Stderr:   &stderr,
 		Platform: d.Platform,
+		Catalog:  d.catalog,
 	})
 	return CLIResult{Stdout: stdout.String(), Stderr: stderr.String(), ExitCode: code}
 }
