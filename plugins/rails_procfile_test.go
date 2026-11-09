@@ -1,4 +1,4 @@
-package recipe_test
+package plugins_test
 
 import (
 	"reflect"

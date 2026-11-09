@@ -1,0 +1,6 @@
+{
+  "name": "vite",
+  "version": "0.1.0",
+  "api_version": 1,
+  "integrations": [{"name": "vite", "detect": {"any": [{"package": "vite"}, {"package": "laravel-vite-plugin"}]}}]
+}

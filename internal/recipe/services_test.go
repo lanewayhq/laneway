@@ -19,8 +19,8 @@ func (servicesStack) Name() string { return "services-stack" }
 
 func (servicesStack) Detection() detect.Rule { return detect.Rule{File: "services-stack"} }
 
-func (servicesStack) Defaults(dir string) (config.Layer, error) {
-	return config.ParseLayer("the services-stack Recipe", []byte("[services]\nredis = \"7\"\n"))
+func (servicesStack) Defaults(dir string) (recipe.Result, error) {
+	return layered(config.ParseLayer("the services-stack Recipe", []byte("[services]\nredis = \"7\"\n")))
 }
 
 func TestServicesMergeByEngineLaterLayersPinningTheVersion(t *testing.T) {

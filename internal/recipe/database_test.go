@@ -20,12 +20,12 @@ func (databaseStack) Name() string { return "database-stack" }
 
 func (databaseStack) Detection() detect.Rule { return detect.Rule{File: "database-stack"} }
 
-func (databaseStack) Defaults(dir string) (config.Layer, error) {
-	return config.ParseLayer("the database-stack Recipe", []byte(`
+func (databaseStack) Defaults(dir string) (recipe.Result, error) {
+	return layered(config.ParseLayer("the database-stack Recipe", []byte(`
 [database]
 engine = "sqlite"
 path = "database/database.sqlite"
-`))
+`)))
 }
 
 func TestAWorktreesDatabaseIsClonedUnlessConfigured(t *testing.T) {

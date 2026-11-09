@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"maps"
 	"os"
@@ -63,8 +64,13 @@ type Plugin struct {
 	// `lane plugin add`.
 	Source string
 	// SHA256 is its module's hash, hex-encoded, as it was when added: the
-	// installed Plugin is pinned to it. "" without a module.
+	// installed Plugin is pinned to it. For a Plugin built into Laneway,
+	// it is the hash of its module as embedded. "" without a module.
 	SHA256 string
+
+	// embedded holds the files of a Plugin built into Laneway, which has
+	// no Dir; nil for any other Plugin.
+	embedded fs.FS
 }
 
 // installed is what installedFile records.
@@ -78,6 +84,7 @@ type installed struct {
 type Host struct {
 	opts    Options
 	runtime *runtime
+	builtin []Plugin // built into Laneway, by name
 
 	mu      sync.Mutex
 	plugins map[string]Plugin // by name
@@ -91,11 +98,15 @@ func Open(opts Options) (*Host, error) {
 		opts.Log = slog.New(slog.DiscardHandler)
 	}
 	opts.Timeout = cmp.Or(opts.Timeout, DefaultTimeout)
+	builtin, err := builtin()
+	if err != nil {
+		return nil, err
+	}
 	rt, err := newRuntime(opts)
 	if err != nil {
 		return nil, err
 	}
-	h := &Host{opts: opts, runtime: rt, plugins: map[string]Plugin{}}
+	h := &Host{opts: opts, runtime: rt, builtin: builtin, plugins: map[string]Plugin{}}
 	entries, err := os.ReadDir(opts.Dir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		rt.close()
@@ -137,8 +148,9 @@ func loadInstalled(dir string) (Plugin, error) {
 }
 
 // Inspect reads the Plugin in the directory src without adding it, and
-// checks that it can be added: that its manifest is valid and its Recipes
-// and Integrations don't take names Laneway's or another installed Plugin's
+// checks that it can be added: that its manifest is valid, that it isn't
+// named like a Plugin built into Laneway, and that its Recipes and
+// Integrations don't take names Laneway's or another installed Plugin's
 // have.
 func (h *Host) Inspect(src string) (Plugin, error) {
 	m, err := LoadManifest(src)
@@ -146,6 +158,11 @@ func (h *Host) Inspect(src string) (Plugin, error) {
 		return Plugin{}, err
 	}
 	p := Plugin{Manifest: m, Dir: src, Source: src}
+	for _, b := range h.builtin {
+		if b.Name == p.Name {
+			return Plugin{}, fmt.Errorf("Plugin %s has the name of a Plugin built into Laneway; give it another name", p.Name)
+		}
+	}
 	if m.needsModule() {
 		data, err := os.ReadFile(filepath.Join(src, filepath.FromSlash(m.module())))
 		if err != nil {
@@ -155,8 +172,10 @@ func (h *Host) Inspect(src string) (Plugin, error) {
 		p.SHA256 = hex.EncodeToString(sum[:])
 	}
 	taken := map[string]string{} // Recipe name → who has it
-	for _, r := range recipe.Builtin {
-		taken[r.Name()] = "Laneway"
+	for _, b := range h.builtin {
+		for _, r := range b.Recipes {
+			taken[r.Name] = "Laneway"
+		}
 	}
 	h.mu.Lock()
 	for _, other := range h.plugins {
@@ -248,19 +267,22 @@ func (h *Host) List() []Plugin {
 // Recipes are every Recipe that may detect a Project, in detection order:
 // the installed Plugins' first (by Plugin name, then in the order each
 // declares them), so a Plugin the developer added wins over what Laneway
-// ships, then recipe.Builtin.
+// ships, then those of the Plugins built into Laneway, likewise.
 func (h *Host) Recipes() []recipe.Recipe {
 	var recipes []recipe.Recipe
-	for _, p := range h.List() {
+	for _, p := range append(h.List(), h.builtin...) {
 		for _, r := range p.Recipes {
 			recipes = append(recipes, pluginRecipe{host: h, plugin: p, decl: r})
 		}
 	}
-	return append(recipes, recipe.Builtin...)
+	return recipes
 }
 
-// ResolveDir is recipe.ResolveDir with the installed Plugins' Recipes and
-// Integrations as well as Laneway's own (see Recipes and Integrations).
+// ResolveDir resolves the Project in dir from its laneway.toml and
+// laneway.local.toml with the installed Plugins' Recipes and Integrations
+// and those built into Laneway (see Recipes and Integrations), checking the
+// Runtimes found for dir if any are given. The daemon and the CLI read
+// config only through it.
 func (h *Host) ResolveDir(dir string, found ...runtimes.Runtime) (recipe.Resolved, error) {
 	layers, err := config.LoadLayers(dir)
 	if err != nil {

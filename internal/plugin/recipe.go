@@ -4,27 +4,24 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 
 	"github.com/lanewayhq/laneway/internal/config"
 	"github.com/lanewayhq/laneway/internal/detect"
+	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/recipe"
 )
 
 // pluginRecipe is a Recipe a Plugin adds, as the Recipe Resolver sees it:
-// detected by the rule its manifest declares, its layer and Test Database
-// decision from its module.
+// detected by the rule its manifest declares, its answer (layer, Test
+// Database decision and warnings, test env file) from its module.
 type pluginRecipe struct {
 	host   *Host
 	plugin Plugin
 	decl   RecipeDecl
 }
-
-var (
-	_ recipe.TestDatabaseRecipe = pluginRecipe{}
-	_ recipe.TestDatabaseWarner = pluginRecipe{}
-)
 
 // recipeResponse is a module's answer to a Recipe call (see
 // sdk.RecipeResult).
@@ -33,7 +30,15 @@ type recipeResponse struct {
 	Layer                json.RawMessage `json:"layer"`
 	TestDatabase         bool            `json:"test_database"`
 	TestDatabaseWarnings []string        `json:"test_database_warnings"`
+	TestEnv              *testEnv        `json:"test_env"`
 	Warnings             []string        `json:"warnings"`
+}
+
+// testEnv is the env file a Recipe says its Project's tests read (see
+// sdk.TestEnv).
+type testEnv struct {
+	File    string `json:"file"`
+	Layered bool   `json:"layered"`
 }
 
 func (r pluginRecipe) Name() string           { return r.decl.Name }
@@ -44,38 +49,28 @@ func (r pluginRecipe) source() string {
 	return fmt.Sprintf("the %s Recipe (Plugin %s)", r.decl.Name, r.plugin.Name)
 }
 
-func (r pluginRecipe) call(dir string) (recipeResponse, error) {
+func (r pluginRecipe) Defaults(dir string) (recipe.Result, error) {
 	var res recipeResponse
-	err := r.host.call(r.plugin, r.source(), request{Call: callRecipe, Name: r.decl.Name}, dir, &res)
-	return res, err
-}
-
-func (r pluginRecipe) Defaults(dir string) (config.Layer, error) {
-	res, err := r.call(dir)
-	if err != nil {
-		return config.Layer{}, err
+	if err := r.host.call(r.plugin, r.source(), request{Call: callRecipe, Name: r.decl.Name}, dir, &res); err != nil {
+		return recipe.Result{}, err
 	}
 	l, err := parseLayer(r.source(), res.Layer)
 	if err != nil {
-		return config.Layer{}, err
+		return recipe.Result{}, err
 	}
 	for _, w := range res.Warnings {
 		l.Warnings = append(l.Warnings, r.source()+": "+w)
 	}
-	return l, nil
-}
-
-func (r pluginRecipe) AutoTestDatabase(dir string) bool {
-	res, err := r.call(dir)
-	return err == nil && res.TestDatabase
-}
-
-func (r pluginRecipe) TestDatabaseWarnings(dir string) []string {
-	res, err := r.call(dir)
-	if err != nil {
-		return nil
+	answer := recipe.Result{Layer: l, TestDatabase: res.TestDatabase, TestDatabaseWarnings: res.TestDatabaseWarnings}
+	if t := res.TestEnv; t != nil {
+		// Laneway writes the file: it must be the Worktree's own.
+		if t.File == "" || t.File == "." || t.File == ".." || strings.ContainsAny(t.File, `/\`) {
+			return recipe.Result{}, fmt.Errorf("%s: test_env.file %q must be a file name in the Worktree, such as %q",
+				r.source(), t.File, recipe.DefaultTestEnv.File)
+		}
+		answer.TestEnv = recipe.TestEnv{File: t.File, Layered: t.Layered}
 	}
-	return res.TestDatabaseWarnings
+	return answer, nil
 }
 
 // parseLayer reads a layer a module returned as JSON keyed like
@@ -94,6 +89,14 @@ func parseLayer(source string, raw json.RawMessage) (config.Layer, error) {
 	table, ok := tomlValue(v).(map[string]any)
 	if !ok {
 		return config.Layer{}, fmt.Errorf("%s: its layer must be a JSON object keyed like laneway.toml", source)
+	}
+	// A Service without a version is at its Engine's default one.
+	if services, ok := table["services"].(map[string]any); ok {
+		for name, version := range services {
+			if e, known := engine.Lookup(name); known && version == "" {
+				services[name] = e.DefaultVersion
+			}
+		}
 	}
 	var buf bytes.Buffer
 	if err := toml.NewEncoder(&buf).Encode(table); err != nil {

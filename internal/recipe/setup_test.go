@@ -19,12 +19,12 @@ func (setupStack) Name() string { return "setup-stack" }
 
 func (setupStack) Detection() detect.Rule { return detect.Rule{File: "setup-stack"} }
 
-func (setupStack) Defaults(dir string) (config.Layer, error) {
-	return config.ParseLayer("the setup-stack Recipe", []byte(`
+func (setupStack) Defaults(dir string) (recipe.Result, error) {
+	return layered(config.ParseLayer("the setup-stack Recipe", []byte(`
 [worktree]
 on_create = ["composer install", "php artisan storage:link"]
 on_remove = ["php artisan cache:clear"]
-`))
+`)))
 }
 
 func TestTheRecipesSetupStepsRunFirstThenEachLayersInOrder(t *testing.T) {

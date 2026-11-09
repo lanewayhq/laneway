@@ -1,30 +1,24 @@
-package recipe
+// Command vite is the vite Plugin, built into Laneway: the vite Integration,
+// for a Project whose package.json depends on vite, or on
+// laravel-vite-plugin, whatever its Recipe. It adds the vite Process: an HTTP
+// Process, served at vite.<domain>, running the Project's Vite dev server
+// with live reload through Laneway's proxy.
+package main
 
-import (
-	"github.com/lanewayhq/laneway/internal/config"
-	"github.com/lanewayhq/laneway/internal/detect"
-)
+import "github.com/lanewayhq/laneway/sdk"
 
-// Vite is the vite Integration: a Project whose package.json depends on
-// vite, or on laravel-vite-plugin, whatever its Recipe. It adds the vite
-// Process: an HTTP Process, served at vite.<domain>, running the Project's
-// Vite dev server with live reload through Laneway's proxy.
-type Vite struct{}
-
-func (Vite) Name() string { return "vite" }
-
-func (Vite) Detection() detect.Rule {
-	return detect.Rule{Any: []detect.Rule{{Package: "vite"}, {Package: "laravel-vite-plugin"}}}
+func main() {
+	sdk.Run(sdk.Plugin{Integrations: map[string]sdk.Integration{"vite": integration}})
 }
 
-func (Vite) Defaults(dir string) (config.Layer, error) {
+func integration(p sdk.Project) (sdk.IntegrationResult, error) {
 	command := viteCommand
-	if detect.Packages(dir)["laravel-vite-plugin"] {
+	if p.Packages()["laravel-vite-plugin"] {
 		command = laravelViteCommand
 	}
-	return config.Layer{Source: "the vite Integration", Processes: map[string]config.ProcessLayer{
-		"vite": {Command: ptr(command), HTTP: ptr(true)},
-	}}, nil
+	return sdk.IntegrationResult{Layer: sdk.Layer{Processes: map[string]sdk.Process{
+		"vite": {Command: command, HTTP: true},
+	}}}, nil
 }
 
 // viteCommand runs the Project's Vite dev server behind Laneway (spike #2):

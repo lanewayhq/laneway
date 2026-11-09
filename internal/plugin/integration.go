@@ -40,8 +40,10 @@ func validateIntegrations(integrations []IntegrationDecl) error {
 // and `lane info` know Integrations by name.
 func (h *Host) integrationsTaken(p Plugin) error {
 	taken := map[string]string{} // Integration name → who has it
-	for _, in := range recipe.BuiltinIntegrations {
-		taken[in.Name()] = "Laneway"
+	for _, b := range h.builtin {
+		for _, in := range b.Integrations {
+			taken[in.Name] = "Laneway"
+		}
 	}
 	h.mu.Lock()
 	for _, other := range h.plugins {
@@ -62,16 +64,16 @@ func (h *Host) integrationsTaken(p Plugin) error {
 }
 
 // Integrations are every Integration that may detect a Project: the
-// installed Plugins' and recipe.BuiltinIntegrations. The Recipe Resolver
-// applies the detected ones by name, whichever Plugin adds them.
+// installed Plugins' and those of the Plugins built into Laneway. The Recipe
+// Resolver applies the detected ones by name, whichever Plugin adds them.
 func (h *Host) Integrations() []recipe.Integration {
 	var integrations []recipe.Integration
-	for _, p := range h.List() {
+	for _, p := range append(h.List(), h.builtin...) {
 		for _, in := range p.Integrations {
 			integrations = append(integrations, pluginIntegration{host: h, plugin: p, decl: in})
 		}
 	}
-	return append(integrations, recipe.BuiltinIntegrations...)
+	return integrations
 }
 
 // pluginIntegration is an Integration a Plugin adds, as the Recipe Resolver

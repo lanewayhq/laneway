@@ -1,6 +1,7 @@
-package recipe_test
+package plugins_test
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -10,10 +11,10 @@ import (
 )
 
 // resolveRails resolves testdata/<name> the way the daemon does, with the
-// Builtin Recipes.
+// built-in Plugins.
 func resolveRails(t *testing.T, name string) recipe.Resolved {
 	t.Helper()
-	res, err := recipe.ResolveDir(filepath.Join("testdata", name))
+	res, err := resolve(filepath.Join("testdata", name))
 	if err != nil {
 		t.Fatalf("resolving %s: %v", name, err)
 	}
@@ -120,7 +121,7 @@ func TestALaravelProjectIsNotRailsAndARubyProjectWithoutRailsIsNeither(t *testin
 		t.Errorf("laravel-pgsql: Recipe = %q, want laravel", res.Recipe)
 	}
 	dir := project(t, map[string]string{"Gemfile": "source \"https://rubygems.org\"\ngem \"sinatra\"\n# gem \"rails\"\n", "config.ru": "run App\n"})
-	res, err := recipe.ResolveDir(dir)
+	res, err := resolve(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,5 +135,22 @@ func TestANewRailsWorktreeInstallsItsGemsWithBundler(t *testing.T) {
 
 	if want := []string{"bundle install"}; !reflect.DeepEqual(res.OnCreate, want) {
 		t.Errorf("OnCreate = %q, want %q", res.OnCreate, want)
+	}
+}
+
+func TestARailsProjectsSQLiteFileIsTheOneItsDatabaseURLNamesInsideTheWorktree(t *testing.T) {
+	dir := railsProject(t, map[string]string{})
+	for env, want := range map[string]string{
+		// The Env Patch writes the Worktree's own file by its absolute path.
+		"DATABASE_URL=sqlite3:" + filepath.Join(dir, "storage", "dev.sqlite3") + "\n": "storage/dev.sqlite3",
+		"DATABASE_URL=sqlite3:storage/test.sqlite3\n":                                 "storage/test.sqlite3",
+		"DATABASE_URL=sqlite3:/elsewhere/dev.sqlite3\n":                               "storage/development.sqlite3",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(env), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := mustResolveDir(t, dir).Database.Path; got != want {
+			t.Errorf(".env %q: database.path = %q, want %q", env, got, want)
+		}
 	}
 }

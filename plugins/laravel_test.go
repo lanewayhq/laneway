@@ -1,4 +1,4 @@
-package recipe_test
+package plugins_test
 
 import (
 	"os"
@@ -14,10 +14,10 @@ import (
 )
 
 // resolveLaravel resolves testdata/<name> the way the daemon does, with the
-// Builtin Recipes.
+// built-in Plugins.
 func resolveLaravel(t *testing.T, name string) recipe.Resolved {
 	t.Helper()
-	res, err := recipe.ResolveDir(filepath.Join("testdata", name))
+	res, err := resolve(filepath.Join("testdata", name))
 	if err != nil {
 		t.Fatalf("resolving %s: %v", name, err)
 	}
@@ -162,7 +162,7 @@ func laravelProject(t *testing.T, files map[string]string) string {
 
 func resolveDir(t *testing.T, dir string) recipe.Resolved {
 	t.Helper()
-	res, err := recipe.ResolveDir(dir)
+	res, err := resolve(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,8 +394,8 @@ func TestTheLaravelRecipesConfigWrittenAsALayerResolvesToItself(t *testing.T) {
 			if err != nil {
 				t.Fatalf("reading back:\n%s\n%v", buf.String(), err)
 			}
-			for _, recipes := range [][]recipe.Recipe{nil, recipe.Builtin} {
-				for _, integrations := range [][]recipe.Integration{nil, recipe.BuiltinIntegrations} {
+			for _, recipes := range [][]recipe.Recipe{nil, host.Recipes()} {
+				for _, integrations := range [][]recipe.Integration{nil, host.Integrations()} {
 					again, err := recipe.Resolve(recipe.Input{Dir: filepath.Join("testdata", fixture), Layers: []config.Layer{written},
 						Recipes: recipes, Integrations: integrations})
 					if err != nil {
@@ -409,5 +409,22 @@ func TestTheLaravelRecipesConfigWrittenAsALayerResolvesToItself(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestALaravelProjectsSQLiteFileIsTheOneItsEnvNamesInsideTheWorktree(t *testing.T) {
+	dir := laravelProject(t, map[string]string{})
+	for env, want := range map[string]string{
+		// The Env Patch writes the Worktree's own file by its absolute path.
+		"DB_CONNECTION=sqlite\nDB_DATABASE=" + filepath.Join(dir, "storage", "app.sqlite") + "\n": "storage/app.sqlite",
+		"DB_CONNECTION=sqlite\nDB_DATABASE=/elsewhere/app.sqlite\n":                               "database/database.sqlite",
+		"DB_CONNECTION=sqlite\nDB_DATABASE=storage/app.sqlite\n":                                  "database/database.sqlite",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(env), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := resolveDir(t, dir).Database.Path; got != want {
+			t.Errorf(".env %q: database.path = %q, want %q", env, got, want)
+		}
 	}
 }

@@ -83,10 +83,15 @@ func Plugin(t testing.TB, name string) string {
 // pluginBuilds are the test Plugins' modules built so far, by name.
 var pluginBuilds sync.Map // name → func() ([]byte, error)
 
-// pluginCacheDir is where test daemons keep compiled modules: one directory
-// shared by every test run, like Go's build cache, since compiling a module
+// cacheHome is the XDG_CACHE_HOME of every test daemon and CLI command: one
+// directory shared by every test run, like Go's build cache, so that they
+// share compiled Plugin modules (paths.PluginCache), since compiling a module
 // takes about a second and it's keyed by the module's content.
-var pluginCacheDir = filepath.Join(os.TempDir(), "laneway-test-plugin-cache")
+var cacheHome = filepath.Join(os.TempDir(), "laneway-test-cache")
+
+// pluginCacheDir is where test daemons keep compiled modules, as their CLI
+// commands do.
+var pluginCacheDir = filepath.Join(cacheHome, "laneway", "plugins")
 
 // buildPlugin compiles the test Plugin name for wasip1 and returns its
 // module.
