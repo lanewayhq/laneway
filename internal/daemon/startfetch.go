@@ -2,8 +2,8 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/lanewayhq/laneway/internal/catalog"
 	"github.com/lanewayhq/laneway/internal/prepare"
@@ -66,10 +66,13 @@ func (d *Daemon) fetchOnStart(ctx context.Context, cat *catalog.Catalog, loadErr
 	case err != nil:
 		d.setUnfetched(p.Path, err.Error())
 	case res.unchecked != nil:
-		// Without a Catalog, Laneway can't tell what the Project
-		// needs: it only warns if something seems missing.
+		// Without a Catalog, Laneway can't tell what the Project needs: it
+		// only warns if its config doesn't resolve, and then names the
+		// error, since a missing Plugin may not be why.
 		if _, err := d.plugins.ResolveDir(p.Path); err != nil {
-			d.setUnfetched(p.Path, strings.Join(res.warnings, "\n"))
+			d.setUnfetched(p.Path, fmt.Sprintf("its config doesn't resolve, maybe for want of a Plugin from the Catalog, "+
+				"which Laneway has never been able to fetch (%v): %v\nonce Laneway can reach the Catalog, %s",
+				res.unchecked, err, againStart))
 		}
 	}
 	return len(res.fetched) > 0

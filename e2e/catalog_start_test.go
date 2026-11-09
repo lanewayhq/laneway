@@ -168,3 +168,26 @@ func setupState(t *testing.T, d *testkit.Daemon, dir string) string {
 	}
 	return info.Worktree.Setup.State
 }
+
+func TestWithoutEverReachingTheCatalogAConfigErrorOnStartIsntPutDownToPluginsLanewayCouldntFetch(t *testing.T) {
+	t.Parallel()
+	cat := testkit.NewCatalog(t)
+	cat.Offline()
+	d := catalogDaemon(t, cat)
+	repo := gitfixture.New(t, "never-checked").
+		WriteFile(".gitignore", ".env\n").
+		WriteFile("laneway.toml", "[env]\nAPP_URL = \"{url}\"\n").
+		Commit("an env var")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	d.Stop()
+	if err := os.WriteFile(filepath.Join(repo.Dir, "laneway.toml"), []byte("[env]\nAPP_URL = \"{domian}\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	d.Start()
+
+	eventually(t, "the Project to warn", func() bool { return len(projectWarnings(t, d, "never-checked")) > 0 })
+	w := projectWarnings(t, d, "never-checked")[0]
+	assertContains(t, w, "unknown template variable {domian}")
+	assertNotContains(t, w, "couldn't fetch any Plugin from it this Project needs")
+}
