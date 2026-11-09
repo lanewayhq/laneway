@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"cmp"
+	"context"
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/json"
@@ -18,48 +19,30 @@ import (
 	"sync/atomic"
 
 	"github.com/lanewayhq/laneway/internal/container"
-	"github.com/lanewayhq/laneway/internal/mysqlwire"
+	"github.com/lanewayhq/laneway/internal/testkit/mysqlwire"
 )
 
 // MySQL is a Server speaking a little of MySQL's protocol, as the mysql image
 // configured by MYSQL_USER / MYSQL_PASSWORD would: a caching_sha2_password
 // login (the fast path only; the RSA exchange is left to the slow tier), and
-// text queries for the statements Laneway and the tests send, matched by
+// text queries for the statements the tests send, and the MySQL Engine's
+// manifest sends through the mysql client (MySQLCommands), matched by
 // pattern rather than parsed:
 //
-//	SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '<db>'
-//	SELECT TABLE_NAME[, TABLE_TYPE] FROM information_schema.TABLES WHERE TABLE_SCHEMA = '<db>' …
-//	SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE … (the table's one column)
-//	SELECT … FROM information_schema.ROUTINES / TRIGGERS … (always none)
+//	SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '<db>' AND SCHEMA_NAME NOT IN (SELECT TABLE_SCHEMA FROM information_schema.TABLES WHERE TABLE_SCHEMA = '<db>' AND TABLE_NAME = '<table>')
+//	SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME NOT IN (<the system schemas>) ORDER BY SCHEMA_NAME
 //	CREATE DATABASE `<db>` [CHARACTER SET … COLLATE …], DROP DATABASE [IF EXISTS] `<db>`, USE `<db>`
-//	SHOW CREATE TABLE <table>, CREATE TABLE <table> (<column> <type>), DROP TABLE <table>
-//	INSERT INTO <table> (`<column>`) SELECT `<column>` FROM <table>
+//	CREATE TABLE <table> (<column> <type>), DROP TABLE <table>
 //	SHOW TABLES, INSERT INTO <table> VALUES ('<text>'), SELECT <column> FROM <table>
-//	SET SESSION …, KILL QUERY <id> (accepted, no effect)
-//	SHOW DATABASES, SELECT SCHEMA_NAME FROM information_schema.SCHEMATA ORDER BY SCHEMA_NAME
-//	SELECT ID FROM information_schema.PROCESSLIST WHERE DB = '<db>' … (always none),
-//	KILL CONNECTION <id> (accepted, no effect)
+//	SET SESSION … (accepted, no effect)
+//	SHOW DATABASES
 //
 // where <table> is name, `name` or `db`.`name`. Databases (each a set of
 // one-column tables) are kept in the container's Volume. There are no
-// views, routines or triggers: the slow tier copies those.
+// views, routines or triggers: the slow tier copies those with the real
+// mysqldump.
 func MySQL(ln net.Listener, spec container.Spec, data *Volume) {
-	my := &myServer{data: data}
-	for _, kv := range spec.Env {
-		k, v, _ := strings.Cut(kv, "=")
-		switch k {
-		case "MYSQL_USER":
-			my.user = v
-		case "MYSQL_PASSWORD":
-			my.password = v
-		}
-	}
-	if _, ok := data.Get(myDatabasesKey); !ok {
-		// What the server's initialisation creates.
-		for _, db := range []string{"information_schema", "mysql", "performance_schema", "sys"} {
-			my.setDatabase(db, myDatabase{})
-		}
-	}
+	my := myServerOf(spec, data)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -70,6 +53,125 @@ func MySQL(ln net.Listener, spec container.Spec, data *Volume) {
 }
 
 const myDatabasesKey = "mysql:databases"
+
+// mySystemSchemas are what the server's initialisation creates.
+var mySystemSchemas = []string{"information_schema", "mysql", "performance_schema", "sys"}
+
+// myServerOf is the fake container's MySQL server, shared by its port and
+// the commands run in it (MySQLCommands).
+func myServerOf(spec container.Spec, data *Volume) *myServer {
+	return data.Shared("mysql:server", func() any {
+		my := &myServer{data: data}
+		for _, kv := range spec.Env {
+			k, v, _ := strings.Cut(kv, "=")
+			switch k {
+			case "MYSQL_USER":
+				my.user = v
+			case "MYSQL_PASSWORD":
+				my.password = v
+			}
+		}
+		if _, ok := data.Get(myDatabasesKey); !ok {
+			// What the server's initialisation creates.
+			for _, db := range mySystemSchemas {
+				my.setDatabase(db, myDatabase{})
+			}
+		}
+		return my
+	}).(*myServer)
+}
+
+// MySQLCommands answers commands run in a fake mysql container, as the
+// image's clients would over its Unix socket, logged in as --user with the
+// password in MYSQL_PWD (set with env):
+//
+//   - mysql --execute=<statements>, run one after another in one session
+//     (split at ";", which no statement here holds in a literal) and printed
+//     as --batch --skip-column-names prints them: a line per row, values
+//     separated by tabs. An error goes to stderr as "ERROR <code> (<state>)
+//     at line 1: …" and stops it with status 1.
+//   - the manifest's clone script, sh -c '… mysqldump … | mysql …' sh <user>
+//     <from> <to>: <to>, dropped first if it is there, made a copy of
+//     <from>.
+//   - the manifest's drop script, sh -c '… DROP DATABASE …' sh <user> <db>:
+//     <db> dropped if it is there (the fake has no other sessions to close).
+//   - mysqladmin ping: the server is up as soon as the container is.
+//
+// A login refused exits 1, as the mysql client does.
+func MySQLCommands(_ context.Context, spec container.Spec, data *Volume, cmd []string) container.Output {
+	my := myServerOf(spec, data)
+	password := ""
+	for len(cmd) > 0 && (cmd[0] == "env" || strings.Contains(cmd[0], "=")) {
+		if v, ok := strings.CutPrefix(cmd[0], "MYSQL_PWD="); ok {
+			password = v
+		}
+		cmd = cmd[1:]
+	}
+	if len(cmd) == 0 {
+		return container.Output{ExitCode: 127, Stderr: []byte("env: no command\n")}
+	}
+	refused := func(client string, status int, user string) container.Output {
+		return container.Output{ExitCode: status, Stderr: fmt.Appendf(nil,
+			"%sERROR 1045 (28000): Access denied for user '%s'@'localhost' (using password: YES)\n", client, user)}
+	}
+	switch {
+	case cmd[0] == "mysql":
+		var user, sql string
+		for _, arg := range cmd[1:] {
+			if v, ok := strings.CutPrefix(arg, "--user="); ok {
+				user = v
+			} else if v, ok := strings.CutPrefix(arg, "--execute="); ok {
+				sql = v
+			}
+		}
+		if user != my.user || password != my.password {
+			return refused("", 1, user)
+		}
+		var out container.Output
+		var database string
+		for stmt := range strings.SplitSeq(sql, ";") {
+			if stmt = strings.TrimSpace(stmt); stmt == "" {
+				continue
+			}
+			res := my.query(&database, stmt)
+			if res.code != 0 {
+				out.ExitCode = 1
+				out.Stderr = fmt.Appendf(nil, "ERROR %d (%s) at line 1: %s\n", res.code, res.state, res.message)
+				return out
+			}
+			for _, row := range res.rows {
+				out.Stdout = append(out.Stdout, strings.Join(row, "\t")+"\n"...)
+			}
+		}
+		return out
+	case cmd[0] == "mysqladmin" && slices.Contains(cmd, "ping"):
+		return container.Output{} // up as soon as the container is
+	case cmd[0] == "sh" && len(cmd) == 7 && cmd[1] == "-c" && strings.Contains(cmd[2], "mysqldump"):
+		user, from, to := cmd[4], cmd[5], cmd[6]
+		if user != my.user || password != my.password {
+			return refused("", 1, user)
+		}
+		my.mu.Lock()
+		defer my.mu.Unlock()
+		source, ok := my.database(from)
+		if !ok {
+			return container.Output{ExitCode: 1, Stderr: fmt.Appendf(nil, "the database %s doesn't exist\n", from)}
+		}
+		my.removeDatabase(to)
+		my.setDatabase(to, source)
+		return container.Output{}
+	case cmd[0] == "sh" && len(cmd) == 6 && cmd[1] == "-c" && strings.Contains(cmd[2], "DROP DATABASE"):
+		user, db := cmd[4], cmd[5]
+		if user != my.user || password != my.password {
+			return refused("", 1, user)
+		}
+		my.mu.Lock()
+		defer my.mu.Unlock()
+		my.removeDatabase(db)
+		return container.Output{}
+	}
+	return container.Output{ExitCode: 127, Stderr: fmt.Appendf(nil, "the fake mysql image can't run %q\n", cmd)}
+}
 
 // myTable is a fake table: one text column and its rows.
 type myTable struct {
@@ -101,6 +203,12 @@ func (my *myServer) database(name string) (myDatabase, bool) {
 	db := myDatabase{}
 	json.Unmarshal([]byte(raw), &db)
 	return db, true
+}
+
+// removeDatabase forgets the database name, if it exists.
+func (my *myServer) removeDatabase(name string) {
+	my.data.Set(myDatabasesKey, strings.Join(slices.DeleteFunc(my.databases(), func(n string) bool { return n == name }), " "))
+	my.data.Delete("mysql:db:" + name)
 }
 
 func (my *myServer) setDatabase(name string, db myDatabase) {
@@ -175,6 +283,17 @@ func (s *mySession) rows(columns []string, rows [][]string) error {
 	return s.eof()
 }
 
+// send sends what a statement gave.
+func (s *mySession) send(res myResult) error {
+	switch {
+	case res.code != 0:
+		return s.fail(res.code, res.state, res.message)
+	case res.columns != nil:
+		return s.rows(res.columns, res.rows)
+	}
+	return s.ok()
+}
+
 func (my *myServer) serve(conn net.Conn) {
 	defer conn.Close()
 	s := &mySession{conn: conn, r: bufio.NewReader(conn)}
@@ -243,7 +362,7 @@ func (my *myServer) serve(conn net.Conn) {
 			s.fail(1047, "08S01", "Unknown command")
 			continue
 		}
-		if my.query(s, strings.TrimSpace(string(p[1:]))) != nil {
+		if s.send(my.query(&s.database, strings.TrimSpace(string(p[1:])))) != nil {
 			return
 		}
 	}
@@ -253,192 +372,169 @@ func (my *myServer) serve(conn net.Conn) {
 const myRef = "(?:`(\\w+)`\\.)?`?(\\w+)`?"
 
 var (
-	mySchemaQuery    = regexp.MustCompile(`^SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME FROM information_schema\.SCHEMATA WHERE SCHEMA_NAME = '(\w+)'$`)
-	myTablesQuery    = regexp.MustCompile(`^SELECT TABLE_NAME, TABLE_TYPE FROM information_schema\.TABLES WHERE TABLE_SCHEMA = '(\w+)' ORDER BY TABLE_NAME$`)
-	myTableQuery     = regexp.MustCompile(`^SELECT TABLE_NAME FROM information_schema\.TABLES WHERE TABLE_SCHEMA = '(\w+)' AND TABLE_NAME = '(\w+)'$`)
-	myColumnsQuery   = regexp.MustCompile(`^SELECT COLUMN_NAME FROM information_schema\.COLUMNS WHERE TABLE_SCHEMA = '(\w+)' AND TABLE_NAME = '(\w+)' AND GENERATION_EXPRESSION = '' ORDER BY ORDINAL_POSITION$`)
-	myObjectsQuery   = regexp.MustCompile(`^SELECT (ROUTINE_NAME, ROUTINE_TYPE|TRIGGER_NAME) FROM information_schema\.(?:ROUTINES|TRIGGERS) WHERE \w+ = '\w+' ORDER BY [\w, ]+$`)
+	myExistsQuery    = regexp.MustCompile(`^SELECT SCHEMA_NAME FROM information_schema\.SCHEMATA WHERE SCHEMA_NAME = '(\w+)' AND SCHEMA_NAME NOT IN \(SELECT TABLE_SCHEMA FROM information_schema\.TABLES WHERE TABLE_SCHEMA = '\w+' AND TABLE_NAME = '(\w+)'\)$`)
 	myCreateDatabase = regexp.MustCompile("^CREATE DATABASE `(\\w+)`(?: CHARACTER SET \\w+ COLLATE \\w+)?$")
 	myDropDatabase   = regexp.MustCompile("^DROP DATABASE (IF EXISTS )?`(\\w+)`$")
 	myUse            = regexp.MustCompile("^USE `(\\w+)`$")
 	mySet            = regexp.MustCompile(`^SET SESSION `)
-	myKill           = regexp.MustCompile(`^KILL (?:QUERY|CONNECTION) \d+$`)
-	myListDatabases  = regexp.MustCompile(`^(?:SHOW DATABASES|SELECT SCHEMA_NAME FROM information_schema\.SCHEMATA ORDER BY SCHEMA_NAME)$`)
-	myProcessList    = regexp.MustCompile(`^SELECT ID FROM information_schema\.PROCESSLIST WHERE DB = '\w+' AND ID <> CONNECTION_ID\(\)$`)
-	myShowCreate     = regexp.MustCompile(`^SHOW CREATE TABLE ` + myRef + `$`)
+	myListDatabases  = regexp.MustCompile(`^SHOW DATABASES$`)
+	myListOwn        = regexp.MustCompile(`^SELECT SCHEMA_NAME FROM information_schema\.SCHEMATA WHERE SCHEMA_NAME NOT IN \('information_schema', 'mysql', 'performance_schema', 'sys'\) ORDER BY SCHEMA_NAME$`)
 	myCreateTable    = regexp.MustCompile(`(?s)^CREATE TABLE ` + myRef + ` \(\s*` + "`?(\\w+)`?" + ` \w+\s*\)$`)
 	myDropTable      = regexp.MustCompile(`^DROP TABLE ` + myRef + `$`)
 	myInsert         = regexp.MustCompile(`^INSERT INTO ` + myRef + ` VALUES \('((?:[^'\\]|'')*)'\)$`)
-	myInsertSelect   = regexp.MustCompile(`^INSERT INTO ` + myRef + " \\(`\\w+`\\) SELECT `\\w+` FROM " + myRef + `$`)
 	mySelect         = regexp.MustCompile(`^SELECT \w+ FROM ` + myRef + `$`)
 )
 
-// query runs one statement for s and sends its result.
-func (my *myServer) query(s *mySession, sql string) error {
+// myResult is what a statement gave: rows (columns non-nil), nothing (OK),
+// or an error (code non-zero).
+type myResult struct {
+	columns []string
+	rows    [][]string
+	code    uint16
+	state   string
+	message string
+}
+
+func myFail(code uint16, state, message string) myResult {
+	return myResult{code: code, state: state, message: message}
+}
+
+// query runs one statement in a session whose default database is
+// *database ("" for none), which USE changes.
+func (my *myServer) query(database *string, sql string) myResult {
 	my.mu.Lock()
 	defer my.mu.Unlock()
-	noDatabase := func(name string) error {
-		return s.fail(mysqlwire.BadDatabase, "42000", fmt.Sprintf("Unknown database '%s'", name))
+	noDatabase := func(name string) myResult {
+		return myFail(mysqlwire.BadDatabase, "42000", fmt.Sprintf("Unknown database '%s'", name))
 	}
 	// table finds the table m[i+1] of the database m[i] (s's if "").
-	table := func(m []string, i int) (myDatabase, string, *myTable, error) {
-		dbName := cmp.Or(m[i], s.database)
+	// The result is non-nil if there is no such database.
+	table := func(m []string, i int) (myDatabase, string, *myTable, *myResult) {
+		dbName := cmp.Or(m[i], *database)
 		if dbName == "" {
-			return nil, "", nil, s.fail(1046, "3D000", "No database selected")
+			fail := myFail(1046, "3D000", "No database selected")
+			return nil, "", nil, &fail
 		}
 		db, ok := my.database(dbName)
 		if !ok {
-			return nil, "", nil, noDatabase(dbName)
+			fail := noDatabase(dbName)
+			return nil, "", nil, &fail
 		}
 		return db, dbName, db[m[i+1]], nil
 	}
-	noTable := func(db, name string) error {
-		return s.fail(mysqlwire.NoSuchTable, "42S02", fmt.Sprintf("Table '%s.%s' doesn't exist", db, name))
+	noTable := func(db, name string) myResult {
+		return myFail(mysqlwire.NoSuchTable, "42S02", fmt.Sprintf("Table '%s.%s' doesn't exist", db, name))
 	}
 
 	if sql == "SHOW TABLES" {
-		if s.database == "" {
-			return s.fail(1046, "3D000", "No database selected")
+		if *database == "" {
+			return myFail(1046, "3D000", "No database selected")
 		}
-		db, _ := my.database(s.database)
+		db, _ := my.database(*database)
 		var tables [][]string
 		for _, t := range slices.Sorted(maps.Keys(db)) {
 			tables = append(tables, []string{t})
 		}
-		return s.rows([]string{"Tables_in_" + s.database}, tables)
+		return myResult{columns: []string{"Tables_in_" + *database}, rows: tables}
 	}
 	if myListDatabases.MatchString(sql) {
 		var names [][]string
 		for _, db := range slices.Sorted(slices.Values(my.databases())) {
 			names = append(names, []string{db})
 		}
-		return s.rows([]string{"Database"}, names)
+		return myResult{columns: []string{"Database"}, rows: names}
 	}
-	if myProcessList.MatchString(sql) {
-		return s.rows([]string{"ID"}, nil) // the fake doesn't track sessions' databases
+	if myListOwn.MatchString(sql) {
+		var names [][]string
+		for _, db := range slices.Sorted(slices.Values(my.databases())) {
+			if !slices.Contains(mySystemSchemas, db) {
+				names = append(names, []string{db})
+			}
+		}
+		return myResult{columns: []string{"SCHEMA_NAME"}, rows: names}
 	}
-	if m := mySchemaQuery.FindStringSubmatch(sql); m != nil {
+	if m := myExistsQuery.FindStringSubmatch(sql); m != nil {
 		var found [][]string
-		if _, ok := my.database(m[1]); ok {
-			found = [][]string{{"utf8mb4", "utf8mb4_0900_ai_ci"}}
+		if db, ok := my.database(m[1]); ok && db[m[2]] == nil {
+			found = [][]string{{m[1]}}
 		}
-		return s.rows([]string{"DEFAULT_CHARACTER_SET_NAME", "DEFAULT_COLLATION_NAME"}, found)
-	}
-	if m := myTablesQuery.FindStringSubmatch(sql); m != nil {
-		db, _ := my.database(m[1])
-		var tables [][]string
-		for _, t := range slices.Sorted(maps.Keys(db)) {
-			tables = append(tables, []string{t, "BASE TABLE"})
-		}
-		return s.rows([]string{"TABLE_NAME", "TABLE_TYPE"}, tables)
-	}
-	if m := myTableQuery.FindStringSubmatch(sql); m != nil {
-		db, _ := my.database(m[1])
-		var found [][]string
-		if _, ok := db[m[2]]; ok {
-			found = [][]string{{m[2]}}
-		}
-		return s.rows([]string{"TABLE_NAME"}, found)
-	}
-	if m := myColumnsQuery.FindStringSubmatch(sql); m != nil {
-		db, _ := my.database(m[1])
-		var found [][]string
-		if t, ok := db[m[2]]; ok {
-			found = [][]string{{t.Column}}
-		}
-		return s.rows([]string{"COLUMN_NAME"}, found)
-	}
-	if m := myObjectsQuery.FindStringSubmatch(sql); m != nil {
-		return s.rows(strings.Split(m[1], ", "), nil) // the fake has no routines or triggers
+		return myResult{columns: []string{"SCHEMA_NAME"}, rows: found}
 	}
 	if m := myCreateDatabase.FindStringSubmatch(sql); m != nil {
 		if _, ok := my.database(m[1]); ok {
-			return s.fail(1007, "HY000", fmt.Sprintf("Can't create database '%s'; database exists", m[1]))
+			return myFail(1007, "HY000", fmt.Sprintf("Can't create database '%s'; database exists", m[1]))
 		}
 		my.setDatabase(m[1], myDatabase{})
-		return s.ok()
+		return myResult{}
 	}
 	if m := myDropDatabase.FindStringSubmatch(sql); m != nil {
 		if _, ok := my.database(m[2]); !ok {
 			if m[1] != "" {
-				return s.ok()
+				return myResult{}
 			}
-			return s.fail(1008, "HY000", fmt.Sprintf("Can't drop database '%s'; database doesn't exist", m[2]))
+			return myFail(1008, "HY000", fmt.Sprintf("Can't drop database '%s'; database doesn't exist", m[2]))
 		}
-		my.data.Set(myDatabasesKey, strings.Join(slices.DeleteFunc(my.databases(), func(n string) bool { return n == m[2] }), " "))
-		return s.ok()
+		my.removeDatabase(m[2])
+		return myResult{}
 	}
 	if m := myUse.FindStringSubmatch(sql); m != nil {
 		if _, ok := my.database(m[1]); !ok {
 			return noDatabase(m[1])
 		}
-		s.database = m[1]
-		return s.ok()
+		*database = m[1]
+		return myResult{}
 	}
-	if mySet.MatchString(sql) || myKill.MatchString(sql) {
-		return s.ok()
-	}
-	if m := myShowCreate.FindStringSubmatch(sql); m != nil {
-		_, dbName, t, err := table(m, 1)
-		if t == nil {
-			return cmp.Or(err, noTable(dbName, m[2]))
-		}
-		return s.rows([]string{"Table", "Create Table"},
-			[][]string{{m[2], "CREATE TABLE `" + m[2] + "` (\n  `" + t.Column + "` text\n)"}})
+	if mySet.MatchString(sql) {
+		return myResult{}
 	}
 	if m := myCreateTable.FindStringSubmatch(sql); m != nil {
 		db, dbName, t, err := table(m, 1)
 		if err != nil {
-			return err
+			return *err
 		}
 		if t != nil {
-			return s.fail(1050, "42S01", fmt.Sprintf("Table '%s' already exists", m[2]))
+			return myFail(1050, "42S01", fmt.Sprintf("Table '%s' already exists", m[2]))
 		}
 		db[m[2]] = &myTable{Column: m[3], Rows: []string{}}
 		my.setDatabase(dbName, db)
-		return s.ok()
+		return myResult{}
 	}
 	if m := myDropTable.FindStringSubmatch(sql); m != nil {
 		db, dbName, t, err := table(m, 1)
 		if t == nil {
-			return cmp.Or(err, s.fail(1051, "42S02", fmt.Sprintf("Unknown table '%s.%s'", dbName, m[2])))
+			return orFail(err, myFail(1051, "42S02", fmt.Sprintf("Unknown table '%s.%s'", dbName, m[2])))
 		}
 		delete(db, m[2])
 		my.setDatabase(dbName, db)
-		return s.ok()
+		return myResult{}
 	}
 	if m := myInsert.FindStringSubmatch(sql); m != nil {
 		db, dbName, t, err := table(m, 1)
 		if t == nil {
-			return cmp.Or(err, noTable(dbName, m[2]))
+			return orFail(err, noTable(dbName, m[2]))
 		}
 		t.Rows = append(t.Rows, strings.ReplaceAll(m[3], "''", "'"))
 		my.setDatabase(dbName, db)
-		return s.ok()
-	}
-	if m := myInsertSelect.FindStringSubmatch(sql); m != nil {
-		db, dbName, t, err := table(m, 1)
-		if t == nil {
-			return cmp.Or(err, noTable(dbName, m[2]))
-		}
-		_, fromName, from, err := table(m, 3)
-		if from == nil {
-			return cmp.Or(err, noTable(fromName, m[4]))
-		}
-		t.Rows = append(t.Rows, from.Rows...)
-		my.setDatabase(dbName, db)
-		return s.ok()
+		return myResult{}
 	}
 	if m := mySelect.FindStringSubmatch(sql); m != nil {
 		_, dbName, t, err := table(m, 1)
 		if t == nil {
-			return cmp.Or(err, noTable(dbName, m[2]))
+			return orFail(err, noTable(dbName, m[2]))
 		}
 		var rows [][]string
 		for _, v := range t.Rows {
 			rows = append(rows, []string{v})
 		}
-		return s.rows([]string{t.Column}, rows)
+		return myResult{columns: []string{t.Column}, rows: rows}
 	}
-	return s.fail(1064, "42000", fmt.Sprintf("the fake MySQL doesn't understand %q", sql))
+	return myFail(1064, "42000", fmt.Sprintf("the fake MySQL doesn't understand %q", sql))
+}
+
+// orFail is *fail if there is one, else otherwise.
+func orFail(fail *myResult, otherwise myResult) myResult {
+	if fail != nil {
+		return *fail
+	}
+	return otherwise
 }

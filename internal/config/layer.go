@@ -15,8 +15,8 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/lanewayhq/laneway/internal/database"
+	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/envpatch"
-	"github.com/lanewayhq/laneway/internal/service"
 )
 
 // LocalFileName is the gitignored per-developer config file. It overrides
@@ -65,6 +65,34 @@ type Layer struct {
 	Worktree *WorktreeLayer `toml:"worktree"`
 	// Database is the Project's database ([database] table).
 	Database *DatabaseLayer `toml:"database"`
+	// PluginVersions pin Plugins to version ranges, by Plugin name
+	// ([plugin_versions] table; see plugins.go).
+	PluginVersions map[string]string `toml:"plugin_versions"`
+	// Plugins are Plugins the Project uses, by name, besides those whose
+	// Recipe, Integrations or Engines it uses: their hooks fire in it. A
+	// machine-wide Plugin may only be named in laneway.local.toml (or the
+	// global config), never in laneway.toml (see Layer.Personal).
+	Plugins []string `toml:"plugins"`
+}
+
+// Personal reports whether the layer is the developer's own config,
+// laneway.local.toml, rather than committed config or a Recipe's: only
+// personal config may turn on a machine-wide Plugin.
+func (l Layer) Personal() bool {
+	return filepath.Base(l.Source) == LocalFileName
+}
+
+// pluginName is what a Plugin's name looks like (see plugin.Manifest.Name).
+var pluginName = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+
+// checkPluginNames checks the names a plugins key lists.
+func checkPluginNames(names []string) error {
+	for i, n := range names {
+		if !pluginName.MatchString(n) {
+			return fmt.Errorf("plugins[%d]: %q isn't a Plugin name: use lowercase letters, digits and dashes, starting with a letter", i, n)
+		}
+	}
+	return nil
 }
 
 // WorktreeLayer is the [worktree] table: where `lane worktree add` creates
@@ -104,10 +132,11 @@ var movedKeys = map[string]string{
 
 // DatabaseLayer is the [database] table: the database each Worktree gets.
 type DatabaseLayer struct {
-	// Engine is the database engine, one of DatabaseEngines, such as
-	// "sqlite" or "postgres". A Project with no engine has no database. A
-	// Service engine (postgres, mysql) runs as the Service of that engine, at
-	// the version in [services], else the engine's default.
+	// Engine is the database engine: sqlite, or an Engine with database
+	// commands (database.EngineNames), such as "postgres". A Project with
+	// no engine has no database. A Service engine (postgres, mysql) runs as
+	// the Service of that engine, at the version in [services], else the
+	// engine's default.
 	Engine *string `toml:"engine"`
 	// Path is the SQLite database file, relative to the Worktree, such as
 	// "database/database.sqlite". Only SQLite has one.
@@ -123,9 +152,6 @@ type DatabaseLayer struct {
 	// databases in a Service, not SQLite.
 	Test *string `toml:"test"`
 }
-
-// DatabaseEngines are the values database.engine accepts.
-var DatabaseEngines = database.EngineNames()
 
 // DatabaseModes are the values database.worktree accepts.
 var DatabaseModes = []string{"clone", "fresh", "shared"}
@@ -206,7 +232,7 @@ func ParseLayer(source string, data []byte) (Layer, error) {
 		return Layer{}, decodeError(source, err)
 	}
 	// The decoder silently skips a non-table value for a map field.
-	for _, key := range append([]toml.Key{{"processes"}, {"env"}, {"linked_env"}, {"database"}, {"services"}}, processKeys(l)...) {
+	for _, key := range append([]toml.Key{{"processes"}, {"env"}, {"linked_env"}, {"database"}, {"services"}, {"plugin_versions"}}, processKeys(l)...) {
 		if t := md.Type(key...); t != "" && t != "Hash" {
 			return Layer{}, fmt.Errorf("%s: %s must be a table, not a %s", source, key, strings.ToLower(t))
 		}
@@ -242,6 +268,44 @@ func processKeys(l Layer) []toml.Key {
 	return keys
 }
 
+// CheckEngines checks what in the layer needs an Engine Laneway can run,
+// engines: the Services it declares, database.engine, and the Service
+// variables its templates use. Engines come from Plugins, so this is checked
+// once they are known, when the Recipe Resolver merges the layer, not when
+// it's parsed. Errors name the layer's Source and the key at fault.
+func (l Layer) CheckEngines(engines engine.Set) error {
+	if err := l.checkEngines(engines); err != nil {
+		return fmt.Errorf("%s: %w", l.Source, err)
+	}
+	return nil
+}
+
+func (l Layer) checkEngines(engines engine.Set) error {
+	if db := l.Database; db != nil && db.Engine != nil {
+		if names := database.EngineNames(engines); !slices.Contains(names, *db.Engine) {
+			return fmt.Errorf("database.engine must be %s, not %q", oneOf(names), *db.Engine)
+		}
+	}
+	serviceVars := engines.Variables()
+	for _, env := range []struct {
+		table     string
+		templates map[string]string
+	}{{"env", l.Env}, {"linked_env", l.LinkedEnv}} {
+		for _, k := range slices.Sorted(maps.Keys(env.templates)) {
+			if err := envpatch.CheckTemplate(env.templates[k], serviceVars); err != nil {
+				return fmt.Errorf("%s.%s: %w", env.table, key(k), err)
+			}
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(l.Services)) {
+		if _, ok := engines.Lookup(name); !ok {
+			return fmt.Errorf("services.%s: Laneway has no Service %q; the Services are %s",
+				key(name), name, strings.Join(engines.Names(), ", "))
+		}
+	}
+	return nil
+}
+
 // validate checks what can be checked within one layer. Rules that need
 // the merged config, such as every Process having a command, belong to the
 // Recipe Resolver.
@@ -258,6 +322,12 @@ func (l Layer) validate() error {
 	if err := l.Database.validate(); err != nil {
 		return err
 	}
+	if err := checkPluginNames(l.Plugins); err != nil {
+		return err
+	}
+	if err := checkPluginVersions(l.PluginVersions); err != nil {
+		return err
+	}
 	if err := l.Worktree.validate(); err != nil {
 		return err
 	}
@@ -269,16 +339,9 @@ func (l Layer) validate() error {
 			if !envKey.MatchString(k) {
 				return fmt.Errorf("%s.%s: an env key must be letters, digits and _ and not start with a digit", env.table, key(k))
 			}
-			if err := envpatch.CheckTemplate(env.templates[k]); err != nil {
-				return fmt.Errorf("%s.%s: %w", env.table, key(k), err)
-			}
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(l.Services)) {
-		if _, ok := service.Lookup(name); !ok {
-			return fmt.Errorf("services.%s: Laneway has no Service %q; the Services are %s",
-				key(name), name, strings.Join(service.Names(), ", "))
-		}
 		if !serviceVersion.MatchString(l.Services[name]) {
 			return fmt.Errorf("services.%s must be a version, such as \"7\" or \"7.2\", not %q", name, l.Services[name])
 		}
@@ -339,9 +402,6 @@ var serviceVersion = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 func (db *DatabaseLayer) validate() error {
 	if db == nil {
 		return nil
-	}
-	if db.Engine != nil && !slices.Contains(DatabaseEngines, *db.Engine) {
-		return fmt.Errorf("database.engine must be %s, not %q", oneOf(DatabaseEngines), *db.Engine)
 	}
 	if db.Worktree != nil && !slices.Contains(DatabaseModes, *db.Worktree) {
 		return fmt.Errorf("database.worktree must be %s, not %q", oneOf(DatabaseModes), *db.Worktree)

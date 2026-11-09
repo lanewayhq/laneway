@@ -4,6 +4,7 @@
 package recipe
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"path/filepath"
@@ -12,6 +13,8 @@ import (
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/detect"
+	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/runtimes"
 	"github.com/lanewayhq/laneway/internal/service"
 )
@@ -26,6 +29,13 @@ type Input struct {
 	// Recipes are the candidates; the first one to detect the Project
 	// supplies the defaults.
 	Recipes []Recipe
+	// Integrations are the candidates; every one that detects the Project
+	// adds its layer over the Recipe's.
+	Integrations []Integration
+	// Engines are the Engines Laneway can run, which the layers' Services,
+	// database engine and Service variables must be among (see
+	// config.Layer.CheckEngines).
+	Engines engine.Set
 	// Runtimes are the Runtimes resolved for Dir (see package runtimes).
 	// If set, they are checked against the Project's declared constraints
 	// into Resolved.RuntimeWarnings; nil skips the check.
@@ -37,36 +47,73 @@ type Input struct {
 type Recipe interface {
 	// Name identifies the Recipe, such as "laravel".
 	Name() string
-	// Detect reports whether the Project in dir is this Recipe's kind.
-	Detect(dir string) bool
-	// Defaults is the bottom config layer for the Project in dir.
-	Defaults(dir string) (config.Layer, error)
+	// Detection is the rule a Project of this Recipe's kind matches.
+	Detection() detect.Rule
+	// Defaults is the Recipe's answer for the Project in dir: the bottom
+	// config layer, and its Test Database decision.
+	Defaults(dir string) (Result, error)
 }
 
-// TestDatabaseRecipe is a Recipe that decides whether a Project it detected
-// has a Test Database when database.test is auto (or unset), for instance
-// from how the Project's tests are configured. Without it, auto is off.
-type TestDatabaseRecipe interface {
-	Recipe
-	// AutoTestDatabase reports whether the Project in dir uses a Test
-	// Database.
-	AutoTestDatabase(dir string) bool
+// Result is a Recipe's answer for a Project it detected.
+type Result struct {
+	// Layer is the bottom config layer, under the Integrations' and the
+	// Project's own.
+	Layer config.Layer
+	// TestDatabase decides database.test = auto (or unset): whether the
+	// Project's tests use a Test Database, for instance from how they are
+	// configured.
+	TestDatabase bool
+	// TestDatabaseWarnings are the reasons the Project's tests may not use
+	// its Test Database, each naming the file at fault, such as a
+	// phpunit.xml that hard-codes DB_DATABASE.
+	TestDatabaseWarnings []string
+	// TestEnv is the env file the Project's tests read; zero for
+	// DefaultTestEnv.
+	TestEnv TestEnv
+	// ExportEnv says the stack reads its settings from the environment,
+	// not .env, so the commands Laneway runs in a Worktree get its .env
+	// exported (see Resolved.ExportEnv).
+	ExportEnv bool
 }
 
-// TestDatabaseWarner is a Recipe that can tell when the tests of a Project it
-// detected bypass the Project's Test Database.
-type TestDatabaseWarner interface {
-	Recipe
-	// TestDatabaseWarnings are the reasons the tests of the Project in dir
-	// may not use its Test Database, each naming the file at fault.
-	TestDatabaseWarnings(dir string) []string
+// TestEnv is the env file a Project's tests read their settings from, which
+// Laneway patches to point them at the Worktree's Test Database.
+type TestEnv struct {
+	// File is the env file's name in the Worktree, such as ".env.testing".
+	File string
+	// Layered means the tests read File over .env, so a File holding only
+	// the Env Patch is complete and Laneway may create it. Otherwise File
+	// replaces .env for the tests, and Laneway only patches one the
+	// Worktree has, or a copy of the main Worktree's.
+	Layered bool
 }
+
+// DefaultTestEnv is the test env file of a Project whose Recipe names none:
+// Laravel's .env.testing, which replaces .env when the tests run.
+var DefaultTestEnv = TestEnv{File: ".env.testing"}
 
 // Resolved is the Project's resolved config.
 type Resolved struct {
 	// Recipe is the name of the Recipe that detected the Project; "" if
 	// none did.
 	Recipe string
+	// RecipeRule is the part of the Recipe's detection rule the Project
+	// matched, described for people, such as "artisan exists"; "" with
+	// Recipe.
+	RecipeRule string
+	// Integrations are the names of the Integrations that detected the
+	// Project, in the order their layers apply (by name); nil if none did.
+	Integrations []string
+	// IntegrationRules are, by Integration name, the part of each detected
+	// Integration's detection rule the Project matched, described for
+	// people, such as "package.json depends on vite"; nil with
+	// Integrations.
+	IntegrationRules map[string]string
+	// Plugins are the Plugins the Project's config files (and the global
+	// config) turn on by name, sorted, so their hooks fire in it. The
+	// Resolver doesn't know which Plugins are installed or machine-wide:
+	// plugin.Host.ResolveDir checks the names and sets this.
+	Plugins []string
 	// Name is the configured Project name; "" means use the directory name.
 	Name string
 	// Processes are the enabled Processes, sorted by name.
@@ -94,8 +141,8 @@ type Resolved struct {
 	// repeats.
 	Copy []string
 	// OnCreate are the setup steps (shell commands) run in a new Worktree:
-	// the Recipe's first, then the Project's layers' in order, unless a
-	// Project layer sets worktree.inherit_setup = false.
+	// the Recipe's and the Integrations' first, then the Project's layers'
+	// in order, unless a Project layer sets worktree.inherit_setup = false.
 	OnCreate []string
 	// OnRemove are the shell commands run in the main Worktree when a
 	// Worktree is removed, merged like OnCreate.
@@ -111,13 +158,22 @@ type Resolved struct {
 	// also gets an empty Test Database, <database>_test, in the database's
 	// Service. True only when the database is in a Service
 	// (DatabaseService) and database.test is on, or auto and the Recipe
-	// decides so (TestDatabaseRecipe).
+	// decides so (Result.TestDatabase).
 	TestDatabase bool
+	// TestEnv is the env file the Project's tests read, which Laneway
+	// points at the Test Database (Result.TestEnv, else DefaultTestEnv).
+	// Zero when TestDatabase is false.
+	TestEnv TestEnv
 	// TestDatabaseWarnings are why the Project's tests may not use the
 	// Test Database although there is one, such as a phpunit.xml that
-	// hard-codes DB_DATABASE (TestDatabaseWarner). Each names the file it
+	// hard-codes DB_DATABASE (Result.TestDatabaseWarnings). Each names the file it
 	// comes from. Empty when TestDatabase is false.
 	TestDatabaseWarnings []string
+	// ExportEnv is true when the Recipe says its stack reads settings from
+	// the environment rather than .env (Result.ExportEnv): setup steps,
+	// exec effects and `lane exec` then run with the Worktree's .env
+	// exported, as its Processes load it.
+	ExportEnv bool
 	// Warnings are problems that didn't stop resolution, such as unknown
 	// keys. Each names the file it comes from.
 	Warnings []string
@@ -174,7 +230,8 @@ func (m StartMode) String() string {
 
 // Database is the resolved [database] table, merged key by key.
 type Database struct {
-	// Engine is one of config.DatabaseEngines, or "" for no database.
+	// Engine is sqlite or an Engine with database commands
+	// (database.EngineNames), or "" for no database.
 	Engine string
 	// Path is the SQLite file, relative to the Worktree.
 	Path string
@@ -269,9 +326,9 @@ func (r Resolved) Layer() config.Layer {
 		OnCreate: slices.Clone(r.OnCreate),
 		OnRemove: slices.Clone(r.OnRemove),
 	}
-	if r.Recipe != "" && len(r.OnCreate)+len(r.OnRemove) > 0 {
-		// The Recipe's steps are written out, so they mustn't be
-		// inherited again.
+	if (r.Recipe != "" || len(r.Integrations) > 0) && len(r.OnCreate)+len(r.OnRemove) > 0 {
+		// The Recipe's and Integrations' steps are written out, so they
+		// mustn't be inherited again.
 		inherit := false
 		wt.InheritSetup = &inherit
 	}
@@ -317,40 +374,50 @@ func (r Resolved) WorktreeRootOf(mainDir string) string {
 	}
 }
 
-// Builtin are the Recipes Laneway ships, in detection order.
-var Builtin = []Recipe{Laravel{}}
-
-// ResolveDir resolves the Project in dir from its laneway.toml and
-// laneway.local.toml with the Builtin Recipes, checking the Runtimes found
-// for dir if any are given. It is how the daemon reads config, every time it
-// is about to start a Worktree's Processes.
-func ResolveDir(dir string, found ...runtimes.Runtime) (Resolved, error) {
-	layers, err := config.LoadLayers(dir)
+// Resolve merges the detected Recipe's defaults, then the detected
+// Integrations', then in.Layers.
+func Resolve(in Input) (Resolved, error) {
+	for _, l := range in.Layers {
+		if err := l.CheckEngines(in.Engines); err != nil {
+			return Resolved{}, err
+		}
+	}
+	var res Resolved
+	var layers []config.Layer // the Recipe's, then the Integrations', then in.Layers
+	var answer Result         // the detected Recipe's
+	for _, r := range in.Recipes {
+		matched, ok := r.Detection().Match(in.Dir)
+		if !ok {
+			continue
+		}
+		var err error
+		if answer, err = r.Defaults(in.Dir); err != nil {
+			return Resolved{}, err
+		}
+		res.Recipe, res.RecipeRule = r.Name(), matched
+		layers = append(layers, answer.Layer)
+		break
+	}
+	recipeLayers := len(layers)
+	integrations, names, rules, err := detectIntegrations(in.Dir, in.Integrations)
 	if err != nil {
 		return Resolved{}, err
 	}
-	return Resolve(Input{Dir: dir, Layers: layers, Recipes: Builtin, Runtimes: found})
-}
-
-// Resolve merges the detected Recipe's defaults with in.Layers.
-func Resolve(in Input) (Resolved, error) {
-	var res Resolved
-	layers := in.Layers
-	var detected Recipe
-	for _, r := range in.Recipes {
-		if !r.Detect(in.Dir) {
-			continue
-		}
-		defaults, err := r.Defaults(in.Dir)
-		if err != nil {
+	res.Integrations, res.IntegrationRules = names, rules
+	if err := checkIntegrations(integrations, in.Layers); err != nil {
+		return Resolved{}, err
+	}
+	layers = append(layers, integrations...)
+	// The layers before project are the Recipe's and the Integrations'.
+	project := len(layers)
+	for _, l := range layers {
+		if err := l.CheckEngines(in.Engines); err != nil {
 			return Resolved{}, err
 		}
-		res.Recipe, detected = r.Name(), r
-		layers = append([]config.Layer{defaults}, layers...)
-		break
 	}
-	// Setup steps append, the Recipe's first, unless a Project layer turns
-	// inheriting them off.
+	layers = append(layers, in.Layers...)
+	// Setup steps append, the Recipe's and Integrations' first, unless a
+	// Project layer turns inheriting them off.
 	inherit := true
 	var recipeCreate, recipeRemove []string
 
@@ -359,6 +426,8 @@ func Resolve(in Input) (Resolved, error) {
 		disabled bool
 		http     *bool
 		source   string // the layer that declared the Process
+		// integration marks a Process an Integration declared.
+		integration bool
 		// The layers that last set the command, http, start_mode and
 		// static_dir, for errors.
 		commandSource, httpSource, startModeSource, staticDirSource string
@@ -389,8 +458,9 @@ func Resolve(in Input) (Resolved, error) {
 				res.Copy = append(res.Copy, path)
 			}
 		}
-		if res.Recipe != "" && i == 0 {
-			recipeCreate, recipeRemove = wt.OnCreate, wt.OnRemove
+		if i < project {
+			recipeCreate = append(recipeCreate, wt.OnCreate...)
+			recipeRemove = append(recipeRemove, wt.OnRemove...)
 		} else {
 			res.OnCreate = append(res.OnCreate, wt.OnCreate...)
 			res.OnRemove = append(res.OnRemove, wt.OnRemove...)
@@ -428,7 +498,8 @@ func Resolve(in Input) (Resolved, error) {
 		for name, pl := range l.Processes {
 			p := procs[name]
 			if p == nil {
-				p = &merged{Process: Process{Name: name}, source: l.Source}
+				p = &merged{Process: Process{Name: name}, source: l.Source,
+					integration: recipeLayers <= i && i < project}
 				procs[name] = p
 			}
 			if pl.Command != nil {
@@ -474,7 +545,7 @@ func Resolve(in Input) (Resolved, error) {
 	}
 	// A database in a Service needs the Service: at the version
 	// [services] pins, else the engine's default.
-	e, inService := service.Lookup(res.Database.Engine)
+	e, inService := in.Engines.Lookup(res.Database.Engine)
 	if inService && services[e.Name] == "" {
 		services[e.Name] = e.DefaultVersion
 	}
@@ -486,11 +557,12 @@ func Resolve(in Input) (Resolved, error) {
 	case "on":
 		res.TestDatabase = inService
 	case "", "auto":
-		r, ok := detected.(TestDatabaseRecipe)
-		res.TestDatabase = inService && ok && r.AutoTestDatabase(in.Dir)
+		res.TestDatabase = inService && answer.TestDatabase
 	}
-	if w, ok := detected.(TestDatabaseWarner); ok && res.TestDatabase {
-		res.TestDatabaseWarnings = w.TestDatabaseWarnings(in.Dir)
+	res.ExportEnv = answer.ExportEnv
+	if res.TestDatabase {
+		res.TestEnv = cmp.Or(answer.TestEnv, DefaultTestEnv)
+		res.TestDatabaseWarnings = answer.TestDatabaseWarnings
 	}
 	if inherit {
 		res.OnCreate = append(slices.Clone(recipeCreate), res.OnCreate...)
@@ -510,8 +582,14 @@ func Resolve(in Input) (Resolved, error) {
 		enabled = append(enabled, p)
 	}
 	// A lone Process is the Primary Process unless it says it isn't HTTP.
-	if len(enabled) == 1 && (enabled[0].http == nil || *enabled[0].http) {
-		enabled[0].Primary = true
+	// Integrations' Processes don't count unless there are only those: an
+	// Integration never takes the Domain from the Project's own Process.
+	own := slices.DeleteFunc(slices.Clone(enabled), func(p *merged) bool { return p.integration })
+	if len(own) == 0 {
+		own = enabled
+	}
+	if len(own) == 1 && (own[0].http == nil || *own[0].http) {
+		own[0].Primary = true
 	}
 	var primary bool
 	for _, p := range enabled {

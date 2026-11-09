@@ -10,6 +10,7 @@ import (
 
 	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/service"
 )
@@ -23,9 +24,11 @@ import (
 // serveRecordedServices serves the Services the Registry has ports for.
 func (d *Daemon) serveRecordedServices() {
 	for _, rs := range d.registry.Services() {
-		e, ok := service.Lookup(rs.Engine)
+		e, ok := d.plugins.Engines().Lookup(rs.Engine)
 		if !ok {
-			d.log.Warn("unknown Service in the Registry", "engine", rs.Engine)
+			// Its Engine's Plugin was removed: its data is kept for
+			// when the Plugin is added again.
+			d.log.Info("not serving a Service whose Engine isn't installed", "service", rs.Name())
 			continue
 		}
 		d.services.Serve(service.Service{Engine: e, Version: rs.Version, Port: rs.Port})
@@ -35,7 +38,7 @@ func (d *Daemon) serveRecordedServices() {
 // serveServices records and serves the Services in services.
 func (d *Daemon) serveServices(services []recipe.Service) {
 	for _, s := range services {
-		e, ok := service.Lookup(s.Engine)
+		e, ok := d.plugins.Engines().Lookup(s.Engine)
 		if !ok {
 			continue // config rejects unknown engines
 		}
@@ -51,7 +54,7 @@ func (d *Daemon) serveServices(services []recipe.Service) {
 // serveServicesOf serves the Services the config of the Worktree at dir
 // declares. A config error is reported when the Worktree starts.
 func (d *Daemon) serveServicesOf(dir string) {
-	if cfg, err := recipe.ResolveDir(dir); err == nil {
+	if cfg, err := d.plugins.ResolveDir(dir); err == nil {
 		d.serveServices(cfg.Services)
 	}
 }
@@ -62,7 +65,7 @@ func (d *Daemon) serveServicesOf(dir string) {
 func (d *Daemon) serviceVars(services []recipe.Service) map[string]string {
 	vars := map[string]string{}
 	for _, s := range services {
-		e, ok := service.Lookup(s.Engine)
+		e, ok := d.plugins.Engines().Lookup(s.Engine)
 		if !ok {
 			continue
 		}
@@ -147,7 +150,7 @@ func apiService(st service.Status) api.Service {
 		Host:     st.Host,
 		Port:     st.Port,
 		User:     st.Engine.User,
-		Password: service.Password,
+		Password: engine.Password,
 		State:    st.State,
 		Error:    st.Error,
 	}
@@ -156,7 +159,9 @@ func apiService(st service.Status) api.Service {
 func (d *Daemon) listServices() api.ServiceList {
 	list := api.ServiceList{Services: []api.Service{}}
 	for _, st := range d.services.List() {
-		list.Services = append(list.Services, apiService(st))
+		s := apiService(st)
+		s.PluginItems = d.serviceItems(st)
+		list.Services = append(list.Services, s)
 	}
 	return list
 }

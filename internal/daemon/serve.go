@@ -14,6 +14,7 @@ import (
 	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/config"
 	"github.com/lanewayhq/laneway/internal/naming"
+	"github.com/lanewayhq/laneway/internal/plugin"
 	"github.com/lanewayhq/laneway/internal/prepare"
 	"github.com/lanewayhq/laneway/internal/proxy"
 	"github.com/lanewayhq/laneway/internal/recipe"
@@ -269,6 +270,7 @@ func (d *Daemon) starting(s *served) *startAttempt {
 	if s.start == nil || s.start.retry || d.setupRetried(s) {
 		st := &startAttempt{done: make(chan struct{})}
 		s.start = st
+		woken := s.idle
 		s.idle = false
 		d.startsMu.Lock()
 		defer d.startsMu.Unlock()
@@ -282,6 +284,8 @@ func (d *Daemon) starting(s *served) *startAttempt {
 			st.primary, st.err = d.bootWorktree(s, st)
 			if st.err != nil {
 				d.log.Error("starting Worktree", "project", s.project, "dir", s.dir, "err", st.err)
+			} else if woken {
+				d.servedHooks(plugin.EventWoken, s)
 			}
 		})
 	}
@@ -433,6 +437,7 @@ func (d *Daemon) goIdle(s *served) {
 	st.releaseServices()
 	d.log.Info("Worktree is Idle", "project", s.project, "domain", s.domain)
 	d.stopProcesses(s, st.lazy)
+	d.servedHooks(plugin.EventIdle, s)
 }
 
 func isDone(st *startAttempt) bool {
@@ -647,7 +652,7 @@ func (d *Daemon) routesProcess(s *served, process string) bool {
 		default:
 		}
 	}
-	cfg, err := recipe.ResolveDir(s.dir)
+	cfg, err := d.plugins.ResolveDir(s.dir)
 	if err != nil {
 		return false
 	}

@@ -2,8 +2,9 @@
 // depends on the Project's mode (Clone, Fresh or Shared) and is the same for
 // every engine; how a database is created or copied is the Engine's.
 //
-// SQLite is the first Engine. Service-backed engines (Postgres, MySQL) add
-// their own Engine whose databases are names in a Service rather than files.
+// SQLite is built in. The databases of a Service's Engine (Postgres, MySQL)
+// are names in the Service rather than files, made by the commands in the
+// Engine's manifest (Commands).
 package database
 
 import (

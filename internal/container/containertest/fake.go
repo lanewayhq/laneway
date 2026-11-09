@@ -3,9 +3,12 @@
 // in-process server on 127.0.0.1 (port 0) that speaks just enough of the
 // image's protocol, with data kept in memory across stops like a volume.
 //
-// Servers are chosen by image: see Fake.Serve. Redis is built in; adding a
-// Service engine (Postgres, MySQL, Mailpit) to the fake means writing a
-// Server for its image.
+// Servers are chosen by image: see Fake.Serve. Commands run in a container
+// (Exec) are answered per image too, by a Command sharing the container's
+// Volume: see Fake.AnswerCommands. Redis, Mailpit, Postgres and MySQL are
+// built in; adding an Engine to the fake means writing a Server for its
+// image, and a Command if its manifest runs commands in the container (a
+// command readiness probe, or database commands).
 package containertest
 
 import (
@@ -25,11 +28,40 @@ import (
 // own goroutine; closing ln closes them (the Fake tracks them).
 type Server func(ln net.Listener, spec container.Spec, data *Volume)
 
+// Command answers a command run in a fake container (container.Engine's
+// Exec), the way the image's program would. spec is the container's Spec and
+// data its Volume, shared with its Servers so a command sees and changes
+// what they serve.
+type Command func(ctx context.Context, spec container.Spec, data *Volume, cmd []string) container.Output
+
 // Volume is a fake container's data. It is safe for concurrent use.
 type Volume struct {
 	mu    sync.Mutex
 	data  map[string]string
 	lists map[string][]string
+
+	sharedMu sync.Mutex // held while make runs, so it runs once per key
+	shared   map[string]any
+}
+
+// Shared is the value kept under key for the fake container's Servers and
+// Commands to share in memory, such as the sessions connected to its
+// server, made with make the first time. make runs once per key, even when
+// a container's Server and its first command ask at the same time, so it
+// may set up the Volume (what the image's initialisation makes). make may
+// use the Volume but not call Shared.
+func (v *Volume) Shared(key string, make func() any) any {
+	v.sharedMu.Lock()
+	defer v.sharedMu.Unlock()
+	if value, ok := v.shared[key]; ok {
+		return value
+	}
+	if v.shared == nil {
+		v.shared = map[string]any{}
+	}
+	value := make()
+	v.shared[key] = value
+	return value
 }
 
 // Get returns the value stored under key.
@@ -77,6 +109,7 @@ type Fake struct {
 	mu          sync.Mutex
 	servers     map[string]Server         // image repository (without tag) → Server
 	extra       map[string]map[int]Server // image repository → extra port → Server
+	commands    map[string]Command        // image repository → Command
 	containers  map[string]*fakeContainer
 	calls       []string
 	hold        chan struct{} // while non-nil, Start waits for it to close
@@ -93,12 +126,15 @@ type fakeContainer struct {
 
 // New returns a Fake that can run Redis, Mailpit, Postgres and MySQL images.
 func New() *Fake {
-	f := &Fake{servers: map[string]Server{}, extra: map[string]map[int]Server{}, containers: map[string]*fakeContainer{}}
+	f := &Fake{servers: map[string]Server{}, extra: map[string]map[int]Server{},
+		commands: map[string]Command{}, containers: map[string]*fakeContainer{}}
 	f.Serve("docker.io/library/redis", Redis)
 	f.Serve("docker.io/axllent/mailpit", MailpitSMTP)
 	f.ServePort("docker.io/axllent/mailpit", 8025, MailpitWeb)
 	f.Serve("docker.io/library/postgres", Postgres)
+	f.AnswerCommands("docker.io/library/postgres", PostgresCommands)
 	f.Serve("docker.io/library/mysql", MySQL)
+	f.AnswerCommands("docker.io/library/mysql", MySQLCommands)
 	return f
 }
 
@@ -122,8 +158,16 @@ func (f *Fake) ServePort(image string, port int, server Server) {
 	f.extra[image][port] = server
 }
 
+// AnswerCommands makes command answer the commands run in containers of
+// image (a repository without a tag), as Serve does for their port.
+func (f *Fake) AnswerCommands(image string, command Command) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.commands[image] = command
+}
+
 // Calls are the calls made so far, oldest first: "pull <image>",
-// "start <name>", "stop <name>".
+// "start <name>", "stop <name>", "exec <name> <command and arguments>".
 func (f *Fake) Calls() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -309,6 +353,28 @@ func (f *Fake) Running(ctx context.Context, name string, port int) (string, bool
 		return ln.Addr().String(), true, nil
 	}
 	return c.ln.Addr().String(), true, nil
+}
+
+func (f *Fake) Exec(ctx context.Context, name string, cmd []string) (container.Output, error) {
+	if err := f.record("exec " + name + " " + strings.Join(cmd, " ")); err != nil {
+		return container.Output{}, err
+	}
+	f.mu.Lock()
+	c := f.containers[name]
+	var command Command
+	running := c != nil && c.ln != nil
+	if running {
+		repo, _, _ := strings.Cut(c.spec.Image, ":")
+		command = f.commands[repo]
+	}
+	f.mu.Unlock()
+	switch {
+	case !running:
+		return container.Output{}, fmt.Errorf("container %s is not running", name)
+	case command == nil || len(cmd) == 0:
+		return container.Output{ExitCode: 127, Stderr: fmt.Appendf(nil, "the fake container engine can't run %q in %s\n", cmd, c.spec.Image)}, nil
+	}
+	return command(ctx, c.spec, c.volume, cmd), nil
 }
 
 // connSet is a fake container's open connections, closed when it stops.

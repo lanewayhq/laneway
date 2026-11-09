@@ -17,11 +17,11 @@ import (
 // decision is on and the database's engine makes them (database.TestEngine).
 // Every Worktree has its own, whatever the database mode: even Worktrees
 // sharing the main Worktree's database never share a Test Database.
-func worktreeTestDatabase(p registry.Project, w worktreeRef, cfg recipe.Resolved) (string, bool) {
+func (d *Daemon) worktreeTestDatabase(p registry.Project, w worktreeRef, cfg recipe.Resolved) (string, bool) {
 	if !cfg.TestDatabase {
 		return "", false
 	}
-	e, ok := databaseEngine(cfg.Database, database.Server{}).(database.TestEngine)
+	e, ok := d.databaseEngine(cfg.Database, database.Server{}).(database.TestEngine)
 	if !ok {
 		return "", false
 	}
@@ -37,7 +37,7 @@ func (d *Daemon) testDatabaseStep(p registry.Project, w worktreeRef, cfg recipe.
 		return prepare.Step{}, false
 	}
 	return prepare.Step{Name: "test database", Run: func(ctx context.Context, out io.Writer) error {
-		name, ok := worktreeTestDatabase(p, w, cfg)
+		name, ok := d.worktreeTestDatabase(p, w, cfg)
 		svc, inService := cfg.DatabaseService()
 		if !ok || !inService {
 			return fmt.Errorf("Laneway can't make Test Databases of %s databases; set database.test to off", cfg.Database.Engine)
@@ -47,7 +47,7 @@ func (d *Daemon) testDatabaseStep(p registry.Project, w worktreeRef, cfg recipe.
 			return err
 		}
 		defer release()
-		if err := database.EnsureTest(ctx, databaseEngine(cfg.Database, server), name, out); err != nil {
+		if err := database.EnsureTest(ctx, d.databaseEngine(cfg.Database, server), name, out); err != nil {
 			return err
 		}
 		for _, w := range cfg.TestDatabaseWarnings {
@@ -65,14 +65,14 @@ func (d *Daemon) databaseInfo(p registry.Project, dir string) *api.Database {
 	if !ok {
 		return nil
 	}
-	cfg, err := recipe.ResolveDir(dir)
+	cfg, err := d.plugins.ResolveDir(dir)
 	if err != nil {
 		return nil
 	}
-	name, ok := worktreeDatabase(p, w, cfg.Database)
+	name, ok := d.worktreeDatabase(p, w, cfg.Database)
 	if !ok {
 		return nil
 	}
-	test, _ := worktreeTestDatabase(p, w, cfg)
+	test, _ := d.worktreeTestDatabase(p, w, cfg)
 	return &api.Database{Engine: cfg.Database.Engine, Name: name, Test: test}
 }

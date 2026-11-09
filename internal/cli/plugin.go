@@ -1,0 +1,228 @@
+package cli
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"path/filepath"
+	"strings"
+	"text/tabwriter"
+
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/builtin"
+	"github.com/lanewayhq/laneway/internal/github"
+	"github.com/lanewayhq/laneway/internal/paths"
+	"github.com/lanewayhq/laneway/internal/plugin"
+)
+
+// pluginCommands are the `lane plugin <name>` subcommands.
+var pluginCommands = map[string]func(ctx context.Context, env Env, args []string) error{
+	"add":    runPluginAdd,
+	"list":   runPluginList,
+	"remove": runPluginRemove,
+	"update": runPluginUpdate,
+	"test":   runPluginTest,
+}
+
+const pluginUsage = "use `lane plugin add <dir|github.com/<owner>/<repo>>`, `lane plugin list`, `lane plugin remove <name>`, `lane plugin update [name]` or `lane plugin test [--update]`"
+
+func runPlugin(ctx context.Context, env Env, args []string) error {
+	if len(args) == 0 {
+		return usageError{"missing subcommand; " + pluginUsage}
+	}
+	run, ok := pluginCommands[args[0]]
+	if !ok {
+		return usageError{fmt.Sprintf("unknown subcommand %q; %s", args[0], pluginUsage)}
+	}
+	return run(ctx, env, args[1:])
+}
+
+func runPluginAdd(ctx context.Context, env Env, args []string) error {
+	fs := newFlags(env, "plugin add <dir|github.com/<owner>/<repo>[@<tag>]>")
+	yes := fs.Bool("yes", false, "add the Plugin without asking to confirm what it may do")
+	global := fs.Bool("global", false, "add a machine-wide Plugin, turned on only by your global config or a Project's laneway.local.toml")
+	// The directory may come before or after the flags.
+	if err := fs.Parse(args); err != nil {
+		return parseFlags(fs, args)
+	}
+	if fs.NArg() == 0 {
+		return usageError{"missing the Plugin's directory or GitHub repository, such as `lane plugin add ./my-plugin` or `lane plugin add github.com/<owner>/<repo>`"}
+	}
+	src := fs.Arg(0)
+	if err := parseFlags(fs, fs.Args()[1:]); err != nil {
+		return err
+	}
+	if !filepath.IsAbs(src) && !github.IsSource(src) {
+		src = filepath.Join(env.Dir, src)
+	}
+	c, err := apiClient(env)
+	if err != nil {
+		return err
+	}
+	req := api.AddPluginRequest{Source: src, Preview: true, Global: *global}
+	preview, err := c.AddPlugin(ctx, req)
+	if err != nil {
+		return err
+	}
+	if err := checkPluginName(preview.Plugin); err != nil {
+		return err
+	}
+	req.Preview, req.Digest = false, preview.Digest
+	if !*yes {
+		printPlugin(env.Stdout, preview)
+		if !confirm(env, "Add it? [y/N] ") {
+			return errors.New("nothing was added; run `lane plugin add --yes <dir|github.com/<owner>/<repo>>` to add a Plugin without asking")
+		}
+	}
+	res, err := c.AddPlugin(ctx, req)
+	if err != nil {
+		return err
+	}
+	if *yes {
+		printPlugin(env.Stdout, res)
+	}
+	if !res.Plugin.Global {
+		fmt.Fprintf(env.Stdout, "Added Plugin %s %s\n", res.Plugin.Name, res.Plugin.Version)
+		printPinned(env.Stdout, res.Plugin)
+		return nil
+	}
+	fmt.Fprintf(env.Stdout, "Added machine-wide Plugin %s %s\n", res.Plugin.Name, res.Plugin.Version)
+	configFile := "your global config"
+	if p, err := paths.FromEnv(env.Getenv); err == nil && p.GlobalConfig() != "" {
+		configFile = p.GlobalConfig()
+	}
+	fmt.Fprintf(env.Stdout, "Turn it on in every Project with plugins = [%q] in %s, or in one Project with it in that Project's laneway.local.toml\n",
+		res.Plugin.Name, configFile)
+	printPinned(env.Stdout, res.Plugin)
+	return nil
+}
+
+// printPinned says what hash an added Plugin is pinned to: a later change to
+// its source isn't picked up until `lane plugin update`.
+func printPinned(w io.Writer, p api.Plugin) {
+	if p.SHA256 != "" {
+		fmt.Fprintf(w, "It is pinned to SHA-256 %s until `lane plugin update %s`\n", p.SHA256, p.Name)
+	}
+}
+
+// checkPluginName refuses a Plugin whose commands couldn't be run, because
+// Laneway has a command of the Plugin's name.
+func checkPluginName(p api.Plugin) error {
+	if len(p.Commands) > 0 && laneCommand(p.Name) {
+		return fmt.Errorf("Plugin %s adds commands, run as `lane %s <command>`, but `lane %s` is Laneway's own command; rename the Plugin", p.Name, p.Name, p.Name)
+	}
+	return nil
+}
+
+// printPlugin shows what a Plugin adds and what it may do, for the developer
+// to confirm before it's added.
+func printPlugin(w io.Writer, res api.AddPluginResponse) {
+	p := res.Plugin
+	fmt.Fprintf(w, "Plugin %s %s, from %s\n", p.Name, p.Version, p.Source)
+	if p.Global {
+		fmt.Fprintln(w, "  machine-wide: only your global config or a Project's laneway.local.toml turns it on, never a committed laneway.toml")
+	}
+	if res.Replaces != nil {
+		fmt.Fprintf(w, "  replaces the installed %s %s, from %s\n", res.Replaces.Name, res.Replaces.Version, res.Replaces.Source)
+	}
+	for _, r := range p.Recipes {
+		fmt.Fprintf(w, "  adds the Recipe %s, for Projects where %s\n", r.Name, r.Detects)
+	}
+	for _, in := range p.Integrations {
+		fmt.Fprintf(w, "  adds the Integration %s, for Projects where %s\n", in.Name, in.Detects)
+	}
+	for _, c := range p.Commands {
+		fmt.Fprintf(w, "  adds the command `lane %s %s`: %s\n", p.Name, c.Name, c.Summary)
+	}
+	for _, e := range p.Engines {
+		fmt.Fprintf(w, "  adds the Engine %s, image %s, port %d\n", e.Name, e.Image, e.Port)
+	}
+	for _, g := range p.Generators {
+		fmt.Fprintf(w, "  adds the Generator %s, run with `lane generate %s`\n", g, p.Name)
+	}
+	if len(p.Hooks) > 0 {
+		titles := make([]string, len(p.Hooks))
+		for i, h := range p.Hooks {
+			titles[i] = plugin.EventTitle(h)
+		}
+		where := "in Projects that use it"
+		if p.Global {
+			where = "in Projects that turn it on"
+		}
+		fmt.Fprintf(w, "  hooks %s, %s\n", andList(titles), where)
+	}
+	if len(p.Effects) == 0 && (len(p.Recipes) > 0 || len(p.Integrations) > 0 || len(p.Commands) > 0 || len(p.Generators) > 0) {
+		fmt.Fprintln(w, "  may only return config for the Projects it detects")
+	}
+	for _, e := range p.Effects {
+		if e.Kind == "http" && len(p.HTTPHosts) > 0 {
+			fmt.Fprintf(w, "  may %s, to %s\n", e.Description, strings.Join(p.HTTPHosts, ", "))
+			continue
+		}
+		fmt.Fprintf(w, "  may %s\n", e.Description)
+	}
+}
+
+func runPluginList(ctx context.Context, env Env, args []string) error {
+	fs := newFlags(env, "plugin list")
+	if err := parseFlags(fs, args); err != nil {
+		return err
+	}
+	c, err := apiClient(env)
+	if err != nil {
+		return err
+	}
+	plugins, err := c.InstalledPlugins(ctx)
+	if err != nil {
+		return err
+	}
+	if len(plugins) == 0 {
+		fmt.Fprintln(env.Stdout, "No Plugins are installed. Add one with `lane plugin add <dir|github.com/<owner>/<repo>>`.")
+		return nil
+	}
+	tw := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "PLUGIN\tVERSION\tSOURCE\tADDS")
+	for _, p := range plugins {
+		var adds []string
+		for _, r := range p.Recipes {
+			adds = append(adds, "Recipe "+r.Name)
+		}
+		for _, in := range p.Integrations {
+			adds = append(adds, "Integration "+in.Name)
+		}
+		for _, c := range p.Commands {
+			adds = append(adds, "command "+c.Name)
+		}
+		for _, e := range p.Engines {
+			adds = append(adds, "Engine "+e.Name)
+		}
+		for _, g := range p.Generators {
+			adds = append(adds, "Generator "+g)
+		}
+		name := p.Name
+		if p.Global {
+			name += " (machine-wide)"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", name, p.Version, p.Source, strings.Join(adds, ", "))
+	}
+	return tw.Flush()
+}
+
+// andList joins items as "a, b and c".
+func andList(items []string) string {
+	if len(items) < 2 {
+		return strings.Join(items, "")
+	}
+	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
+}
+
+// openPlugins opens the installed Plugins, for commands that resolve a
+// Project's config without the daemon. The caller closes the Host.
+func openPlugins(env Env) (*plugin.Host, error) {
+	p, err := paths.FromEnv(env.Getenv)
+	if err != nil {
+		return nil, err
+	}
+	return plugin.Open(plugin.Options{Dir: p.Plugins(), CacheDir: p.PluginCache(), Builtin: builtin.Plugins(), GlobalConfig: p.GlobalConfig()})
+}

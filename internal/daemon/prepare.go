@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/dotenv"
 	"github.com/lanewayhq/laneway/internal/prepare"
 	"github.com/lanewayhq/laneway/internal/proxy"
 	"github.com/lanewayhq/laneway/internal/recipe"
@@ -20,7 +21,7 @@ import (
 
 // setupPlan is what preparing the Worktree w does, in the spec's order:
 //
-//	copy → database → Test Database → env → setup steps (on_create)
+//	copy → database → Test Database → env → setup steps (on_create) → Preparing hooks
 //
 // It runs when the Worktree's setup starts, so config is read then.
 //
@@ -38,7 +39,7 @@ import (
 // the first step, and so is one the daemon stopped in the middle of.
 func (d *Daemon) setupPlan(p registry.Project, w worktreeRef) prepare.Plan {
 	return func(ctx context.Context) ([]prepare.Step, error) {
-		cfg, err := recipe.ResolveDir(w.dir)
+		cfg, err := d.plugins.ResolveDir(w.dir)
 		if err != nil {
 			return nil, err
 		}
@@ -61,12 +62,12 @@ func (d *Daemon) setupPlan(p registry.Project, w worktreeRef) prepare.Plan {
 			if err := d.applyPlan(p, plan); err != nil {
 				return err
 			}
-			testPlan, missing, err := d.planTestEnvPatch(p, w)
+			testPlan, warning, err := d.planTestEnvPatch(p, w)
 			if err != nil {
-				return fmt.Errorf("the Env Patch for %s: %w", filepath.Join(w.dir, testEnvFileName), err)
+				return fmt.Errorf("the Env Patch for %s: %w", filepath.Join(w.dir, cfg.TestEnv.File), err)
 			}
-			if missing != "" {
-				prepare.Warn(ctx, testEnvWarning(p, missing))
+			if warning != "" {
+				prepare.Warn(ctx, warning)
 			}
 			return d.applyPlan(p, testPlan)
 		}})
@@ -74,6 +75,7 @@ func (d *Daemon) setupPlan(p registry.Project, w worktreeRef) prepare.Plan {
 		for _, command := range cfg.OnCreate {
 			steps = append(steps, prepare.Shell("on_create: "+command, command, w.dir, env))
 		}
+		steps = append(steps, d.preparingHookSteps(p, w, cfg)...)
 		return steps, nil
 	}
 }
@@ -91,7 +93,7 @@ func (d *Daemon) teardown(p registry.Project, w worktreeRef) {
 	d.preparer.Forget(w.dir)
 	d.preparer.Go(fmt.Sprintf("on_remove for Worktree %q of Project %q", w.name, p.Name),
 		func(ctx context.Context) ([]prepare.Step, error) {
-			cfg, err := recipe.ResolveDir(p.Path)
+			cfg, err := d.plugins.ResolveDir(p.Path)
 			if err != nil || len(cfg.OnRemove) == 0 {
 				return nil, err
 			}
@@ -110,17 +112,24 @@ func (d *Daemon) teardown(p registry.Project, w worktreeRef) {
 // Project's PHP; plus LANEWAY_<VARIABLE> for every Env Patch template
 // variable (LANEWAY_PROJECT, LANEWAY_WORKTREE, LANEWAY_DOMAIN, LANEWAY_URL,
 // LANEWAY_DB, LANEWAY_TEST_DB, …) and LANEWAY_WORKTREE_PATH, so on_remove
-// steps know which Worktree went. cfg is the config the steps come from.
+// steps know which Worktree went; and, for a stack that doesn't read .env
+// itself (cfg.ExportEnv), dir's .env. cfg is the config the steps come
+// from.
 func (d *Daemon) setupEnv(ctx context.Context, p registry.Project, w worktreeRef, dir string, cfg recipe.Resolved) []string {
 	env := runtimes.Environ(ctx, dir, d.cfg.Env).Vars
 	vars := d.envVars(p, w, cfg.Database)
-	if name, ok := worktreeTestDatabase(p, w, cfg); ok {
+	if name, ok := d.worktreeTestDatabase(p, w, cfg); ok {
 		vars["test_db"] = name
 	}
 	for _, k := range slices.Sorted(maps.Keys(vars)) {
 		env = append(env, "LANEWAY_"+strings.ToUpper(k)+"="+vars[k])
 	}
-	return append(env, "LANEWAY_WORKTREE_PATH="+w.dir)
+	env = append(env, "LANEWAY_WORKTREE_PATH="+w.dir)
+	if cfg.ExportEnv {
+		// The stack doesn't read .env itself (recipe.Resolved.ExportEnv).
+		env = append(env, dotenv.Environ(filepath.Join(dir, envFileName))...)
+	}
+	return env
 }
 
 // setupOf is the API view of the setup state of the Worktree at dir.

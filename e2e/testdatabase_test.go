@@ -10,8 +10,8 @@ import (
 
 	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/gitfixture"
-	"github.com/lanewayhq/laneway/internal/pgwire"
 	"github.com/lanewayhq/laneway/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/testkit/pgwire"
 )
 
 // assertEmptyPostgresDatabase fails the test unless the database db exists

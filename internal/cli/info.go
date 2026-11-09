@@ -87,6 +87,18 @@ func printInfo(env Env, info api.Info) error {
 		}
 	}
 	fmt.Fprintf(tw, "  State\t%s\n", cmp.Or(info.State, "-"))
+	detected := cmp.Or(info.Recipe, "-")
+	if info.RecipeRule != "" {
+		detected += ", because " + info.RecipeRule
+	}
+	fmt.Fprintf(tw, "  Recipe\t%s\n", detected)
+	for i, in := range info.IntegrationRules {
+		label := ""
+		if i == 0 {
+			label = "Integrations"
+		}
+		fmt.Fprintf(tw, "  %s\t%s, because %s\n", label, in.Name, in.Rule)
+	}
 	if info.ConfigError != "" {
 		fmt.Fprintf(tw, "  Config\t%s\n", info.ConfigError)
 	}

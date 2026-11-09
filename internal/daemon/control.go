@@ -37,7 +37,7 @@ func (d *Daemon) control(ctx context.Context, action string, req api.ControlRequ
 	if !ok {
 		return api.Worktree{}, &api.Error{Code: api.CodeUnknownWorktree, Message: fmt.Sprintf("the Worktree at %s isn't served yet", w.Path)}
 	}
-	cfg, err := recipe.ResolveDir(s.dir)
+	cfg, err := d.plugins.ResolveDir(s.dir)
 	if err != nil {
 		return api.Worktree{}, &api.Error{Code: api.CodeInvalidConfig, Message: err.Error()}
 	}
@@ -139,7 +139,7 @@ func (d *Daemon) down(ctx context.Context, s *served, proc *recipe.Process) {
 
 // runsAlways reports whether any of the Worktree's always Processes runs.
 func (d *Daemon) runsAlways(s *served) bool {
-	cfg, err := recipe.ResolveDir(s.dir)
+	cfg, err := d.plugins.ResolveDir(s.dir)
 	if err != nil {
 		return false
 	}

@@ -1,0 +1,10 @@
+default: &default
+  adapter: trilogy
+  encoding: utf8mb4
+  username: root
+  password:
+  host: <%= ENV.fetch("DB_HOST") { "127.0.0.1" } %>
+
+development:
+  <<: *default
+  database: shop_development

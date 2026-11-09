@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/gitfixture"
-	"github.com/lanewayhq/laneway/internal/mysqlwire"
 	"github.com/lanewayhq/laneway/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/testkit/mysqlwire"
 )
 
 // mysqlProject is a Project whose database is a MySQL database, with the Env
@@ -90,6 +90,37 @@ func TestLinkingCreatesTheProjectsEmptyMySQLDatabase(t *testing.T) {
 	conn := dialMySQL(t, d, 3306, "my_link")
 	if tables := myColumn(t, conn, "SHOW TABLES"); len(tables) != 0 {
 		t.Fatalf("the new database has tables %v, want none", tables)
+	}
+}
+
+func TestMySQLDatabasesAreMadeByMysqlAndMysqldumpInsideTheServiceContainer(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	repo := mysqlProject(t, "my-client", "")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	myExec(t, dialMySQL(t, d, 3306, "my_client"), "CREATE TABLE notes (body text)")
+	wt := repo.AddWorktree("feature")
+	d.MustRunCLI(wt.Dir, "worktree", "ready")
+
+	// Created with mysql, then copied with mysqldump: no connection of
+	// Laneway's own to the Service.
+	var mysql, mysqldump int
+	for _, call := range d.Engine.Calls() {
+		if strings.HasPrefix(call, "exec laneway-mysql-8.4 ") {
+			if strings.Contains(call, "mysqldump") {
+				mysqldump++
+			} else if strings.Contains(call, " mysql ") {
+				mysql++
+			}
+		}
+	}
+	if mysql == 0 || mysqldump != 1 {
+		t.Fatalf("mysql ran %d times and mysqldump %d in the MySQL Service's container, want mysql to make the database and mysqldump to copy it once: %v",
+			mysql, mysqldump, d.Engine.Calls())
+	}
+	if got := myColumn(t, dialMySQL(t, d, 3306, "my_client__feature"), "SHOW TABLES"); !slices.Equal(got, []string{"notes"}) {
+		t.Fatalf("the Worktree's database has tables %q, want the main Worktree's", got)
 	}
 }
 

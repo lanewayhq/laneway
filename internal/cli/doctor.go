@@ -16,7 +16,6 @@ import (
 	"github.com/lanewayhq/laneway/internal/gitrepo"
 	"github.com/lanewayhq/laneway/internal/paths"
 	"github.com/lanewayhq/laneway/internal/platform"
-	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/runtimes"
 )
 
@@ -106,7 +105,7 @@ func runDoctor(ctx context.Context, env Env, args []string) error {
 	}
 
 	if v, err := plat.Mise(ctx); err != nil {
-		r.check(statusWarn, "mise", err.Error()+"; Runtimes (PHP, Node) are looked up on PATH instead",
+		r.check(statusWarn, "mise", err.Error()+"; Runtimes (PHP, Node, Ruby) are looked up on PATH instead",
 			"install mise (https://mise.jdx.dev) to pin Runtime versions per Project")
 	} else {
 		r.check(statusOK, "mise", v, "")
@@ -154,7 +153,12 @@ func checkRuntimes(ctx context.Context, r *report, env Env) {
 // DB_DATABASE. A config that can't be resolved isn't reported here: link
 // and starts report it.
 func checkTestDatabase(ctx context.Context, r *report, env Env) {
-	res, err := recipe.ResolveDir(worktreeDir(ctx, env))
+	plugins, err := openPlugins(env)
+	if err != nil {
+		return
+	}
+	defer plugins.Close()
+	res, err := plugins.ResolveDir(worktreeDir(ctx, env))
 	if err != nil {
 		return
 	}

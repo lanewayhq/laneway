@@ -1,0 +1,9 @@
+{
+  "name": "mailpit",
+  "version": "1.0.0",
+  "api_version": 1,
+  "engines": ["mailpit.toml"],
+  "dashboard": {
+    "links": [{"scope": "service", "label": "Inbox", "url": "https://mail.{dashboard_domain}/"}]
+  }
+}

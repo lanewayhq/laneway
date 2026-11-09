@@ -29,6 +29,12 @@ func (d *Daemon) routes() http.Handler {
 	mux.HandleFunc("POST /v1/services/{action}", d.handleControlServices)
 	mux.HandleFunc("GET /v1/orphans", d.handleListOrphans)
 	mux.HandleFunc("POST /v1/gc", d.handleGC)
+	mux.HandleFunc("GET /v1/plugins", d.handleListPlugins)
+	mux.HandleFunc("POST /v1/plugins", d.handleAddPlugin)
+	mux.HandleFunc("DELETE /v1/plugins/{plugin}", d.handleRemovePlugin)
+	mux.HandleFunc("POST /v1/plugins/{plugin}/commands/{command}", d.handleRunPluginCommand)
+	mux.HandleFunc("POST /v1/plugins/update", d.handleUpdatePlugins)
+	mux.HandleFunc("POST /v1/plugins/{plugin}/update", d.handleUpdateHandAdded)
 	return mux
 }
 
@@ -229,6 +235,16 @@ var statusFor = map[string]int{
 
 	api.CodeUnknownService: http.StatusNotFound,
 	api.CodeServiceFailed:  http.StatusBadGateway,
+
+	api.CodeInvalidPlugin:  http.StatusUnprocessableEntity,
+	api.CodeUnknownPlugin:  http.StatusNotFound,
+	api.CodeUnknownCommand: http.StatusNotFound,
+	api.CodePluginInUse:    http.StatusConflict,
+
+	api.CodePluginsUnavailable: http.StatusBadGateway,
+	api.CodeNotFromCatalog:     http.StatusUnprocessableEntity,
+	api.CodeCatalogChanged:     http.StatusConflict,
+	api.CodeSourceChanged:      http.StatusConflict,
 }
 
 // writeError sends err to the client. An *api.Error is passed through as is;
@@ -251,4 +267,56 @@ func (d *Daemon) writeError(w http.ResponseWriter, err error) {
 func (d *Daemon) queryDir(r *http.Request) (string, error) {
 	q := r.URL.Query()
 	return d.worktreeDir(r.Context(), q.Get("dir"), q.Get("worktree"))
+}
+
+func (d *Daemon) handleListPlugins(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, d.listPlugins(r.Context(), r.URL.Query().Get("updates") != "false"))
+}
+
+func (d *Daemon) handleAddPlugin(w http.ResponseWriter, r *http.Request) {
+	var req api.AddPluginRequest
+	if !readJSON(w, r, &req) {
+		return
+	}
+	res, err := d.addPlugin(r.Context(), req)
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (d *Daemon) handleRemovePlugin(w http.ResponseWriter, r *http.Request) {
+	res, err := d.removePlugin(r.Context(), r.PathValue("plugin"))
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (d *Daemon) handleRunPluginCommand(w http.ResponseWriter, r *http.Request) {
+	var req api.PluginCommandRequest
+	if !readJSON(w, r, &req) {
+		return
+	}
+	res, err := d.runPluginCommand(r.Context(), r.PathValue("plugin"), r.PathValue("command"), req)
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (d *Daemon) handleUpdateHandAdded(w http.ResponseWriter, r *http.Request) {
+	var req api.UpdateHandAddedRequest
+	if !readJSON(w, r, &req) {
+		return
+	}
+	res, err := d.updateHandAdded(r.Context(), r.PathValue("plugin"), req)
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }

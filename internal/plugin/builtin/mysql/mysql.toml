@@ -1,0 +1,90 @@
+# MySQL. Its superuser is the shared user, with the shared password: the
+# image creates the user (MYSQL_USER) with rights to no database, so the
+# container's command adds a script that the image runs once, after creating
+# the user on the first start, granting it everything. root has the shared
+# password too.
+name = "mysql"
+default_version = "8.4"
+image = "docker.io/library/mysql"
+port = 3306
+data_dir = "/var/lib/mysql"
+user = "laneway"
+# The image's entrypoint runs a command that isn't mysqld as is; this one
+# writes the script, then runs the entrypoint with mysqld.
+command = ["sh", "-c", '''printf '%s\n' "GRANT ALL PRIVILEGES ON *.* TO '{user}'@'%' WITH GRANT OPTION;" > /docker-entrypoint-initdb.d/laneway.sql && exec docker-entrypoint.sh mysqld''']
+
+[env]
+MYSQL_ROOT_PASSWORD = "{password}"
+MYSQL_USER = "{user}"
+MYSQL_PASSWORD = "{password}"
+
+# mysqladmin ping over TCP exits 0 once mysqld answers, even refusing the
+# login. The image's first start initialises the data directory with
+# networking off, so TCP fails until the real server listens.
+[[ready]]
+kind = "command"
+command = ["mysqladmin", "ping", "--silent", "--protocol=tcp", "--host=127.0.0.1", "--port=3306"]
+
+# Every command logs in as the shared user over the container's Unix socket,
+# with the password in MYSQL_PWD so the clients don't warn about a password
+# on their command line. mysql prints rows as --batch does, no headers.
+#
+# MySQL can't create a database and its contents all at once, so clone puts
+# a table, laneway_copy_in_progress, in the database it is building and drops
+# it last: a database that still has it is a copy cut short (Laneway was
+# killed half way), which exists says isn't there, so create and clone drop
+# it first.
+[database]
+max_name = 64
+exists = ["env", "MYSQL_PWD={password}", "mysql", "--user={user}", "--batch", "--skip-column-names",
+  "--execute=SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '{db}' AND SCHEMA_NAME NOT IN (SELECT TABLE_SCHEMA FROM information_schema.TABLES WHERE TABLE_SCHEMA = '{db}' AND TABLE_NAME = 'laneway_copy_in_progress')"]
+# It runs only once exists has said {db} isn't there, so a database by that
+# name is a copy cut short.
+create = ["env", "MYSQL_PWD={password}", "mysql", "--user={user}", "--batch", "--skip-column-names",
+  "--execute=DROP DATABASE IF EXISTS `{db}`; CREATE DATABASE `{db}`"]
+# Like Postgres's DROP DATABASE … WITH (FORCE), it first closes the other
+# connections using the database: one in the middle of a transaction on its
+# tables (a GUI client, say) would hold a metadata lock that makes DROP
+# DATABASE wait. One may have gone meanwhile (error 1094). DROP DATABASE
+# waits 30 seconds for a metadata lock rather than MySQL's default of a year.
+drop = ["env", "MYSQL_PWD={password}", "sh", "-c", '''
+user=$1 db=$2
+sql() { mysql --user="$user" --batch --skip-column-names --execute="$1"; }
+ids=$(sql "SELECT ID FROM information_schema.PROCESSLIST WHERE DB = '$db' AND ID <> CONNECTION_ID()") || exit 1
+for id in $ids; do
+  err=$(sql "KILL CONNECTION $id" 2>&1) || case $err in
+    "ERROR 1094 "*) ;;
+    *) printf '%s\n' "$err" >&2; exit 1 ;;
+  esac
+done
+sql "SET SESSION lock_wait_timeout = 30; DROP DATABASE IF EXISTS \`$db\`"
+''', "sh", "{user}", "{db}"]
+list = ["env", "MYSQL_PWD={password}", "mysql", "--user={user}", "--batch", "--skip-column-names",
+  "--execute=SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys') ORDER BY SCHEMA_NAME"]
+# A copy with from's character set and collation, made by mysqldump's dump
+# of from, read as one consistent snapshot without locking its tables (so
+# the main Worktree's app, queue worker or GUI client carry on), piped
+# straight into mysql restoring it into to, so the dump never leaves the
+# container. It carries what mysqldump --routines does: tables with their
+# rows, routines, views and triggers. Events aren't copied: they would run
+# on the copy too. A write landing during the copy may be in some tables and
+# not others. pipefail makes a failed dump fail the copy, not only a failed
+# restore; a failed copy is dropped.
+clone = ["env", "MYSQL_PWD={password}", "sh", "-c", '''
+set -o pipefail
+user=$1 from=$2 to=$3
+sql() { mysql --user="$user" --batch --skip-column-names --execute="$1"; }
+charset=$(sql "SELECT CONCAT(DEFAULT_CHARACTER_SET_NAME, ' COLLATE ', DEFAULT_COLLATION_NAME) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '$from'") || exit 1
+if [ -z "$charset" ]; then
+  printf "the database %s doesn't exist\n" "$from" >&2
+  exit 1
+fi
+sql "DROP DATABASE IF EXISTS \`$to\`; CREATE DATABASE \`$to\` CHARACTER SET $charset; CREATE TABLE \`$to\`.laneway_copy_in_progress (id int)" || exit 1
+if mysqldump --user="$user" --single-transaction --routines --triggers --skip-events --no-tablespaces --set-gtid-purged=OFF "$from" |
+  mysql --user="$user" --database="$to" &&
+  sql "DROP TABLE \`$to\`.laneway_copy_in_progress"; then
+  exit 0
+fi
+sql "DROP DATABASE IF EXISTS \`$to\`"
+exit 1
+''', "sh", "{user}", "{from}", "{to}"]

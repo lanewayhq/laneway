@@ -118,3 +118,16 @@ func TestInitWritesAtTheWorktreeRootFromASubdirectory(t *testing.T) {
 		t.Fatal("init wrote laneway.toml in the subdirectory")
 	}
 }
+
+func TestInitWritesTheIntegrationsProcessesToo(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	d.Stop()
+	repo := laravelViteRepo(t, "init-vite")
+
+	d.MustRunCLI(repo.Dir, "init")
+
+	written := readFile(t, filepath.Join(repo.Dir, "laneway.toml"))
+	assertContains(t, written, "[processes.vite]")
+	assertContains(t, written, "the laravel Recipe's and the vite Integration's defaults")
+}

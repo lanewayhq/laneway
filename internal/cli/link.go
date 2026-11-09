@@ -31,9 +31,14 @@ func runLink(ctx context.Context, env Env, args []string) error {
 		if err != nil {
 			return err
 		}
+		printLinkFetched(env, preview)
 		if len(preview.EnvPatch) > 0 {
 			printEnvPatch(env.Stdout, preview.EnvPatch)
 			if !confirm(env, "Apply these changes? [y/N] ") {
+				if len(preview.Fetched) > 0 {
+					return errors.New("the Project wasn't Linked and its env files weren't changed, though the Plugins fetched " +
+						"from the Catalog stay installed; run `lane link --yes` to apply the Env Patch without asking")
+				}
 				return errors.New("nothing was changed; run `lane link --yes` to apply the Env Patch without asking")
 			}
 		}
@@ -44,6 +49,8 @@ func runLink(ctx context.Context, env Env, args []string) error {
 		return err
 	}
 	if *yes {
+		// Without --yes, the preview showed them.
+		printLinkFetched(env, res)
 		printEnvPatch(env.Stdout, res.EnvPatch)
 	}
 	if res.AlreadyLinked {
@@ -57,6 +64,17 @@ func runLink(ctx context.Context, env Env, args []string) error {
 		fmt.Fprintf(env.Stdout, "You're in Worktree %q (%s)\n", res.Worktree.Name, res.Worktree.Path)
 	}
 	return nil
+}
+
+// printLinkFetched shows the Plugins Linking fetched from the Catalog, and its
+// warnings.
+func printLinkFetched(env Env, res api.LinkResponse) {
+	for _, w := range res.Warnings {
+		fmt.Fprintf(env.Stderr, "lane link: warning: %s\n", w)
+	}
+	for _, p := range res.Fetched {
+		fmt.Fprintf(env.Stdout, "Fetched Plugin %s %s from the Catalog\n", p.Name, p.Version)
+	}
 }
 
 // printEnvPatch shows how each env file changes, as a diff of the keys

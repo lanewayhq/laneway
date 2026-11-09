@@ -268,13 +268,15 @@ var infoSchema = map[string]map[string]string{
 		"schemaVersion": "number", "project": "object", "worktree": "object", "domain": "string",
 		"url": "string", "aliases": "list", "setup": "object?", "state": "string", "processes": "list",
 		"database": "object?", "services": "list", "configError": "string",
+		"recipe": "string", "recipeRule": "string", "integrations": "list", "integrationRules": "list",
 	},
-	"project":   {"name": "string", "path": "string"},
-	"worktree":  {"name": "string", "path": "string", "main": "bool"},
-	"aliases":   {"domain": "string", "url": "string"},
-	"setup":     {"state": "string", "step": "string", "error": "string", "output": "list", "warnings": "list"},
-	"processes": {"name": "string", "startMode": "string", "primary": "bool", "http": "bool", "state": "string", "url": "string"},
-	"database":  {"engine": "string", "name": "string", "test": "string", "service": "string"},
+	"integrationRules": {"name": "string", "rule": "string"},
+	"project":          {"name": "string", "path": "string"},
+	"worktree":         {"name": "string", "path": "string", "main": "bool"},
+	"aliases":          {"domain": "string", "url": "string"},
+	"setup":            {"state": "string", "step": "string", "error": "string", "output": "list", "warnings": "list"},
+	"processes":        {"name": "string", "startMode": "string", "primary": "bool", "http": "bool", "state": "string", "url": "string"},
+	"database":         {"engine": "string", "name": "string", "test": "string", "service": "string"},
 	"services": {
 		"name": "string", "engine": "string", "version": "string", "host": "string", "port": "number",
 		"user": "string", "password": "string", "state": "string", "error": "string",
@@ -345,6 +347,7 @@ func TestInfoJSONHasEveryDocumentedKeyAndNoOthers(t *testing.T) {
 	repo := gitfixture.New(t, "info-schema").
 		WriteFile("laneway.toml", processConfig(server+" --name web")+
 			"\n[database]\nengine = \"postgres\"\ntest = \"on\"\n\n[services]\nredis = \"7\"\n").
+		WriteFile("package.json", `{"devDependencies": {"vite": "^8.0.0"}}`+"\n").
 		Commit("declare everything info shows")
 	d.MustRunCLI(repo.Dir, "link")
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
@@ -357,7 +360,7 @@ func TestInfoJSONHasEveryDocumentedKeyAndNoOthers(t *testing.T) {
 	plain := gitfixture.New(t, "info-schema-plain")
 	d.MustRunCLI(plain.Dir, "link")
 	info := infoJSON(t, d, plain.Dir)
-	for _, list := range []string{"aliases", "processes", "services"} {
+	for _, list := range []string{"aliases", "processes", "services", "integrations", "integrationRules"} {
 		assertLen(t, info, 0, list)
 	}
 	assertAt(t, info, nil, "database")
@@ -409,6 +412,7 @@ func TestInfoPrintsTheSameDetailsForPeople(t *testing.T) {
 		WriteFile("laneway.toml", processConfig(server+" --name web")+
 			"\n[processes.vite]\ncommand = \""+server+" --name vite\"\nhttp = true\nstart_mode = \"manual\"\n"+
 			"\n[database]\nengine = \"postgres\"\ntest = \"on\"\n\n[services]\nredis = \"7\"\n").
+		WriteFile("package.json", `{"devDependencies": {"vite": "^8.0.0"}}`+"\n").
 		Commit("declare everything info shows")
 	d.MustRunCLI(repo.Dir, "link")
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
@@ -433,6 +437,37 @@ func TestInfoPrintsTheSameDetailsForPeople(t *testing.T) {
 	assertLineWith(t, out, "Test", "Database", "info_text__feature_test")
 	assertLineWith(t, out, "postgres:18", d.ServiceHost()+":5432", "laneway", "laneway", "running")
 	assertLineWith(t, out, "redis:7", d.ServiceHost()+":6379", "-", "laneway", "stopped")
+}
+
+func TestInfoNamesTheProjectsRecipeAndIntegrationsWithTheRuleEachMatched(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	repo := laravelViteRepo(t, "info-recipe")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+
+	info := infoJSON(t, d, repo.Dir)
+	assertAt(t, info, "laravel", "recipe")
+	assertAt(t, info, "artisan exists", "recipeRule")
+	assertLen(t, info, 1, "integrations")
+	assertAt(t, info, "vite", "integrations", 0)
+	assertLen(t, info, 1, "integrationRules")
+	assertAt(t, info, "vite", "integrationRules", 0, "name")
+	assertAt(t, info, "package.json depends on vite", "integrationRules", 0, "rule")
+
+	out := d.MustRunCLI(repo.Dir, "info").Stdout
+	assertLineWith(t, out, "Recipe", "laravel,", "because", "artisan", "exists")
+	assertLineWith(t, out, "Integrations", "vite,", "because", "package.json", "depends", "on", "vite")
+
+	// Without either, there is nothing to name.
+	plain := routedProject(t, "info-no-recipe")
+	d.MustRunCLI(plain.Dir, "link")
+	info = infoJSON(t, d, plain.Dir)
+	assertAt(t, info, "", "recipe")
+	assertAt(t, info, "", "recipeRule")
+	assertLen(t, info, 0, "integrations")
+	assertLen(t, info, 0, "integrationRules")
+	out = d.MustRunCLI(plain.Dir, "info").Stdout
+	assertLineWith(t, out, "Recipe", "-")
 }
 
 func TestInfoJSONsURLIsTheWorktreesPrimaryDomain(t *testing.T) {

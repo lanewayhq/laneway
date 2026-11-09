@@ -16,6 +16,7 @@ import (
 	"github.com/lanewayhq/laneway/internal/client"
 	"github.com/lanewayhq/laneway/internal/paths"
 	"github.com/lanewayhq/laneway/internal/platform"
+	"github.com/lanewayhq/laneway/internal/plugin"
 )
 
 // Env is everything a CLI invocation reads from or writes to the outside
@@ -62,12 +63,14 @@ var commands = map[string]command{
 	"down":     {"Stop the current Worktree's Processes (or one Process)", control("down")},
 	"exec":     {"Run a command in the current Worktree with its Runtimes", runExec},
 	"gc":       {"Drop Orphans (databases of removed Worktrees) now", runGC},
-	"harness":  {"Add Laneway config for a Harness (add <claude|t3>)", runHarness},
+	"generate": {"Merge a Plugin's Generator config into the current Worktree's files (generate <plugin>)", runGenerate},
+	"harness":  {"Add Laneway config for a Harness (add <claude|t3>), like generate", runHarness},
 	"info":     {"Show the current Worktree's URL, Processes, databases and Services (--json for scripts)", runInfo},
 	"init":     {"Write the resolved config to laneway.toml", runInit},
 	"install":  {"Set up Laneway on this machine (service, ports 80/443, CA trust)", runInstall},
 	"link":     {"Link the current git repository as a Project", runLink},
 	"logs":     {"Show (or follow with -f) Process output", runLogs},
+	"plugin":   {"Add, list, update, remove and test Plugins (add <dir|github.com/<owner>/<repo>> [--yes] [--global], list, update [name] [--yes], remove <name>, test [--update])", runPlugin},
 	"open":     {"Open the current Worktree's Domain in the browser", runOpen},
 	"restart":  {"Restart the current Worktree's Processes (or one Process)", control("restart")},
 	"services": {"List shared Services, or start/stop them (services [ls|up|down] [name])", runServices},
@@ -95,12 +98,20 @@ func (e exitCode) Error() string { return fmt.Sprintf("exit status %d: %s", e.co
 func Run(ctx context.Context, env Env) int {
 	if len(env.Args) == 0 || env.Args[0] == "help" || env.Args[0] == "-h" || env.Args[0] == "--help" {
 		printUsage(env.Stdout)
+		printPluginsUsage(env.Stdout, env)
 		return exitOK
 	}
 	cmd, ok := commands[env.Args[0]]
 	if !ok {
+		var p plugin.Plugin
+		if p, ok = installedPlugin(env, env.Args[0]); ok {
+			cmd = command{run: pluginCommand(p)}
+		}
+	}
+	if !ok {
 		fmt.Fprintf(env.Stderr, "lane: unknown command %q\n\n", env.Args[0])
 		printUsage(env.Stderr)
+		printPluginsUsage(env.Stderr, env)
 		return exitUsage
 	}
 	err := cmd.run(ctx, env, env.Args[1:])

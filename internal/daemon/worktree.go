@@ -28,6 +28,9 @@ func (d *Daemon) worktreeInfo(ctx context.Context, dir string) (api.WorktreeInfo
 		info.URL = domainURL(info.Worktree.PrimaryDomain)
 		info.Worktree.Setup = d.setupOf(checkout.Dir)
 		info.Database = d.databaseInfo(p, checkout.Dir)
+		if cfg, err := d.plugins.ResolveDir(checkout.Dir); err == nil {
+			info.ExportEnv = cfg.ExportEnv
+		}
 	}
 	return info, nil
 }

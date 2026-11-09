@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/lanewayhq/laneway/internal/mysqlwire"
 	"github.com/lanewayhq/laneway/internal/testkit"
+	"github.com/lanewayhq/laneway/internal/testkit/mysqlwire"
 )
 
 // Test Databases of the Laravel Recipe (database.test = auto) through Seam 1,

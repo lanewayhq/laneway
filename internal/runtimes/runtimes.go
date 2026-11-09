@@ -8,11 +8,12 @@ package runtimes
 const (
 	PHP  = "php"
 	Node = "node"
+	Ruby = "ruby"
 )
 
 // Runtime is one Runtime as resolved for a directory.
 type Runtime struct {
-	// Name is PHP or Node.
+	// Name is PHP, Node or Ruby.
 	Name string
 	// Version is its version, such as "8.4.12"; "" if it wasn't found.
 	Version string

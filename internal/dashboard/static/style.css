@@ -40,6 +40,8 @@ th { color: var(--muted); font-weight: 500; border-top: 0; }
 .badge[data-state="running"], .badge[data-state="ready"] { color: var(--ok); }
 .badge[data-state="starting"], .badge[data-state="restarting"], .badge[data-state="preparing"], .badge[data-state="idle"] { color: var(--warn); }
 .badge[data-state="failed"] { color: var(--bad); }
+.badge[data-state="update"] { color: var(--warn); }
+.notice { color: var(--warn); }
 .controls { display: inline-flex; gap: 0.25rem; }
 .actions { white-space: nowrap; }
 .actions > button { margin-left: 0.25rem; }
@@ -70,7 +72,13 @@ button:disabled { cursor: progress; opacity: 0.6; }
 .panel-header .note { margin: 0; color: var(--muted); flex: 1 1 30rem; }
 .panel-header .status { color: var(--muted); }
 .error { color: var(--bad); font-size: 0.85em; }
-.actions > .inbox { margin-left: 0.5rem; }
+.actions > .plugin-link { margin-left: 0.5rem; }
+.project > header .plugin-link, .project > header .plugin-badge, .project > header button { font-size: 0.85em; }
+.plugin-items { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-top: 0.25rem; }
+.plugin-badge { margin-left: 0.25rem; }
+dialog.result { max-width: 48rem; }
+dialog.result pre { max-height: 20rem; overflow: auto; padding: 0.5rem; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+dialog.result .warning { color: var(--warn); }
 button.danger { color: var(--bad); border-color: currentColor; }
 dialog.confirm { max-width: 32rem; padding: 1rem 1.25rem; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--fg); }
 dialog.confirm::backdrop { background: rgb(0 0 0 / 0.4); }

@@ -102,6 +102,49 @@ func TestRedisStartsLazilyAndStopsOnARealContainerEngine(t *testing.T) {
 	}
 }
 
+// TestCommandsRunInAServicesContainerOnARealContainerEngine proves the
+// container engine's Exec on Docker and Podman: what a command prints on
+// stdout and stderr comes back apart, with its exit status, and a stopped
+// container runs nothing.
+func TestCommandsRunInAServicesContainerOnARealContainerEngine(t *testing.T) {
+	for name, engine := range realEngines(t) {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			d, prefix := realEngineDaemon(t, engine)
+			containerName := prefix + "-redis-7"
+			removeContainer(t, engine, containerName)
+			d.MustRunCLI(serviceProject(t, "exec-real-"+name, `redis = "7"`, "").Dir, "link")
+			// The first connection starts it.
+			c := dialRedis(t, d, 6379)
+			if got := c.do("AUTH", "laneway"); got != "+OK" {
+				t.Fatalf("AUTH = %q, want +OK", got)
+			}
+			c.conn.Close()
+
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			out, err := engine.Exec(ctx, containerName, []string{"sh", "-c", "echo out; echo err >&2; redis-cli --version >/dev/null; exit 3"})
+			if err != nil {
+				t.Fatalf("running a command in %s: %v", containerName, err)
+			}
+			if string(out.Stdout) != "out\n" || string(out.Stderr) != "err\n" || out.ExitCode != 3 {
+				t.Fatalf("the command gave stdout %q, stderr %q, exit status %d; want \"out\\n\", \"err\\n\", 3",
+					out.Stdout, out.Stderr, out.ExitCode)
+			}
+			// Bigger than one frame of the engine's stream.
+			out, err = engine.Exec(ctx, containerName, []string{"head", "-c", "100000", "/dev/zero"})
+			if err != nil || len(out.Stdout) != 100000 || out.ExitCode != 0 {
+				t.Fatalf("a long output came back as %d bytes, exit status %d, %v; want 100000 bytes, 0", len(out.Stdout), out.ExitCode, err)
+			}
+
+			d.MustRunCLI(d.Home, "services", "down", "redis")
+			if _, err := engine.Exec(ctx, containerName, []string{"true"}); err == nil {
+				t.Fatalf("a command ran in the stopped container %s, want an error", containerName)
+			}
+		})
+	}
+}
+
 func TestMailpitCatchesMailAndServesItsInboxOnARealContainerEngine(t *testing.T) {
 	for name, engine := range realEngines(t) {
 		t.Run(name, func(t *testing.T) {

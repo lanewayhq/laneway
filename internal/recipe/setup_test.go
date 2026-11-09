@@ -1,13 +1,13 @@
 package recipe_test
 
 import (
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/detect"
 	"github.com/lanewayhq/laneway/internal/recipe"
 )
 
@@ -17,17 +17,14 @@ type setupStack struct{}
 
 func (setupStack) Name() string { return "setup-stack" }
 
-func (setupStack) Detect(dir string) bool {
-	_, err := os.Stat(filepath.Join(dir, "setup-stack"))
-	return err == nil
-}
+func (setupStack) Detection() detect.Rule { return detect.Rule{File: "setup-stack"} }
 
-func (setupStack) Defaults(dir string) (config.Layer, error) {
-	return config.ParseLayer("the setup-stack Recipe", []byte(`
+func (setupStack) Defaults(dir string) (recipe.Result, error) {
+	return layered(config.ParseLayer("the setup-stack Recipe", []byte(`
 [worktree]
 on_create = ["composer install", "php artisan storage:link"]
 on_remove = ["php artisan cache:clear"]
-`))
+`)))
 }
 
 func TestTheRecipesSetupStepsRunFirstThenEachLayersInOrder(t *testing.T) {
@@ -91,11 +88,11 @@ func TestSetupConfigWrittenAsALayerResolvesToItself(t *testing.T) {
 			}
 			dir := filepath.Join("testdata", fixture)
 			for _, recipes := range [][]recipe.Recipe{nil, {setupStack{}}} {
-				again, err := recipe.Resolve(recipe.Input{Dir: dir, Layers: []config.Layer{written}, Recipes: recipes})
+				again, err := recipe.Resolve(recipe.Input{Engines: builtinEngines(), Dir: dir, Layers: []config.Layer{written}, Recipes: recipes})
 				if err != nil {
 					t.Fatal(err)
 				}
-				again.Recipe, again.Warnings = res.Recipe, res.Warnings
+				again.Recipe, again.RecipeRule, again.Warnings = res.Recipe, res.RecipeRule, res.Warnings
 				if !reflect.DeepEqual(again, res) {
 					t.Errorf("with Recipes %v, the written config\n%s\nresolves to\n  %+v\nwant\n  %+v", recipes, buf.String(), again, res)
 				}

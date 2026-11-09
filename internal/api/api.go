@@ -50,6 +50,9 @@ type Project struct {
 	Path string `json:"path"`
 	// Worktrees are the Project's Worktrees, the main one first.
 	Worktrees []Worktree `json:"worktrees"`
+	// PluginItems are what Plugins the Project uses show on it; only
+	// GET /v1/projects and GET /v1/events fill them in.
+	PluginItems
 }
 
 // Process is one of a Worktree's Processes and what it is doing.
@@ -89,6 +92,9 @@ type Worktree struct {
 	// GET /v1/worktree, POST /v1/worktree/ready and the up/down/restart
 	// routes fill it in.
 	Setup *Setup `json:"setup,omitempty"`
+	// PluginItems are what Plugins the Worktree uses show on it; only
+	// GET /v1/projects and GET /v1/events fill them in.
+	PluginItems
 }
 
 // DeclaredProcess is a Process as the Worktree's config declares it.
@@ -195,6 +201,13 @@ type LinkResponse struct {
 	// EnvPatch lists the env files that were (or, with Preview, would be)
 	// changed, one per Worktree whose Env Patch wasn't already in place.
 	EnvPatch []EnvFilePatch `json:"envPatch,omitempty"`
+	// Fetched are the Plugins fetched from the Catalog and installed
+	// because the Project needs them (even when previewing, since the Env
+	// Patch can't be worked out without them).
+	Fetched []Plugin `json:"fetched,omitempty"`
+	// Warnings are problems that didn't stop Linking, such as a Catalog
+	// Laneway refused.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // EnvFilePatch is how the Env Patch changes one Worktree's env file. Only the
@@ -238,6 +251,11 @@ type WorktreeInfo struct {
 	// Project has no database, the Worktree has no Domain yet or its config
 	// can't be read.
 	Database *Database `json:"database,omitempty"`
+	// ExportEnv is true when the Project's stack reads its settings from
+	// the environment rather than its .env (such as Rails without the
+	// dotenv gem), so `lane exec` exports the Worktree's .env into the
+	// command's.
+	ExportEnv bool `json:"exportEnv,omitempty"`
 }
 
 // Database names the databases a Worktree uses.
@@ -328,6 +346,26 @@ const (
 	// CodeServiceFailed: a Service could not be started or stopped, such
 	// as when no container engine is available.
 	CodeServiceFailed = "service_failed"
+
+	// CodeInvalidPlugin: a Plugin can't be added; the message says why.
+	CodeInvalidPlugin = "invalid_plugin"
+
+	// CodeUnknownPlugin: no installed Plugin has the name.
+	CodeUnknownPlugin = "unknown_plugin"
+	// CodeUnknownCommand: the Plugin has no command of the name.
+	CodeUnknownCommand = "unknown_command"
+	// CodePluginInUse: a Plugin can't be removed while Linked Projects use
+	// it; the message lists them.
+	CodePluginInUse = "plugin_in_use"
+
+	// CodePluginsUnavailable: Linking needs Catalog Plugins that couldn't
+	// be fetched, such as when offline; the message names them.
+	CodePluginsUnavailable = "plugins_unavailable"
+
+	// CodeSourceChanged: a Plugin's source (such as its GitHub release)
+	// has something other than the preview the developer confirmed, so
+	// nothing was installed.
+	CodeSourceChanged = "source_changed"
 )
 
 // Service is a shared Service, such as redis:7, and how to connect to it.
@@ -347,6 +385,9 @@ type Service struct {
 	// Error says why the Service can't be used (Laneway can't listen on
 	// its port, or its last start failed).
 	Error string `json:"error,omitempty"`
+	// PluginItems are what the Plugin that adds the Service's Engine shows
+	// on it, such as Mailpit's Inbox link.
+	PluginItems
 }
 
 // ServiceList is every Service Laneway serves, sorted by name.
@@ -433,3 +474,197 @@ type Error struct {
 }
 
 func (e *Error) Error() string { return e.Message }
+
+// Plugin is an installed Plugin, or one about to be added: the body of
+// GET /v1/plugins (in a PluginList) and of POST /v1/plugins.
+type Plugin struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	// Source is where it was added from, such as a directory.
+	Source string `json:"source"`
+	// SHA256 is the hash of its module it is pinned to; "" without one.
+	SHA256 string `json:"sha256,omitempty"`
+	// Recipes are the Recipes it adds.
+	Recipes []PluginRecipe `json:"recipes"`
+	// Integrations are the Integrations it adds.
+	Integrations []PluginIntegration `json:"integrations"`
+	// Commands are the commands it adds, run as `lane <plugin> <command>`.
+	Commands []PluginCommand `json:"commands"`
+	// Engines are the Engines it adds.
+	Engines []PluginEngine `json:"engines"`
+	// Generators are the names of the Generators it adds, run with
+	// `lane generate <plugin>`.
+	Generators []string `json:"generators"`
+	// Hooks are the lifecycle events it hooks, such as "ready", in
+	// lifecycle order.
+	Hooks []string `json:"hooks"`
+	// Effects are the kinds of effect it may return, each with what it
+	// lets the Plugin do; empty if it only returns config.
+	Effects []PluginEffect `json:"effects"`
+	// HTTPHosts are the hosts its http effects may reach.
+	HTTPHosts []string `json:"httpHosts"`
+	// Global is true for a machine-wide Plugin (`lane plugin add
+	// --global`), which only personal config turns on.
+	Global bool `json:"global,omitempty"`
+	// Update is the release `lane plugin update` would update it to, if
+	// there is a newer one that version pins allow: in the Catalog, or for
+	// a Plugin added by hand, at its source.
+	Update *PluginUpdate `json:"update,omitempty"`
+}
+
+// PluginRecipe is a Recipe a Plugin adds.
+type PluginRecipe struct {
+	Name string `json:"name"`
+	// Detects describes the Projects its detection rule matches, such as
+	// "Procfile exists".
+	Detects string `json:"detects"`
+}
+
+// PluginIntegration is an Integration a Plugin adds.
+type PluginIntegration struct {
+	Name string `json:"name"`
+	// Detects describes the Projects its detection rule matches, such as
+	// "package.json depends on vite".
+	Detects string `json:"detects"`
+}
+
+// PluginCommand is a command a Plugin adds.
+type PluginCommand struct {
+	Name string `json:"name"`
+	// Summary says what it does.
+	Summary string `json:"summary"`
+}
+
+// PluginEngine is an Engine a Plugin adds: what Services of it run.
+type PluginEngine struct {
+	Name string `json:"name"`
+	// Image is the image repository its Services' containers run.
+	Image string `json:"image"`
+	// Port is its standard port, which a Service at its default version
+	// listens on.
+	Port int `json:"port"`
+}
+
+// PluginEffect is a kind of effect a Plugin may return.
+type PluginEffect struct {
+	Kind string `json:"kind"`
+	// Description says what it lets the Plugin do, such as "run commands
+	// in Worktrees".
+	Description string `json:"description"`
+}
+
+// PluginList is every installed Plugin, sorted by name.
+type PluginList struct {
+	Plugins []Plugin `json:"plugins"`
+}
+
+// AddPluginRequest is the body of POST /v1/plugins: add the Plugin in a
+// directory.
+type AddPluginRequest struct {
+	// Source is the Plugin's directory, an absolute path, or its GitHub
+	// repository, as github.com/<owner>/<repo>[@<tag>], whose release is
+	// downloaded.
+	Source string `json:"source"`
+	// Preview only reads and checks the Plugin, adding nothing, so the
+	// developer can confirm what it may do first.
+	Preview bool `json:"preview,omitempty"`
+	// Global adds it as a machine-wide Plugin, which only the global
+	// config or a Project's laneway.local.toml turns on.
+	Global bool `json:"global,omitempty"`
+	// Digest, required unless previewing, is the Digest of the preview the
+	// developer confirmed: if the source has anything else now, such as a
+	// GitHub release replaced since, nothing is added (CodeSourceChanged).
+	Digest string `json:"digest,omitempty"`
+}
+
+// AddPluginResponse is the Plugin added (or, previewing, that would be).
+type AddPluginResponse struct {
+	Plugin Plugin `json:"plugin"`
+	// Replaces is the installed Plugin of the same name it replaced (or
+	// would replace), if any.
+	Replaces *Plugin `json:"replaces,omitempty"`
+	// Digest, previewing, hashes what was read from the source (its
+	// manifest, Engine files and module), for confirming it.
+	Digest string `json:"digest,omitempty"`
+}
+
+// UpdateHandAddedRequest is the body of POST /v1/plugins/{plugin}/update:
+// install what the source of a Plugin added by hand (a directory or GitHub
+// repository) has now, such as the repository's latest release. Catalog
+// Plugins are updated with POST /v1/plugins/update instead.
+type UpdateHandAddedRequest struct {
+	// Preview only reads and checks what's there, changing nothing, so the
+	// developer can confirm it first.
+	Preview bool `json:"preview,omitempty"`
+	// Digest, required unless previewing, is the Digest of the preview the
+	// developer confirmed, as for AddPluginRequest.
+	Digest string `json:"digest,omitempty"`
+}
+
+// UpdateHandAddedResponse is the Plugin as updated (or, previewing, as it
+// would be), and as it was.
+type UpdateHandAddedResponse struct {
+	Plugin Plugin `json:"plugin"`
+	Was    Plugin `json:"was"`
+	// UpToDate is true when the source has the version and hash already
+	// installed, so nothing changes.
+	UpToDate bool `json:"upToDate,omitempty"`
+	// Digest, previewing, is as for AddPluginResponse.
+	Digest string `json:"digest,omitempty"`
+	// Warning, if set, is why nothing changes although the source has
+	// something new, such as a version pin that doesn't allow it.
+	Warning string `json:"warning,omitempty"`
+	// OutOfDate are the generated files the update left out of date, as
+	// for UpdatePluginsResponse.
+	OutOfDate []OutOfDateFile `json:"outOfDate,omitempty"`
+}
+
+// RemovePluginResponse is the body of DELETE /v1/plugins/{plugin}: the
+// Plugin removed.
+type RemovePluginResponse struct {
+	Plugin Plugin `json:"plugin"`
+	// Kept are the Services of the Plugin's Engines, stopped but with their
+	// data kept: adding the Plugin again brings them back as they were.
+	Kept []KeptService `json:"kept"`
+}
+
+// KeptService is a Service whose Engine's Plugin was removed, and the
+// volume its data is kept in.
+type KeptService struct {
+	Name   string `json:"name"`
+	Volume string `json:"volume"`
+}
+
+// PluginCommandRequest is the body of POST
+// /v1/plugins/{plugin}/commands/{command}: run a Plugin's command in a
+// Worktree and apply the effects it returns.
+type PluginCommandRequest struct {
+	// Dir is a directory inside the Worktree, an absolute path.
+	Dir string `json:"dir"`
+	// Worktree, if set, names the Worktree instead, as for ControlRequest.
+	Worktree string `json:"worktree,omitempty"`
+	// Args are the command's arguments.
+	Args []string `json:"args,omitempty"`
+}
+
+// PluginCommandResult is what a Plugin's command did.
+type PluginCommandResult struct {
+	// Effects are the effects applied, in order, with what each did.
+	Effects []AppliedEffect `json:"effects"`
+	// Warnings are the command's warnings, and the effects Laneway refused
+	// and why.
+	Warnings []string `json:"warnings"`
+	// Error, if set, is why the command failed: its module failed, or an
+	// effect did, and the effects after it weren't applied.
+	Error string `json:"error,omitempty"`
+}
+
+// AppliedEffect is an effect a Plugin's command returned that Laneway
+// applied.
+type AppliedEffect struct {
+	Kind string `json:"kind"`
+	// Command is an exec effect's command and arguments.
+	Command []string `json:"command,omitempty"`
+	// Output is an exec effect's output, stdout and stderr together.
+	Output string `json:"output,omitempty"`
+}

@@ -299,3 +299,10 @@ func suggestedVersion(constraint string) string {
 	}
 	return "latest"
 }
+
+// CheckConstraint checks that constraint can be read in d's syntax (see
+// Satisfies).
+func CheckConstraint(constraint string, d Dialect) error {
+	_, err := parseConstraint(constraint, d)
+	return err
+}

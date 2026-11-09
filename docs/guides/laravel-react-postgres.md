@@ -486,6 +486,8 @@ lane harness add t3       # a "Laneway: wait until Ready" script in t3.json that
 
 The hook runs `lane worktree ready`, so an agent's session in a new worktree starts only once its database, `.env` and `composer`/`bun install` are done. The `AGENTS.md` section tells the agent to use `lane info --json` for its URL and `lane exec` for commands, and, in a linked worktree without an Alias, to name it after its task once it is Ready (`lane worktree alias checkout-redesign`, see Aliases in §8). Projects set up before that instruction existed get it when `lane harness add` runs again. It's safe for teammates without Laneway: the hook does nothing if `lane` isn't installed.
 
+These are Generators of Plugins built into Laneway, so `lane generate claude` and `lane generate t3` do the same, and `lane generate <plugin>` runs any added Plugin's Generators. Laneway merges what they generate into your files: JSON structurally, Markdown between `laneway:begin`/`laneway:end` markers, never touching the rest, and it writes nothing if one of the files can't be merged.
+
 **If you use Laravel Boost**, Boost writes `CLAUDE.md` and `AGENTS.md` itself, so Laneway leaves them alone and puts its instructions in `.ai/guidelines/laneway.md`, where Boost [takes custom guidelines](https://laravel.com/docs/boost#adding-custom-ai-guidelines). Boost adds them to its files when it runs, so run it after `lane harness add`:
 
 ```sh
