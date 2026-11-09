@@ -24,19 +24,36 @@ const OrphanGrace = 24 * time.Hour
 // due could not be dropped (no container engine, say).
 const OrphanRetry = time.Hour
 
-// Orphan kinds, as the API reports them.
+// orphanPlace is where in its Service an Orphan lives.
+type orphanPlace int
+
 const (
-	orphanDatabase     = "database"
-	orphanTestDatabase = "test database"
-	orphanParallelCopy = "parallel test copy"
+	inDatabases orphanPlace = iota // among its databases (databaseStore)
+	inBuckets                      // among its Buckets (bucketStore)
 )
 
-// worktreeOrphans are the databases of the Worktree w that become Orphans
+// placeOf is where in its Service an Orphan of kind k lives: the one place
+// that tells Bucket Orphans from database ones.
+func placeOf(k api.OrphanKind) orphanPlace {
+	if k == api.OrphanBucket {
+		return inBuckets
+	}
+	return inDatabases
+}
+
+// worktreeOrphans are what of the Worktree w becomes Orphans when it goes,
+// as Orphans since since: its databases (databaseOrphans) and its Buckets
+// (bucketOrphans). cfg is the config they come from.
+func (d *Daemon) worktreeOrphans(p registry.Project, w worktreeRef, cfg recipe.Resolved, since time.Time) []registry.Orphan {
+	return append(d.databaseOrphans(p, w, cfg, since), d.bucketOrphans(p, w, cfg, since)...)
+}
+
+// databaseOrphans are the databases of the Worktree w that become Orphans
 // when it goes, as Orphans since since: its own database (unless it shares
 // the main Worktree's) and its Test Database. cfg is the config they come
 // from. None unless the database is in a Service whose Engine can drop
 // databases (database.Dropper): a SQLite file goes with its Worktree.
-func (d *Daemon) worktreeOrphans(p registry.Project, w worktreeRef, cfg recipe.Resolved, since time.Time) []registry.Orphan {
+func (d *Daemon) databaseOrphans(p registry.Project, w worktreeRef, cfg recipe.Resolved, since time.Time) []registry.Orphan {
 	svc, ok := cfg.DatabaseService()
 	if !ok {
 		return nil
@@ -49,57 +66,58 @@ func (d *Daemon) worktreeOrphans(p registry.Project, w worktreeRef, cfg recipe.R
 	var out []registry.Orphan
 	main, own := e.Database(p.Name, "", p.Path), e.Database(p.Name, w.label, w.dir)
 	if database.Mode(cfg.Database.Mode).Use(main, own) == own {
-		o.Database, o.Kind = own, orphanDatabase
+		o.Name, o.Kind = own, api.OrphanDatabase
 		out = append(out, o)
 	}
 	if test, ok := d.worktreeTestDatabase(p, w, cfg); ok {
-		o.Database, o.Kind = test, orphanTestDatabase
+		o.Name, o.Kind = test, api.OrphanTestDatabase
 		out = append(out, o)
 	}
 	return out
 }
 
-// orphanWorktree turns the databases of the Worktree w, which was removed,
-// into Orphans. Its checkout is gone, so they are worked out from the main
-// Worktree's config.
+// orphanWorktree turns the databases and Buckets of the Worktree w, which
+// was removed, into Orphans. Its checkout is gone, so they are worked out
+// from the main Worktree's config (and its Buckets by their names too, see
+// orphanedBuckets).
 func (d *Daemon) orphanWorktree(p registry.Project, w worktreeRef) {
 	cfg, err := d.plugins.ResolveDir(p.Path)
 	if err != nil {
 		d.log.Error("finding the databases of a removed Worktree", "project", p.Name, "worktree", w.name, "err", err)
 		return
 	}
-	d.addOrphans(d.worktreeOrphans(p, w, cfg, d.cfg.Clock.Now()))
+	d.addOrphans(d.worktreeOrphans(p, w, cfg, d.cfg.Clock.Now()), []goneWorktree{d.goneWorktreeOf(p, w, cfg)})
 }
 
-// reclaimOrphans takes back the databases of the Worktree w that are
-// Orphans (of an earlier Link of the Project, or of a removed Worktree of
-// the same name), so they aren't dropped while it uses them: its setup then
-// finds them and leaves them as they are. It runs whenever a Worktree is
-// served, before its setup begins.
+// reclaimOrphans takes back the databases and Buckets of the Worktree w
+// that are Orphans (of an earlier Link of the Project, or of a removed
+// Worktree of the same name), so they aren't dropped while it uses them:
+// its setup then finds them and leaves them as they are. It runs whenever a
+// Worktree is served, before its setup begins.
 func (d *Daemon) reclaimOrphans(p registry.Project, w worktreeRef) {
 	cfg, err := d.plugins.ResolveDir(w.dir)
 	if err != nil {
 		return
 	}
-	mine := d.worktreeOrphans(p, w, cfg, time.Time{})
+	d.orphanMu.Lock()
+	defer d.orphanMu.Unlock()
+	mine := append(d.worktreeOrphans(p, w, cfg, time.Time{}), d.orphanBucketsOf(p, w)...)
 	if len(mine) == 0 {
 		return
 	}
-	d.orphanMu.Lock()
-	defer d.orphanMu.Unlock()
 	removed, err := d.registry.RemoveOrphans(mine)
 	if err != nil {
 		d.log.Error("taking back Orphans", "project", p.Name, "dir", w.dir, "err", err)
 	}
 	for _, o := range removed {
-		d.log.Info("Orphan taken back", "project", p.Name, "dir", w.dir, "database", o.Database)
+		d.log.Info("Orphan taken back", "project", p.Name, "dir", w.dir, "name", o.Name)
 	}
 	d.scheduleOrphanDropLocked()
 }
 
-// addOrphans records orphans, then checks them against their Services in
-// the background (checkOrphans).
-func (d *Daemon) addOrphans(orphans []registry.Orphan) {
+// addOrphans records orphans, of the Worktrees gone, then checks them
+// against their Services in the background (checkOrphans).
+func (d *Daemon) addOrphans(orphans []registry.Orphan, gone []goneWorktree) {
 	if len(orphans) == 0 {
 		return
 	}
@@ -111,24 +129,25 @@ func (d *Daemon) addOrphans(orphans []registry.Orphan) {
 		d.log.Error("recording Orphans", "err", err)
 		return
 	}
-	d.background(func() { d.checkOrphans(d.stopping, orphans) })
+	d.background(func() { d.checkOrphans(d.stopping, orphans, gone) })
 }
 
-// checkOrphans looks in the Services of orphans, just recorded, for what
-// is really there: an Orphan whose database doesn't exist (its Worktree
-// went before setup made it) is forgotten, and the parallel test copies of
-// an Orphan Test Database become Orphans too, since the same time. It
-// starts the Services to look. If it can't, the records stay as they are:
-// dropping a database that doesn't exist is fine, and `lane gc` finds
-// leftover copies.
-func (d *Daemon) checkOrphans(ctx context.Context, orphans []registry.Orphan) {
+// checkOrphans looks in the Services of orphans, just recorded, of the
+// Worktrees gone, for what is really there: an Orphan whose database or
+// Bucket doesn't exist (its Worktree went before setup made it) is
+// forgotten, and the parallel test copies of an Orphan Test Database
+// become Orphans too, since the same time, as do the other Buckets of the
+// Worktrees gone (orphanedBuckets). It starts the Services to look. If it
+// can't, the records stay as they are: dropping a database or Bucket that
+// doesn't exist is fine, and `lane gc` finds leftover copies.
+func (d *Daemon) checkOrphans(ctx context.Context, orphans []registry.Orphan, gone []goneWorktree) {
 	for _, batch := range byService(orphans) {
-		e, release, err := d.dropper(ctx, batch[0].Ref)
+		s, release, err := d.orphanStore(ctx, batch[0])
 		if err != nil {
 			d.log.Error("checking Orphans", "service", batch[0].Ref.Name(), "err", err)
 			continue
 		}
-		names, err := e.Databases(ctx)
+		names, err := s.names(ctx)
 		release()
 		if err != nil {
 			d.log.Error("checking Orphans", "service", batch[0].Ref.Name(), "err", err)
@@ -138,35 +157,49 @@ func (d *Daemon) checkOrphans(ctx context.Context, orphans []registry.Orphan) {
 		// Only Orphans still recorded: one taken back meanwhile stays
 		// taken back.
 		current := d.registry.Orphans()
-		var gone, copies []registry.Orphan
+		var missing []registry.Orphan
 		for _, o := range batch {
-			i := slices.IndexFunc(current, o.Same)
-			if i < 0 {
-				continue
-			}
-			if !slices.Contains(names, o.Database) {
-				gone = append(gone, o)
-			}
-			if o.Kind != orphanTestDatabase {
-				continue
-			}
-			for _, name := range names {
-				if database.ParallelCopy(o.Database, name) {
-					c := current[i]
-					c.Database, c.Kind = name, orphanParallelCopy
-					copies = append(copies, c)
-				}
+			if slices.ContainsFunc(current, o.Same) && !slices.Contains(names, o.Name) {
+				missing = append(missing, o)
 			}
 		}
-		if _, err := d.registry.RemoveOrphans(gone); err != nil {
+		var found []registry.Orphan
+		switch placeOf(batch[0].Kind) {
+		case inBuckets:
+			found = d.orphanedBuckets(batch, names, gone, current)
+		case inDatabases:
+			found = parallelCopies(batch, names, current)
+		}
+		if _, err := d.registry.RemoveOrphans(missing); err != nil {
 			d.log.Error("forgetting Orphans that don't exist", "err", err)
 		}
-		if err := d.registry.AddOrphans(copies); err != nil {
-			d.log.Error("recording parallel test copies as Orphans", "err", err)
+		if err := d.registry.AddOrphans(found); err != nil {
+			d.log.Error("recording parallel test copies and Buckets as Orphans", "err", err)
 		}
 		d.scheduleOrphanDropLocked()
 		d.orphanMu.Unlock()
 	}
+}
+
+// parallelCopies are the parallel test copies, among the databases names
+// in the Service of batch, of the Test Databases in batch still recorded in
+// current, as Orphans like them.
+func parallelCopies(batch []registry.Orphan, names []string, current []registry.Orphan) []registry.Orphan {
+	var out []registry.Orphan
+	for _, o := range batch {
+		i := slices.IndexFunc(current, o.Same)
+		if i < 0 || o.Kind != api.OrphanTestDatabase {
+			continue
+		}
+		for _, name := range names {
+			if database.ParallelCopy(o.Name, name) {
+				c := current[i]
+				c.Name, c.Kind = name, api.OrphanParallelCopy
+				out = append(out, c)
+			}
+		}
+	}
+	return out
 }
 
 // scheduleOrphanDropLocked sets the clock's timer for the next Orphan
@@ -243,14 +276,14 @@ func (d *Daemon) dropOrphans(ctx context.Context, orphans []registry.Orphan) (dr
 	defer d.orphanDropMu.Unlock()
 	for _, batch := range byService(orphans) {
 		service := batch[0].Ref.Name()
-		e, release, err := d.dropper(ctx, batch[0].Ref)
+		s, release, err := d.orphanStore(ctx, batch[0])
 		if err != nil {
 			errs = append(errs, fmt.Errorf("dropping Orphans in %s: %w", service, err))
 			continue
 		}
 		for _, o := range batch {
-			if err := d.dropOrphan(ctx, e, o); err != nil {
-				errs = append(errs, fmt.Errorf("dropping %s in %s: %w", o.Database, service, err))
+			if err := d.dropOrphan(ctx, s, o); err != nil {
+				errs = append(errs, fmt.Errorf("dropping %s in %s: %w", o.Name, service, err))
 				continue
 			}
 			dropped = append(dropped, o)
@@ -260,13 +293,13 @@ func (d *Daemon) dropOrphans(ctx context.Context, orphans []registry.Orphan) (dr
 	return dropped, errs
 }
 
-func (d *Daemon) dropOrphan(ctx context.Context, e database.Dropper, o registry.Orphan) error {
+func (d *Daemon) dropOrphan(ctx context.Context, s orphanStore, o registry.Orphan) error {
 	d.orphanMu.Lock()
 	defer d.orphanMu.Unlock()
 	if !o.Since.IsZero() && !slices.ContainsFunc(d.registry.Orphans(), o.Same) {
-		return fmt.Errorf("%s is no longer an Orphan (it was taken back, or dropped already)", o.Database)
+		return fmt.Errorf("%s is no longer an Orphan (it was taken back, or dropped already)", o.Name)
 	}
-	if err := e.Drop(ctx, o.Database); err != nil {
+	if err := s.drop(ctx, o.Name); err != nil {
 		return err
 	}
 	_, err := d.registry.RemoveOrphans([]registry.Orphan{o})
@@ -290,12 +323,13 @@ func (d *Daemon) closeOrphans() {
 	d.scheduleOrphanDropLocked()
 }
 
-// byService groups orphans by the Service they live in.
+// byService groups orphans by the Service they live in, its Buckets apart
+// from its databases.
 func byService(orphans []registry.Orphan) [][]registry.Orphan {
 	var groups [][]registry.Orphan
 	for _, o := range orphans {
 		i := slices.IndexFunc(groups, func(g []registry.Orphan) bool {
-			return g[0].Engine == o.Engine && g[0].Version == o.Version
+			return g[0].Ref == o.Ref && placeOf(g[0].Kind) == placeOf(o.Kind)
 		})
 		if i < 0 {
 			groups = append(groups, nil)
@@ -309,7 +343,7 @@ func byService(orphans []registry.Orphan) [][]registry.Orphan {
 // dropper starts the database Service svc and returns the Engine of its
 // databases. Call release once done with it, so the Service can go Idle.
 func (d *Daemon) dropper(ctx context.Context, svc recipe.Service) (e database.Dropper, release func(), err error) {
-	server, release, err := d.databaseServer(ctx, svc, io.Discard)
+	server, release, err := d.startService(ctx, svc, io.Discard)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -321,9 +355,37 @@ func (d *Daemon) dropper(ctx context.Context, svc recipe.Service) (e database.Dr
 	return e, release, nil
 }
 
+// orphanStore is where Orphans of one kind live in a Service: its databases
+// (databaseStore) or its Buckets (bucketStore).
+type orphanStore interface {
+	// names lists every database, or Bucket, in the Service.
+	names(ctx context.Context) ([]string, error)
+	drop(ctx context.Context, name string) error
+}
+
+// databaseStore is a Service's databases, as an orphanStore.
+type databaseStore struct{ e database.Dropper }
+
+func (s databaseStore) names(ctx context.Context) ([]string, error) { return s.e.Databases(ctx) }
+func (s databaseStore) drop(ctx context.Context, name string) error { return s.e.Drop(ctx, name) }
+
+// orphanStore starts the Service the Orphan o lives in and returns where
+// Orphans of its kind live there. Call release once done with it, so the
+// Service can go Idle.
+func (d *Daemon) orphanStore(ctx context.Context, o registry.Orphan) (s orphanStore, release func(), err error) {
+	if placeOf(o.Kind) == inBuckets {
+		return d.bucketStore(ctx, o.Ref)
+	}
+	e, release, err := d.dropper(ctx, o.Ref)
+	if err != nil {
+		return nil, nil, err
+	}
+	return databaseStore{e}, release, nil
+}
+
 // gc drops every Orphan now, along with the parallel test copies of Test
 // Databases whose Worktree no longer exists (leftoverCopies); only those
-// req.Databases names, if it names any. With req.Preview it only lists
+// req.Orphans names, if it names any. With req.Preview it only lists
 // them.
 func (d *Daemon) gc(ctx context.Context, req api.GCRequest) api.GCResponse {
 	d.orphanMu.Lock()
@@ -331,14 +393,14 @@ func (d *Daemon) gc(ctx context.Context, req api.GCRequest) api.GCResponse {
 	d.orphanMu.Unlock()
 	leftovers, errs := d.leftoverCopies(ctx)
 	candidates = append(candidates, leftovers...)
-	if !req.Preview && len(req.Databases) > 0 {
+	if !req.Preview && len(req.Orphans) > 0 {
 		var chosen []registry.Orphan
-		for _, ref := range req.Databases {
+		for _, ref := range req.Orphans {
 			i := slices.IndexFunc(candidates, func(o registry.Orphan) bool {
-				return o.Ref.Name() == ref.Service && o.Database == ref.Database
+				return o.Ref.Name() == ref.Service && o.Name == ref.Name
 			})
 			if i < 0 {
-				errs = append(errs, fmt.Errorf("%s in %s is not an Orphan (any more)", ref.Database, ref.Service))
+				errs = append(errs, fmt.Errorf("%s in %s is not an Orphan (any more)", ref.Name, ref.Service))
 				continue
 			}
 			chosen = append(chosen, candidates[i])
@@ -421,7 +483,7 @@ func (d *Daemon) leftoverCopies(ctx context.Context) ([]registry.Orphan, []error
 			if !ok || s.tests[test] {
 				continue
 			}
-			o := registry.Orphan{Ref: s.svc, Database: name, Kind: orphanParallelCopy}
+			o := registry.Orphan{Ref: s.svc, Name: name, Kind: api.OrphanParallelCopy}
 			if slices.ContainsFunc(recorded, o.Same) {
 				continue
 			}
@@ -451,7 +513,7 @@ func (d *Daemon) listOrphans() api.OrphanList {
 
 func apiOrphan(o registry.Orphan) api.Orphan {
 	res := api.Orphan{
-		Database: o.Database,
+		Name:     o.Name,
 		Service:  o.Ref.Name(),
 		Project:  o.ProjectName,
 		Worktree: o.Worktree,

@@ -1,8 +1,8 @@
 // Package engine is Laneway's Engines as data (spec #48, ADR-0007): an
 // Engine manifest says everything Laneway needs to run a Service of it and
-// make its databases, with no code of the Engine's own. Package service runs
-// the container and its readiness probes; package database runs the
-// database commands inside it.
+// make its databases and Buckets, with no code of the Engine's own. Package
+// service runs the container and its readiness probes; packages database
+// and bucket run the database and Bucket commands inside it.
 //
 // Every Engine comes from a Plugin (package plugin), which lists Engine
 // manifests that Parse reads. Even Redis, Mailpit, Postgres and MySQL come
@@ -36,7 +36,8 @@ const Password = "laneway"
 // commands may hold placeholders, which Laneway replaces: {user} (User),
 // {password} (Password), and {version} (the Service's version) in what
 // configures the container; {db}, {from} and {to} in the database commands
-// (see Databases). {{ and }} stand for { and }.
+// (see Databases); {bucket} in the Bucket commands (see Buckets). {{ and }}
+// stand for { and }.
 type Manifest struct {
 	// Name is how config and the CLI name it, such as "redis". The Env
 	// Patch's Service variables start with it ({redis_port}).
@@ -45,8 +46,11 @@ type Manifest struct {
 	// derived port (see Ports).
 	DefaultVersion string `toml:"default_version" json:"default_version"`
 	// Image is the image repository, fully qualified; the version is its
-	// tag.
-	Image string `toml:"image" json:"image"`
+	// tag. It is "" when Versions maps each version to an image instead.
+	Image string `toml:"image" json:"image,omitempty"`
+	// Versions, if set instead of Image, are the only versions a Service of
+	// the Engine may be at, each with the image it runs (see ImageRef).
+	Versions map[string]Version `toml:"versions" json:"versions,omitempty"`
 	// Port is the Engine's standard TCP port, which is also the port it
 	// listens on inside its container.
 	Port int `toml:"port" json:"port"`
@@ -69,6 +73,12 @@ type Manifest struct {
 	// Database is how Laneway makes the Engine's databases; nil if a
 	// Project can't have its database in it.
 	Database *Databases `toml:"database" json:"database,omitempty"`
+	// Bucket is how Laneway makes the Engine's Buckets; nil if a Worktree
+	// can't have a Bucket in it.
+	Bucket *Buckets `toml:"bucket" json:"bucket,omitempty"`
+	// Domains are the Service Domains Laneway serves the Engine's ports at
+	// (see ServiceDomain); the first one's URL is {<engine>_endpoint}.
+	Domains []ServiceDomain `toml:"domains" json:"domains,omitempty"`
 }
 
 // The kinds of readiness Probe.
@@ -196,13 +206,23 @@ func (m *Manifest) ContainerCmd(version string) []string {
 
 // Variables are the Env Patch template variables each Service gives a
 // Worktree using it: {<engine>_host}, {<engine>_port}, {<engine>_username}
-// (only for Engines with users) and {<engine>_password}.
+// (only for Engines with users), {<engine>_password} and
+// {<engine>_endpoint} (only for Engines with Service Domains; see
+// Endpoint) and {<engine>_bucket} (only for Engines with Bucket commands;
+// see BucketVariable).
 func (m *Manifest) Variables() []string {
 	vars := []string{m.Name + "_host", m.Name + "_port"}
 	if m.User != "" {
 		vars = append(vars, m.Name+"_username")
 	}
-	return append(vars, m.Name+"_password")
+	vars = append(vars, m.Name+"_password")
+	if len(m.Domains) > 0 {
+		vars = append(vars, m.endpointVariable())
+	}
+	if v := m.BucketVariable(); v != "" {
+		vars = append(vars, v)
+	}
+	return vars
 }
 
 // Values are the Variables' values for a Service of m listening on host and
@@ -276,8 +296,12 @@ func (m *Manifest) check() error {
 		return fmt.Errorf("name must be lowercase letters, digits and _, starting with a letter, not %q", m.Name)
 	case m.DefaultVersion == "":
 		return fmt.Errorf("default_version is missing")
-	case m.Image == "":
-		return fmt.Errorf("image is missing: give the image repository, fully qualified, such as \"docker.io/library/redis\"")
+	case m.Image == "" && len(m.Versions) == 0:
+		return fmt.Errorf("image is missing: give the image repository, fully qualified, such as \"docker.io/library/redis\", " +
+			"or map each version to an image in [versions]")
+	case m.Image != "" && len(m.Versions) > 0:
+		return fmt.Errorf("image and [versions] are both set: give either the image repository, whose tags are the versions, " +
+			"or [versions], mapping each version to an image")
 	case m.Port < 1 || m.Port > 65535:
 		return fmt.Errorf("port must be the Engine's TCP port, 1 to 65535, not %d", m.Port)
 	case m.WebPort < 0 || m.WebPort > 65535:
@@ -286,6 +310,9 @@ func (m *Manifest) check() error {
 		return fmt.Errorf("data_dir must be an absolute path in the container, not %q", m.DataDir)
 	case len(m.Ready) == 0:
 		return fmt.Errorf("ready is missing: add a [[ready]] probe saying when the Engine is ready for clients")
+	}
+	if err := m.checkVersions(); err != nil {
+		return err
 	}
 	for _, k := range slices.Sorted(maps.Keys(m.Env)) {
 		if err := checkPlaceholders("env."+k, []string{m.Env[k]}, containerPlaceholders); err != nil {
@@ -299,6 +326,12 @@ func (m *Manifest) check() error {
 		if err := m.checkProbe(i, &m.Ready[i]); err != nil {
 			return err
 		}
+	}
+	if err := m.checkDomains(); err != nil {
+		return err
+	}
+	if err := m.checkBuckets(); err != nil {
+		return err
 	}
 	if db := m.Database; db != nil {
 		if db.MaxName < 1 {
@@ -376,10 +409,11 @@ type Set []*Manifest
 
 // Assumed stands for an Engine known by its name alone, such as a Catalog
 // Engine not fetched yet: config naming it, and anything config may ask of
-// an Engine (users, databases), resolves as if it were installed. It can't
-// be run.
+// an Engine (users, databases, an endpoint, Buckets), resolves as if it
+// were installed. It can't be run.
 func Assumed(name string) *Manifest {
-	return &Manifest{Name: name, DefaultVersion: "latest", User: "assumed", Database: &Databases{}}
+	return &Manifest{Name: name, DefaultVersion: "latest", User: "assumed", Database: &Databases{},
+		Domains: []ServiceDomain{{Label: "assumed"}}, Bucket: &Buckets{}}
 }
 
 // Lookup returns the Engine called name.
@@ -399,13 +433,4 @@ func (s Set) Names() []string {
 		names = append(names, m.Name)
 	}
 	return names
-}
-
-// Variables are every Engine's Variables.
-func (s Set) Variables() []string {
-	var vars []string
-	for _, m := range s {
-		vars = append(vars, m.Variables()...)
-	}
-	return vars
 }

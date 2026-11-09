@@ -1,0 +1,2 @@
+# My fixtures are big.
+bucket_copy_limit = "2.5 GiB"

@@ -1,0 +1,5 @@
+[buckets.public]
+public = true
+
+[env]
+PUBLIC_BUCKET = "{redis_bucket_public}"

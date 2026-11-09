@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 
 	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/envpatch"
@@ -40,20 +41,21 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 		res.Fetched = append(res.Fetched, apiPlugin(p))
 	}
 	res.Warnings = catalogRes.warnings
-	// The config is the main Worktree's. The Runtime warnings are the ones
-	// a start of the Worktree linked from would give, which is usually the
-	// main one too.
+	// The config is the main Worktree's. The config's warnings (such as a
+	// Recipe's about the Project's files, or an unknown key) and the
+	// Runtime warnings are the ones the Worktree linked from gives, which
+	// is usually the main one too.
 	cfg, err := d.resolveRuntimes(ctx, checkout.MainDir)
 	if err != nil {
 		return api.LinkResponse{}, &api.Error{Code: api.CodeInvalidConfig, Message: catalogRes.explain(err)}
 	}
-	runtimeWarnings := cfg.notes
+	here := cfg
 	if checkout.Dir != checkout.MainDir {
 		if w, err := d.resolveRuntimes(ctx, checkout.Dir); err == nil {
-			runtimeWarnings = w.notes
+			here = w
 		}
 	}
-	res.Warnings = append(res.Warnings, runtimeWarnings...)
+	res.Warnings = slices.Concat(res.Warnings, here.Warnings, here.notes)
 	name := req.Name
 	if name == "" {
 		name = cfg.Name
@@ -93,6 +95,8 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 		res.AlreadyLinked = true
 		// Linking from a Worktree the Watcher hasn't reported yet finds it.
 		d.syncWorktrees(ctx, project)
+		// Its config may give its Worktrees Buckets they don't have yet.
+		d.prepareNewBuckets(project)
 	case errors.Is(err, registry.ErrNameTaken):
 		taken, _ := d.nameTaken(name)
 		return api.LinkResponse{}, nameTakenError(name, taken)

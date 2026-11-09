@@ -66,6 +66,7 @@ func (d *Daemon) updateHandAdded(ctx context.Context, name string, req api.Updat
 		return api.UpdateHandAddedResponse{}, &api.Error{Code: api.CodeInvalidPlugin, Message: err.Error()}
 	}
 	d.log.Info("Plugin updated", "plugin", p.Name, "from", was.Version, "to", p.Version, "source", p.Source, "sha256", p.SHA256)
+	d.updateServices(ctx, p)
 	res.Plugin = apiPlugin(p)
 	res.OutOfDate = d.outOfDate(name, generated)
 	return res, nil

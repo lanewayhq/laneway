@@ -41,7 +41,7 @@ func orphanNames(t *testing.T, d *testkit.Daemon) []string {
 	}
 	names := []string{}
 	for _, o := range orphans {
-		names = append(names, o.Database)
+		names = append(names, o.Name)
 	}
 	slices.Sort(names)
 	return names
@@ -76,7 +76,7 @@ func orphan(t *testing.T, d *testkit.Daemon, db string) api.Orphan {
 		t.Fatal(err)
 	}
 	for _, o := range orphans {
-		if o.Database == db {
+		if o.Name == db {
 			return o
 		}
 	}
@@ -426,7 +426,7 @@ func TestTheDashboardListsOrphansAndOnlyItsOwnPagesCanUnlinkOrDropThem(t *testin
 	if err := json.Unmarshal([]byte(body), &list); err != nil {
 		t.Fatal(err)
 	}
-	if len(list.Orphans) != 1 || list.Orphans[0].Database != "dash_orphans_shop__feature" || list.Orphans[0].Expires.IsZero() {
+	if len(list.Orphans) != 1 || list.Orphans[0].Name != "dash_orphans_shop__feature" || list.Orphans[0].Expires.IsZero() {
 		t.Fatalf("the Dashboard's Orphans: %+v", list.Orphans)
 	}
 
@@ -445,7 +445,7 @@ func TestTheDashboardListsOrphansAndOnlyItsOwnPagesCanUnlinkOrDropThem(t *testin
 	}
 
 	status, body = dashboardRequest(t, d, http.MethodPost, dash+"/api/v1/gc", dash, api.GCRequest{
-		Databases: []api.OrphanRef{{Service: "postgres:18", Database: "dash_orphans_shop__feature"}},
+		Orphans: []api.OrphanRef{{Service: "postgres:18", Name: "dash_orphans_shop__feature"}},
 	})
 	if status != http.StatusOK {
 		t.Fatalf("gc from the Dashboard: status %d:\n%s", status, body)

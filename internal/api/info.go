@@ -45,6 +45,10 @@ type Info struct {
 	// Database is the Worktree's database and Test Database; null if the
 	// Worktree has no database (or no Domain yet).
 	Database *InfoDatabase `json:"database"`
+	// Buckets are the Worktree's own Buckets in the object storage
+	// Services its config uses, in Services' order. Empty while
+	// ConfigError is set.
+	Buckets []InfoBucket `json:"buckets"`
 	// Services are the Services the Worktree's config uses (including its
 	// database's), sorted by name, with how to connect to them.
 	Services []InfoService `json:"services"`
@@ -144,6 +148,19 @@ type InfoDatabase struct {
 	// Service is the Name of the Service in Services holding the
 	// databases, such as "postgres:18"; "" for SQLite.
 	Service string `json:"service"`
+}
+
+// InfoBucket is one of the Worktree's Buckets.
+type InfoBucket struct {
+	// Name is the Bucket's name in its Service, such as
+	// "shop--feature-x" (the Env Patch's {<engine>_bucket}).
+	Name string `json:"name"`
+	// Service is the Name of the Service in Services holding it, such as
+	// "rustfs:1".
+	Service string `json:"service"`
+	// Public is whether anyone may read its objects without signing;
+	// false for a private Bucket.
+	Public bool `json:"public"`
 }
 
 // InfoService is a Service the Worktree uses and how to connect to it.

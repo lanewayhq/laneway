@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -15,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/naming"
 	"github.com/lanewayhq/laneway/internal/service"
 )
@@ -49,6 +51,10 @@ type state struct {
 	Aliases   []Alias    `json:"aliases,omitempty"`
 	Services  []Service  `json:"services,omitempty"`
 	Orphans   []Orphan   `json:"orphans,omitempty"`
+	// DeclaredBuckets are, by Project path, the names of the Buckets each
+	// Project's config has declared ([buckets]) while Laneway made its
+	// Buckets.
+	DeclaredBuckets map[string][]string `json:"declaredBuckets,omitempty"`
 }
 
 const currentVersion = 1
@@ -128,11 +134,53 @@ func (r *Registry) RemoveProject(path string) (bool, error) {
 	next.Projects = slices.Delete(slices.Clone(r.state.Projects), i, i+1)
 	next.Worktrees = slices.DeleteFunc(slices.Clone(r.state.Worktrees), func(w Worktree) bool { return w.Project == path })
 	next.Aliases = slices.DeleteFunc(slices.Clone(r.state.Aliases), func(a Alias) bool { return a.Project == path })
+	next.DeclaredBuckets = maps.Clone(r.state.DeclaredBuckets)
+	delete(next.DeclaredBuckets, path)
 	if err := r.save(next); err != nil {
 		return false, err
 	}
 	r.state = next
 	return true, nil
+}
+
+// RecordDeclaredBuckets records that the config of the Project at path
+// declares the Buckets called names, and persists the change if it records
+// any it hadn't. Its record keeps every name it was given: the Buckets made
+// while a name was declared stay its Project's after the config stops
+// declaring it.
+func (r *Registry) RecordDeclaredBuckets(path string, names []string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	recorded := r.state.DeclaredBuckets[path]
+	next := r.state
+	merged := slices.Clone(recorded)
+	for _, name := range names {
+		if !slices.Contains(merged, name) {
+			merged = append(merged, name)
+		}
+	}
+	if len(merged) == len(recorded) {
+		return nil
+	}
+	slices.Sort(merged)
+	next.DeclaredBuckets = maps.Clone(r.state.DeclaredBuckets)
+	if next.DeclaredBuckets == nil {
+		next.DeclaredBuckets = map[string][]string{}
+	}
+	next.DeclaredBuckets[path] = merged
+	if err := r.save(next); err != nil {
+		return err
+	}
+	r.state = next
+	return nil
+}
+
+// DeclaredBuckets are the names of the Buckets the config of the Project at
+// path has declared (RecordDeclaredBuckets), sorted.
+func (r *Registry) DeclaredBuckets(path string) []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.state.DeclaredBuckets[path])
 }
 
 // Worktree is a linked (not main) Worktree of a Project, as last discovered
@@ -458,26 +506,30 @@ func (r *Registry) planServiceLocked(ref service.Ref, candidates []int) (Service
 	return Service{}, false, fmt.Errorf("%s: %w", ref.Name(), ErrNoServicePort)
 }
 
-// Orphan is a database left behind by a removed Worktree or an unlinked
-// Project, recorded so it can be dropped once its grace period is over.
+// Orphan is a database or Bucket left behind by a removed Worktree or an
+// unlinked Project, recorded so it can be dropped once its grace period
+// is over.
 type Orphan struct {
-	// Ref is the database Service it lives in, such as postgres:18 (stored
+	// Ref is the Service it lives in, such as postgres:18 (stored
 	// as its engine and version).
 	service.Ref
-	Database string `json:"database"`
+	// Name is its name in the Service: the database's, or the Bucket's
+	// (Kind bucket). It is stored as "database", from before Buckets could
+	// be Orphans. (The Service's own name is Ref.Name().)
+	Name string `json:"database"`
 	// ProjectName is the name of the Project it belonged to, and Worktree
 	// git's name for its Worktree ("" for the main Worktree).
 	ProjectName string `json:"projectName"`
 	Worktree    string `json:"worktree,omitempty"`
 	// Kind says what it was to the Worktree, as the API reports it.
-	Kind string `json:"kind"`
+	Kind api.OrphanKind `json:"kind"`
 	// Since is when it became an Orphan.
 	Since time.Time `json:"since"`
 }
 
-// Same reports whether o and other are the same database.
+// Same reports whether o and other are the same database (or Bucket).
 func (o Orphan) Same(other Orphan) bool {
-	return o.Ref == other.Ref && o.Database == other.Database
+	return o.Ref == other.Ref && o.Name == other.Name
 }
 
 // Orphans returns every Orphan, oldest first.
@@ -489,7 +541,7 @@ func (r *Registry) Orphans() []Orphan {
 		if c := a.Since.Compare(b.Since); c != 0 {
 			return c
 		}
-		return strings.Compare(a.Database, b.Database)
+		return strings.Compare(a.Name, b.Name)
 	})
 	return out
 }

@@ -130,6 +130,10 @@ type Resolved struct {
 	// IdleTimeout is how long a Worktree may go without traffic before it
 	// is Idle; 0 means the global default.
 	IdleTimeout time.Duration
+	// BucketCopyLimit is the biggest the main Worktree's Bucket may be for
+	// a new Worktree's Bucket to start as a copy of it; nil means the
+	// global default.
+	BucketCopyLimit *config.Size
 	// Env is the Env Patch: env key → template, merged by key. nil if no
 	// layer declares any.
 	Env map[string]string
@@ -140,6 +144,9 @@ type Resolved struct {
 	// Services are the Services the Project uses, one per engine, sorted
 	// by engine.
 	Services []Service
+	// Buckets are the Buckets the Project declares ([buckets]), merged by
+	// name and key, sorted by name; nil if no layer declares any.
+	Buckets []Bucket
 	// Copy are the paths copied from the main Worktree into each other
 	// Worktree when it is prepared: every layer's, in order, without
 	// repeats.
@@ -230,6 +237,37 @@ func (m StartMode) String() string {
 		return "lazy"
 	}
 	return string(m)
+}
+
+// Bucket is a Bucket the Project declares ([buckets.<name>]), which each
+// Worktree gets in each object storage Service its Project uses.
+type Bucket struct {
+	Name string
+	// Public is whether anyone may read its objects without signing.
+	Public bool
+}
+
+// BucketNames are the names of the Buckets r declares.
+func (r Resolved) BucketNames() []string {
+	var names []string
+	for _, b := range r.Buckets {
+		names = append(names, b.Name)
+	}
+	return names
+}
+
+// declaredBuckets are the names of the Buckets layers declare, sorted.
+func declaredBuckets(layers []config.Layer) []string {
+	var names []string
+	for _, l := range layers {
+		for name := range l.Buckets {
+			if !slices.Contains(names, name) {
+				names = append(names, name)
+			}
+		}
+	}
+	slices.Sort(names)
+	return names
 }
 
 // Database is the resolved [database] table, merged key by key.
@@ -325,6 +363,16 @@ func (r Resolved) Layer() config.Layer {
 		}
 		l.Services[svc.Engine] = svc.Version
 	}
+	for _, b := range r.Buckets {
+		if l.Buckets == nil {
+			l.Buckets = map[string]config.BucketLayer{}
+		}
+		var bl config.BucketLayer
+		if b.Public {
+			bl.Public = &b.Public
+		}
+		l.Buckets[b.Name] = bl
+	}
 	wt := config.WorktreeLayer{
 		Copy:     slices.Clone(r.Copy),
 		OnCreate: slices.Clone(r.OnCreate),
@@ -381,7 +429,9 @@ func (r Resolved) WorktreeRootOf(mainDir string) string {
 // Resolve merges the detected Recipe's defaults, then the detected
 // Integrations', then in.Layers.
 func Resolve(in Input) (Resolved, error) {
-	known := engine.Known{Installed: in.Engines, Fetchable: in.FetchableEngines}
+	// A template may use a Bucket another layer declares: one in
+	// laneway.local.toml, say, wired up in laneway.toml.
+	known := engine.Known{Installed: in.Engines, Fetchable: in.FetchableEngines, Buckets: declaredBuckets(in.Layers)}
 	for _, l := range in.Layers {
 		if err := l.CheckEngines(known); err != nil {
 			return Resolved{}, err
@@ -440,6 +490,7 @@ func Resolve(in Input) (Resolved, error) {
 	procs := map[string]*merged{}
 	var engineSource, pathSource, testSource string // the layers that last set database.engine, .path and .test
 	services := map[string]string{}                 // engine → version, later layers winning
+	buckets := map[string]Bucket{}                  // declared Buckets by name, merged key by key
 	for i, l := range layers {
 		res.Warnings = append(res.Warnings, l.Warnings...)
 		if l.Name != nil {
@@ -450,6 +501,9 @@ func Resolve(in Input) (Resolved, error) {
 		}
 		if l.IdleTimeout != nil {
 			res.IdleTimeout = *l.IdleTimeout
+		}
+		if l.BucketCopyLimit != nil {
+			res.BucketCopyLimit = l.BucketCopyLimit
 		}
 		wt := config.WorktreeLayer{}
 		if l.Worktree != nil {
@@ -500,6 +554,13 @@ func Resolve(in Input) (Resolved, error) {
 			res.LinkedEnv[key] = template
 		}
 		maps.Copy(services, l.Services)
+		for name, bl := range l.Buckets {
+			b := buckets[name]
+			if bl.Public != nil {
+				b.Public = *bl.Public
+			}
+			buckets[name] = b
+		}
 		for name, pl := range l.Processes {
 			p := procs[name]
 			if p == nil {
@@ -632,6 +693,11 @@ func Resolve(in Input) (Resolved, error) {
 	}
 	for _, engine := range slices.Sorted(maps.Keys(services)) {
 		res.Services = append(res.Services, Service{Engine: engine, Version: services[engine]})
+	}
+	for _, name := range slices.Sorted(maps.Keys(buckets)) {
+		b := buckets[name]
+		b.Name = name
+		res.Buckets = append(res.Buckets, b)
 	}
 	if in.Runtimes != nil {
 		res.RuntimeWarnings = runtimes.Check(in.Dir, in.Runtimes, res.Database.Engine)

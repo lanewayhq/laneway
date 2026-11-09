@@ -46,6 +46,15 @@ type Layer struct {
 	// connections before it is Idle and its lazy Processes stop, such as
 	// "30m". It overrides the global idle_timeout.
 	IdleTimeout *time.Duration `toml:"idle_timeout"`
+	// BucketCopyLimit is the biggest the main Worktree's Bucket may be for
+	// a new Worktree's Bucket to start as a copy of it, such as "1GB" (the
+	// default) or "500MB" (see Size); above it the new Bucket starts empty
+	// and Preparing warns. It overrides the global bucket_copy_limit.
+	// Copying happens on the server, so how long it takes follows the
+	// number of objects more than their bytes: a thousand objects copy in
+	// seconds however big they are, while tens of thousands of thumbnails
+	// take minutes though they are well under 1GB.
+	BucketCopyLimit *Size `toml:"bucket_copy_limit"`
 	// Env is the Env Patch: the keys Laneway owns in each Worktree's .env,
 	// keyed by env key ([env] table). Values are templates such as
 	// "{url}"; see envpatch.Variables.
@@ -68,6 +77,12 @@ type Layer struct {
 	// PluginVersions pin Plugins to version ranges, by Plugin name
 	// ([plugin_versions] table; see plugins.go).
 	PluginVersions map[string]string `toml:"plugin_versions"`
+	// Buckets are the Buckets the Project declares, besides the private
+	// one each Worktree has in each object storage Service it uses, keyed
+	// by name ([buckets.<name>] tables): each Worktree gets each of them
+	// in each of those Services, and {<engine>_bucket_<name>} holds its
+	// name.
+	Buckets map[string]BucketLayer `toml:"buckets"`
 	// Plugins are Plugins the Project uses, by name, besides those whose
 	// Recipe, Integrations or Engines it uses: their hooks fire in it. A
 	// machine-wide Plugin may only be named in laneway.local.toml (or the
@@ -153,6 +168,19 @@ type DatabaseLayer struct {
 	Test *string `toml:"test"`
 }
 
+// BucketLayer is one [buckets.<name>] table: a Bucket the Project
+// declares. It has no other keys, and unknown ones are errors.
+type BucketLayer struct {
+	// Public is whether anyone may read the Bucket's objects without
+	// signing, through a bucket policy (false by default). It is decided
+	// per Bucket, never per object (ADR-0008).
+	Public *bool `toml:"public"`
+}
+
+// bucketName is what a declared Bucket's name looks like: like an Engine's
+// name, it goes into a template variable, {<engine>_bucket_<name>}.
+var bucketName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
 // DatabaseModes are the values database.worktree accepts.
 var DatabaseModes = []string{"clone", "fresh", "shared"}
 
@@ -232,16 +260,21 @@ func ParseLayer(source string, data []byte) (Layer, error) {
 		return Layer{}, decodeError(source, err)
 	}
 	// The decoder silently skips a non-table value for a map field.
-	for _, key := range append([]toml.Key{{"processes"}, {"env"}, {"linked_env"}, {"database"}, {"services"}, {"plugin_versions"}}, processKeys(l)...) {
+	tables := []toml.Key{{"processes"}, {"env"}, {"linked_env"}, {"database"}, {"services"}, {"plugin_versions"}, {"buckets"}}
+	for _, key := range slices.Concat(tables, processKeys(l), bucketKeys(l)) {
 		if t := md.Type(key...); t != "" && t != "Hash" {
 			return Layer{}, fmt.Errorf("%s: %s must be a table, not a %s", source, key, strings.ToLower(t))
 		}
 	}
-	// A key that moved would otherwise only warn, and the Worktrees would
-	// silently go without their setup.
 	for _, key := range md.Undecoded() {
+		// A key that moved would otherwise only warn, and the Worktrees
+		// would silently go without their setup.
 		if moved, ok := movedKeys[key.String()]; ok {
 			return Layer{}, fmt.Errorf("%s: %s moved into the [worktree] table: write it as %s under [worktree]", source, key, moved)
+		}
+		// A Bucket has nothing else to set, so anything else is a mistake.
+		if len(key) > 2 && key[0] == "buckets" {
+			return Layer{}, fmt.Errorf("%s: %s: a Bucket has no %q; its only key is public", source, key, key[2])
 		}
 	}
 	if err := l.validate(); err != nil {
@@ -264,6 +297,14 @@ func processKeys(l Layer) []toml.Key {
 	var keys []toml.Key
 	for name := range l.Processes {
 		keys = append(keys, toml.Key{"processes", name})
+	}
+	return keys
+}
+
+func bucketKeys(l Layer) []toml.Key {
+	var keys []toml.Key
+	for name := range l.Buckets {
+		keys = append(keys, toml.Key{"buckets", name})
 	}
 	return keys
 }
@@ -291,7 +332,7 @@ func (l Layer) checkEngines(engines engine.Known) error {
 			return fmt.Errorf("database.engine must be %s, not %q", oneOf(names), *db.Engine)
 		}
 	}
-	serviceVars := engines.Installed.Variables()
+	serviceVars := engines.Variables()
 	for _, env := range []struct {
 		table     string
 		templates map[string]string
@@ -311,7 +352,11 @@ func (l Layer) checkEngines(engines engine.Known) error {
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(l.Services)) {
-		if _, err := engines.Lookup(name); err != nil {
+		e, err := engines.Lookup(name)
+		if err != nil {
+			return fmt.Errorf("services.%s: %w", key(name), err)
+		}
+		if _, err := e.ImageRef(l.Services[name]); err != nil {
 			return fmt.Errorf("services.%s: %w", key(name), err)
 		}
 	}
@@ -351,6 +396,12 @@ func (l Layer) validate() error {
 			if !envKey.MatchString(k) {
 				return fmt.Errorf("%s.%s: an env key must be letters, digits and _ and not start with a digit", env.table, key(k))
 			}
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(l.Buckets)) {
+		if !bucketName.MatchString(name) {
+			return fmt.Errorf("buckets.%s: %q isn't a Bucket name: use lowercase letters, digits and _, starting with a letter, "+
+				"as {<engine>_bucket_<name>} holds it", key(name), name)
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(l.Services)) {

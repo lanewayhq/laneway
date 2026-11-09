@@ -267,7 +267,7 @@ var infoSchema = map[string]map[string]string{
 	"": {
 		"schemaVersion": "number", "project": "object", "worktree": "object", "domain": "string",
 		"url": "string", "aliases": "list", "setup": "object?", "state": "string", "processes": "list",
-		"database": "object?", "services": "list", "configError": "string",
+		"database": "object?", "buckets": "list", "services": "list", "configError": "string",
 		"recipe": "string", "recipeRule": "string", "integrations": "list", "integrationRules": "list",
 	},
 	"integrationRules": {"name": "string", "rule": "string"},
@@ -277,6 +277,7 @@ var infoSchema = map[string]map[string]string{
 	"setup":            {"state": "string", "step": "string", "error": "string", "output": "list", "warnings": "list"},
 	"processes":        {"name": "string", "startMode": "string", "primary": "bool", "http": "bool", "state": "string", "url": "string"},
 	"database":         {"engine": "string", "name": "string", "test": "string", "service": "string"},
+	"buckets":          {"name": "string", "service": "string", "public": "bool"},
 	"services": {
 		"name": "string", "engine": "string", "version": "string", "host": "string", "port": "number",
 		"user": "string", "password": "string", "state": "string", "error": "string",
@@ -342,11 +343,11 @@ func assertSchema(t *testing.T, name string, obj map[string]any) {
 
 func TestInfoJSONHasEveryDocumentedKeyAndNoOthers(t *testing.T) {
 	t.Parallel()
-	d := testkit.StartDaemon(t)
+	d := objectsDaemon(t)
 	server := testkit.TestServer(t)
 	repo := gitfixture.New(t, "info-schema").
 		WriteFile("laneway.toml", processConfig(server+" --name web")+
-			"\n[database]\nengine = \"postgres\"\ntest = \"on\"\n\n[services]\nredis = \"7\"\n").
+			"\n[database]\nengine = \"postgres\"\ntest = \"on\"\n\n[services]\nredis = \"7\"\nobjects = \"1\"\n").
 		WriteFile("package.json", `{"devDependencies": {"vite": "^8.0.0"}}`+"\n").
 		Commit("declare everything info shows")
 	d.MustRunCLI(repo.Dir, "link")
@@ -360,7 +361,7 @@ func TestInfoJSONHasEveryDocumentedKeyAndNoOthers(t *testing.T) {
 	plain := gitfixture.New(t, "info-schema-plain")
 	d.MustRunCLI(plain.Dir, "link")
 	info := infoJSON(t, d, plain.Dir)
-	for _, list := range []string{"aliases", "processes", "services", "integrations", "integrationRules"} {
+	for _, list := range []string{"aliases", "processes", "buckets", "services", "integrations", "integrationRules"} {
 		assertLen(t, info, 0, list)
 	}
 	assertAt(t, info, nil, "database")

@@ -206,6 +206,17 @@ func TestTheIdleTimeoutIsUnsetByDefault(t *testing.T) {
 	if res.IdleTimeout != 0 {
 		t.Errorf("IdleTimeout = %v, want 0 (the global default)", res.IdleTimeout)
 	}
+	if res.BucketCopyLimit != nil {
+		t.Errorf("BucketCopyLimit = %v, want nil (the global default)", *res.BucketCopyLimit)
+	}
+}
+
+func TestTheBucketCopyLimitIsASizeWithAUnitLaterLayersWinning(t *testing.T) {
+	res := mustResolveFixture(t, "bucket-copy-limit")
+
+	if res.BucketCopyLimit == nil || *res.BucketCopyLimit != 2684354560 {
+		t.Fatalf("BucketCopyLimit = %v, want 2.5 GiB (2684354560 bytes) from laneway.local.toml", res.BucketCopyLimit)
+	}
 }
 
 func TestEnvPatchTemplatesMergeByKeyOverTheRecipesDefaults(t *testing.T) {
@@ -249,6 +260,9 @@ func TestInvalidConfigNamesTheFileAndTheKey(t *testing.T) {
 		{"invalid-start-timeout", config.FileName, []string{"start_timeout"}},
 		{"invalid-start-timeout-negative", config.FileName, []string{"start_timeout", "positive"}},
 		{"invalid-idle-timeout-negative", config.FileName, []string{"idle_timeout", "positive"}},
+		{"invalid-bucket-copy-limit", config.FileName, []string{"bucket_copy_limit", `"lots" isn't a size`, `"1GB"`}},
+		{"invalid-bucket-copy-limit-unit", config.FileName, []string{"bucket_copy_limit", "B, kB, MB, GB or TB", `"PB"`}},
+		{"invalid-bucket-copy-limit-negative", config.FileName, []string{"bucket_copy_limit", "-1 isn't a size"}},
 		{"invalid-start-mode", config.FileName, []string{"processes.web.start_mode", "lazy, always or manual", "eager"}},
 		{"invalid-manual-primary", config.FileName, []string{"processes.web.start_mode", "Primary Process", "manual"}},
 		{"invalid-env-variable", config.FileName, []string{"env.APP_URL", "{domian}", "{domain}"}},

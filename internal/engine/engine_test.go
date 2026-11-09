@@ -110,6 +110,56 @@ kind = "http"
 	}
 }
 
+const mappedManifest = `
+name = "store"
+default_version = "1"
+port = 9000
+data_dir = "/data"
+
+[versions.1]
+image = "docker.io/example/store:1.0.4"
+
+[versions."2"]
+image = "registry.example.test:5000/team/store@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[ready]]
+kind = "http"
+`
+
+func TestAnEngineMayMapEachServiceVersionToAnImageByTagOrDigest(t *testing.T) {
+	m, err := engine.Parse("store.toml", []byte(mappedManifest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for version, want := range map[string]string{
+		"1": "docker.io/example/store:1.0.4",
+		"2": "registry.example.test:5000/team/store@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+	} {
+		if got, err := m.ImageRef(version); err != nil || got != want {
+			t.Errorf("version %s runs %q (%v), want %q", version, got, err, want)
+		}
+	}
+	_, err = m.ImageRef("3")
+	if err == nil || !strings.Contains(err.Error(), "store") || !strings.Contains(err.Error(), `"1", "2"`) {
+		t.Fatalf("an unlisted version gave %v, want an error naming the Engine and its versions", err)
+	}
+	// The default version still gets the standard port: ports are keyed
+	// by the version, not the image.
+	if got := m.Ports("1"); !slices.Equal(got, []int{9000}) {
+		t.Fatalf("ports of the default version %v, want [9000]", got)
+	}
+}
+
+func TestAnEngineWithoutAMappingRunsItsImageTaggedWithTheVersion(t *testing.T) {
+	m, err := engine.Parse("search.toml", []byte(searchManifest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := m.ImageRef("2.0"); err != nil || got != "docker.io/example/search:2.0" {
+		t.Fatalf("version 2.0 runs %q (%v), want docker.io/example/search:2.0", got, err)
+	}
+}
+
 func TestAManifestLanewayCannotUseIsRefusedSayingWhy(t *testing.T) {
 	base := `
 name = "cache"
@@ -119,6 +169,7 @@ port = 6000
 data_dir = "/data"
 `
 	ready := "\n[[ready]]\nkind = \"redis-ping\"\n"
+	noImage := strings.Replace(base, `image = "docker.io/example/cache"`, "", 1)
 	tests := []struct {
 		name, manifest, want string
 	}{
@@ -140,6 +191,14 @@ data_dir = "/data"
 			"exists = [\"x\"]\ncreate = [\"x\"]\nclone = [\"x\", \"{db}\"]\ndrop = [\"x\"]\nlist = [\"x\"]\n", "{db}"},
 		{"a database without max_name", base + ready + "\n[database]\n" +
 			"exists = [\"x\"]\ncreate = [\"x\"]\nclone = [\"x\"]\ndrop = [\"x\"]\nlist = [\"x\"]\n", "max_name"},
+		{"a mapping without the default version", noImage + "\n[versions.2]\nimage = \"docker.io/example/cache:2.0.1\"\n" + ready, `default_version "1"`},
+		{"an unknown key in the mapping", noImage + "\n[versions.1]\nimage = \"docker.io/example/cache:1.0.1\"\ncolour = \"red\"\n" + ready, "versions.1.colour"},
+		{"a mapping to an image with neither tag nor digest", noImage + "\n[versions.1]\nimage = \"docker.io/example/cache\"\n" + ready, "versions.1.image"},
+		{"a mapping to a malformed digest", noImage + "\n[versions.1]\nimage = \"docker.io/example/cache@sha256:abc\"\n" + ready, "versions.1.image"},
+		{"a mapping without an image", noImage + "\n[versions.1]\n" + ready, "versions.1.image"},
+		{"a mapped version that isn't a version", noImage + "\n[versions.1]\nimage = \"docker.io/example/cache:1.0.1\"\n" +
+			"[versions.\"one point oh\"]\nimage = \"docker.io/example/cache:1.0.1\"\n" + ready, "one point oh"},
+		{"both image and a mapping", base + "\n[versions.1]\nimage = \"docker.io/example/cache:1.0.1\"\n" + ready, "versions"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

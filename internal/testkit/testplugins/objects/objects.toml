@@ -1,0 +1,157 @@
+# objects: a test object storage Engine whose Worktrees get Buckets, from a
+# manifest-only Plugin. Its Bucket commands are the RustFS Engine's scripts
+# (spike lanewayhq/plugins#13): one signed curl request each against the
+# server in the container. Tests make the fake container engine run its
+# image with containertest.ObjectStore and answer the scripts with
+# containertest.ObjectStoreCommands.
+name = "objects"
+default_version = "1"
+image = "example.test/objects"
+port = 7490
+data_dir = "/data"
+user = "laneway"
+
+[env]
+OBJECTS_ACCESS_KEY = "{user}"
+OBJECTS_SECRET_KEY = "{password}"
+
+[[ready]]
+kind = "http"
+path = "/health/ready"
+
+[bucket]
+# Prints {bucket} if it exists and isn't an unfinished copy, nothing if it
+# doesn't; fails on any other answer.
+exists = ["sh", "-c", '''
+set -eu
+b=$1
+sig() { curl -sS --aws-sigv4 aws:amz:us-east-1:s3 --user "$OBJECTS_ACCESS_KEY:$OBJECTS_SECRET_KEY" "$@"; }
+code=$(sig -o /dev/null -w '%{{http_code}}' -I "http://127.0.0.1:7490/$b")
+case $code in
+200) ;;
+404) exit 0 ;;
+*) echo "HEAD /$b answered HTTP $code" >&2; exit 1 ;;
+esac
+tags=$(sig -w '%{{http_code}}' "http://127.0.0.1:7490/$b?tagging")
+case $tags in
+*'<Key>laneway-clone</Key>'*) exit 0 ;;
+*200 | *404) echo "$b" ;;
+*) echo "GET /$b?tagging: $tags" >&2; exit 1 ;;
+esac
+''', "sh", "{bucket}"]
+create = ["sh", "-c", '''
+set -eu
+b=$1
+s3() { curl -sS --fail-with-body -o /dev/stderr --aws-sigv4 aws:amz:us-east-1:s3 --user "$OBJECTS_ACCESS_KEY:$OBJECTS_SECRET_KEY" "$@"; }
+s3 -X DELETE -H 'x-rustfs-force-delete: true' "http://127.0.0.1:7490/$b" 2>/dev/null || :
+s3 -X PUT "http://127.0.0.1:7490/$b"
+''', "sh", "{bucket}"]
+drop = ["sh", "-c", '''
+set -eu
+b=$1
+out=$(curl -sS -w '%{{http_code}}' -X DELETE -H 'x-rustfs-force-delete: true' --aws-sigv4 aws:amz:us-east-1:s3 --user "$OBJECTS_ACCESS_KEY:$OBJECTS_SECRET_KEY" "http://127.0.0.1:7490/$b")
+case $out in
+204 | *404) ;;
+*) echo "DELETE /$b: $out" >&2; exit 1 ;;
+esac
+''', "sh", "{bucket}"]
+list = ["sh", "-c", '''
+set -eu
+xml=$(curl -sS --fail-with-body --aws-sigv4 aws:amz:us-east-1:s3 --user "$OBJECTS_ACCESS_KEY:$OBJECTS_SECRET_KEY" http://127.0.0.1:7490/) || { echo "$xml" >&2; exit 1; }
+printf '%s' "$xml" | grep -o '<Name>[^<]*</Name>' | sed 's/<[^>]*>//g' || :
+''']
+# Copies every object of {from} into a new Bucket {to} on the server with
+# rc, fetched into the container first. {to} is tagged laneway-clone until
+# the copy is complete (so exists doesn't see it), and dropped if it fails.
+clone = ["sh", "-c", '''
+set -eu
+case $(uname -m) in
+x86_64) arch=amd64 sum=31e79fe7697c870e60f5b5c9008adbb3ad5af7f9f2ab45a3d68585c5f87238d1 ;;
+aarch64) arch=arm64 sum=a02091205fe4d9fbf0d16a0dac3d46ad7fac7d5266024b5b17e76327a4e88aa8 ;;
+*) echo "rc: no release for $(uname -m)" >&2; exit 1 ;;
+esac
+rc=$HOME/.cache/laneway/rc-$sum
+if [ ! -x "$rc" ]; then
+  mkdir -p "${rc%/*}"
+  tmp=$(mktemp -d "${rc%/*}/fetch.XXXXXX")
+  trap 'rm -rf "$tmp"' EXIT
+  url=https://github.com/rustfs/cli/releases/download/v0.1.37/rustfs-cli-linux-$arch-v0.1.37.tar.gz
+  echo "downloading rc 0.1.37 for $arch from $url" >&2
+  curl -fsSL --retry 3 -o "$tmp/rc.tar.gz" "$url"
+  got=$(sha256sum "$tmp/rc.tar.gz" | cut -d ' ' -f 1)
+  if [ "$got" != "$sum" ]; then
+    echo "rc: $url has SHA-256 $got, not $sum" >&2
+    exit 1
+  fi
+  tar -xzf "$tmp/rc.tar.gz" -C "$tmp" rc
+  chmod 0755 "$tmp/rc"
+  mv -f "$tmp/rc" "$rc"
+  for old in "${rc%/*}"/rc-*; do [ "$old" = "$rc" ] || rm -f "$old"; done
+fi
+export RC_HOST_local="http://$OBJECTS_ACCESS_KEY:$OBJECTS_SECRET_KEY@127.0.0.1:7490"
+from=$1 to=$2
+s3() { curl -sS --fail-with-body -o /dev/stderr --aws-sigv4 aws:amz:us-east-1:s3 --user "$OBJECTS_ACCESS_KEY:$OBJECTS_SECRET_KEY" "$@"; }
+drop() { s3 -X DELETE -H 'x-rustfs-force-delete: true' "http://127.0.0.1:7490/$1"; }
+drop "$to" 2>/dev/null || :
+s3 -X PUT "http://127.0.0.1:7490/$to"
+s3 -X PUT --data-binary '<Tagging><TagSet><Tag><Key>laneway-clone</Key><Value>incomplete</Value></Tag></TagSet></Tagging>' "http://127.0.0.1:7490/$to?tagging"
+if ! "$rc" --quiet --no-progress cp --recursive --concurrency 16 "local/$from/" "local/$to/"; then
+  drop "$to" || :
+  exit 1
+fi
+s3 -X DELETE "http://127.0.0.1:7490/$to?tagging"
+''', "sh", "{from}", "{to}"]
+# Prints the total bytes of {bucket}'s objects, from a full listing by rc.
+size = ["sh", "-c", '''
+set -eu
+case $(uname -m) in
+x86_64) arch=amd64 sum=31e79fe7697c870e60f5b5c9008adbb3ad5af7f9f2ab45a3d68585c5f87238d1 ;;
+aarch64) arch=arm64 sum=a02091205fe4d9fbf0d16a0dac3d46ad7fac7d5266024b5b17e76327a4e88aa8 ;;
+*) echo "rc: no release for $(uname -m)" >&2; exit 1 ;;
+esac
+rc=$HOME/.cache/laneway/rc-$sum
+if [ ! -x "$rc" ]; then
+  mkdir -p "${rc%/*}"
+  tmp=$(mktemp -d "${rc%/*}/fetch.XXXXXX")
+  trap 'rm -rf "$tmp"' EXIT
+  url=https://github.com/rustfs/cli/releases/download/v0.1.37/rustfs-cli-linux-$arch-v0.1.37.tar.gz
+  echo "downloading rc 0.1.37 for $arch from $url" >&2
+  curl -fsSL --retry 3 -o "$tmp/rc.tar.gz" "$url"
+  got=$(sha256sum "$tmp/rc.tar.gz" | cut -d ' ' -f 1)
+  if [ "$got" != "$sum" ]; then
+    echo "rc: $url has SHA-256 $got, not $sum" >&2
+    exit 1
+  fi
+  tar -xzf "$tmp/rc.tar.gz" -C "$tmp" rc
+  chmod 0755 "$tmp/rc"
+  mv -f "$tmp/rc" "$rc"
+  for old in "${rc%/*}"/rc-*; do [ "$old" = "$rc" ] || rm -f "$old"; done
+fi
+export RC_HOST_local="http://$OBJECTS_ACCESS_KEY:$OBJECTS_SECRET_KEY@127.0.0.1:7490"
+b=$1
+out=$("$rc" --json --no-progress bucket list --recursive --summarize "local/$b/") || exit 1
+printf '%s\n' "$out" | sed -n 's/^ *"total_size_bytes": \([0-9]*\),\{0,1\}$/\1/p'
+''', "sh", "{bucket}"]
+# Lets anyone read {bucket}'s objects if {public} is true (an anonymous
+# s3:GetObject bucket policy) and no one if it is false, and replaces its
+# CORS configuration with one allowing exactly {origins} (none if empty).
+configure = ["sh", "-c", '''
+set -eu
+b=$1 public=$2 origins=$3
+s3() { curl -sS --fail-with-body -o /dev/stderr --aws-sigv4 aws:amz:us-east-1:s3 --user "$OBJECTS_ACCESS_KEY:$OBJECTS_SECRET_KEY" "$@"; }
+case $public in
+true)
+  printf '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":["s3:GetObject"],"Resource":["arn:aws:s3:::%s/*"]}]}' "$b" |
+    s3 -X PUT --data-binary @- "http://127.0.0.1:7490/$b?policy" ;;
+false) s3 -X DELETE "http://127.0.0.1:7490/$b?policy" ;;
+*) echo "public must be true or false, not $public" >&2; exit 2 ;;
+esac
+allowed=
+for o in $origins; do allowed="$allowed<AllowedOrigin>$o</AllowedOrigin>"; done
+if [ -z "$allowed" ]; then
+  s3 -X DELETE "http://127.0.0.1:7490/$b?cors"
+  exit 0
+fi
+printf '<CORSConfiguration><CORSRule>%s<AllowedMethod>GET</AllowedMethod><AllowedMethod>HEAD</AllowedMethod><AllowedMethod>PUT</AllowedMethod><AllowedMethod>POST</AllowedMethod><AllowedMethod>DELETE</AllowedMethod><AllowedHeader>*</AllowedHeader><ExposeHeader>ETag</ExposeHeader><MaxAgeSeconds>3600</MaxAgeSeconds></CORSRule></CORSConfiguration>' "$allowed" |
+  s3 -X PUT -H 'Content-Type: application/xml' --data-binary @- "http://127.0.0.1:7490/$b?cors"
+''', "sh", "{bucket}", "{public}", "{origins}"]

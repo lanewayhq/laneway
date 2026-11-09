@@ -21,7 +21,7 @@ import (
 
 // setupPlan is what preparing the Worktree w does, in the spec's order:
 //
-//	copy → database → Test Database → env → setup steps (on_create) → Preparing hooks
+//	copy → database → Test Database → Buckets → env → setup steps (on_create) → Preparing hooks
 //
 // It runs when the Worktree's setup starts, so config is read then.
 //
@@ -30,7 +30,9 @@ import (
 // The database step (database.go) gives a Project with a database engine
 // its database; other engines extend it there, not here. The Test Database
 // step (testdatabase.go) gives each Worktree an empty Test Database when
-// config's Test Database decision is on. To add a step, append a prepare.Step where that order puts it. A
+// config's Test Database decision is on. The Bucket steps (buckets.go), one
+// per Bucket, give the Worktree its Buckets in the object storage Services
+// config uses. To add a step, append a prepare.Step where that order puts it. A
 // step's Name is what `lane worktree ready`, `lane status` and the setup
 // error page show when it fails; anything it writes to its output is shown
 // with it, and prepare.Warn reports a problem it worked around. It must stop
@@ -54,6 +56,7 @@ func (d *Daemon) setupPlan(p registry.Project, w worktreeRef) prepare.Plan {
 		if step, ok := d.testDatabaseStep(p, w, cfg); ok {
 			steps = append(steps, step)
 		}
+		steps = append(steps, d.bucketSteps(p, w, cfg)...)
 		steps = append(steps, prepare.Step{Name: "env", Run: func(ctx context.Context, _ io.Writer) error {
 			defer d.lockLifecycle(w.domain)()
 			plan, err := d.planEnvPatch(p, w)
@@ -95,6 +98,7 @@ func (d *Daemon) teardown(p registry.Project, w worktreeRef) {
 	d.setupGensMu.Lock()
 	delete(d.setupGens, w.dir)
 	d.setupGensMu.Unlock()
+	d.forgetMadeBuckets(w.dir)
 	d.preparer.Go(fmt.Sprintf("on_remove for Worktree %q of Project %q", w.name, p.Name),
 		func(ctx context.Context) ([]prepare.Step, error) {
 			cfg, err := d.plugins.ResolveDir(p.Path)

@@ -124,6 +124,7 @@ func runDoctor(ctx context.Context, env Env, args []string) error {
 		r.check(statusWarn, "database driver", "skipped: can't resolve the Project's config: "+cfgErr.Error(),
 			"run `lane link` to see what to fix")
 	} else {
+		checkConfig(r, cfg)
 		checkRuntimes(ctx, r, env, dir, cfg.Database.Engine)
 		checkTestDatabase(r, cfg)
 	}
@@ -172,6 +173,15 @@ func resolveProject(env Env, dir string) (recipe.Resolved, error) {
 	}
 	defer plugins.Close()
 	return plugins.ResolveDir(dir)
+}
+
+// checkConfig reports the problems in the config resolved as cfg that
+// didn't stop it resolving, as `lane link` warns about them: a Recipe's or
+// an Integration's warnings about the Project's files, and unknown keys.
+func checkConfig(r *report, cfg recipe.Resolved) {
+	for _, w := range cfg.Warnings {
+		r.check(statusWarn, "config", w, "")
+	}
 }
 
 // checkTestDatabase reports why the tests of the Project resolved as cfg may

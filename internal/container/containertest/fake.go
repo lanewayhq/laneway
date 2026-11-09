@@ -124,7 +124,8 @@ type fakeContainer struct {
 	conns  *connSet
 }
 
-// New returns a Fake that can run Redis, Mailpit, Postgres and MySQL images.
+// New returns a Fake that can run Redis, Mailpit, Postgres, MySQL and RustFS
+// images.
 func New() *Fake {
 	f := &Fake{servers: map[string]Server{}, extra: map[string]map[int]Server{},
 		commands: map[string]Command{}, containers: map[string]*fakeContainer{}}
@@ -135,6 +136,9 @@ func New() *Fake {
 	f.AnswerCommands("docker.io/library/postgres", PostgresCommands)
 	f.Serve("docker.io/library/mysql", MySQL)
 	f.AnswerCommands("docker.io/library/mysql", MySQLCommands)
+	f.Serve("docker.io/rustfs/rustfs", ObjectStore)
+	f.ServePort("docker.io/rustfs/rustfs", 9001, RustFSConsole)
+	f.AnswerCommands("docker.io/rustfs/rustfs", ObjectStoreCommands)
 	return f
 }
 
@@ -167,7 +171,9 @@ func (f *Fake) AnswerCommands(image string, command Command) {
 }
 
 // Calls are the calls made so far, oldest first: "pull <image>",
-// "start <name>", "stop <name>", "exec <name> <command and arguments>".
+// "start <name>", "recreate <name> <image>" (a start of an existing container
+// on a new image, which keeps its volume), "stop <name>",
+// "exec <name> <command and arguments>".
 func (f *Fake) Calls() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -180,6 +186,17 @@ func (f *Fake) IsRunning(name string) bool {
 	defer f.mu.Unlock()
 	c := f.containers[name]
 	return c != nil && c.ln != nil
+}
+
+// Image is the image the named container was created from, "" if it
+// doesn't exist.
+func (f *Fake) Image(name string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if c := f.containers[name]; c != nil {
+		return c.spec.Image
+	}
+	return ""
 }
 
 // Containers names every container that exists, running or not, sorted.
@@ -261,14 +278,23 @@ func (f *Fake) Start(ctx context.Context, spec container.Spec) (string, error) {
 			return "", ctx.Err()
 		}
 	}
-	repo, _, _ := strings.Cut(spec.Image, ":")
+	repo := container.Repository(spec.Image)
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	server, ok := f.servers[repo]
 	if !ok {
+		f.mu.Unlock()
 		return "", fmt.Errorf("the fake container engine can't run %s", spec.Image)
 	}
 	c := f.containers[spec.Name]
+	if c != nil && c.spec.Image != spec.Image {
+		// Recreated on the new image, keeping its volume.
+		f.calls = append(f.calls, "recreate "+spec.Name+" "+spec.Image)
+		f.mu.Unlock()
+		f.stop(c)
+		f.mu.Lock()
+		c.spec = spec
+	}
+	defer f.mu.Unlock()
 	if c == nil {
 		c = &fakeContainer{spec: spec, volume: &Volume{data: map[string]string{}}}
 		f.containers[spec.Name] = c
@@ -362,19 +388,20 @@ func (f *Fake) Exec(ctx context.Context, name string, cmd []string) (container.O
 	f.mu.Lock()
 	c := f.containers[name]
 	var command Command
+	var spec container.Spec
 	running := c != nil && c.ln != nil
 	if running {
-		repo, _, _ := strings.Cut(c.spec.Image, ":")
-		command = f.commands[repo]
+		spec = c.spec
+		command = f.commands[container.Repository(spec.Image)]
 	}
 	f.mu.Unlock()
 	switch {
 	case !running:
 		return container.Output{}, fmt.Errorf("container %s is not running", name)
 	case command == nil || len(cmd) == 0:
-		return container.Output{ExitCode: 127, Stderr: fmt.Appendf(nil, "the fake container engine can't run %q in %s\n", cmd, c.spec.Image)}, nil
+		return container.Output{ExitCode: 127, Stderr: fmt.Appendf(nil, "the fake container engine can't run %q in %s\n", cmd, spec.Image)}, nil
 	}
-	return command(ctx, c.spec, c.volume, cmd), nil
+	return command(ctx, spec, c.volume, cmd), nil
 }
 
 // connSet is a fake container's open connections, closed when it stops.

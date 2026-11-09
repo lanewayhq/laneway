@@ -1,0 +1,4 @@
+bucket_copy_limit = -1
+
+[processes.web]
+command = "serve"

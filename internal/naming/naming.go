@@ -49,11 +49,12 @@ func DatabaseName(project, worktree string, max int) string {
 	return name
 }
 
-// Clash reports whether the Project names a and b would share a Domain or a
-// database: their Domain labels or their database names (at the limits of
-// every database Service) are the same, as for "my-app" and "my_app".
+// Clash reports whether the Project names a and b would share a Domain, a
+// database or a Bucket: their Domain labels, their database names (at the
+// limits of every database Service) or their Bucket names are the same, as
+// for "my-app" and "my_app".
 func Clash(a, b string) bool {
-	if DomainLabel(a) == DomainLabel(b) {
+	if DomainLabel(a) == DomainLabel(b) || BucketName(a, "", "") == BucketName(b, "", "") {
 		return true
 	}
 	for _, max := range []int{63, 64} { // Postgres, MySQL

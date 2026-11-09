@@ -98,12 +98,13 @@ func envFileOf(p registry.Project, w worktreeRef) envpatch.File {
 }
 
 // envPatchVars are the template variables' values for the Worktree w whose
-// config is cfg: envVars, its Services' and its databases'.
+// config is cfg: envVars, its Services', its databases' and its Buckets'.
 func (d *Daemon) envPatchVars(p registry.Project, w worktreeRef, cfg recipe.Resolved) map[string]string {
 	vars := d.envVars(p, w, cfg.Database)
 	services := d.serviceVars(cfg.Services)
 	maps.Copy(vars, services)
 	maps.Copy(vars, databaseVars(cfg, services))
+	maps.Copy(vars, d.bucketVars(p, w, cfg))
 	if name, ok := d.worktreeTestDatabase(p, w, cfg); ok {
 		vars["test_db"] = name
 	}

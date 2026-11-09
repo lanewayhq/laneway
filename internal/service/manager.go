@@ -146,9 +146,16 @@ func New(opts Options) *Manager {
 
 // managed is one Service the Manager serves.
 type managed struct {
+	// Service and spec change when Update gives the Service a new
+	// manifest: they are written holding both lifecycle and mu, so read
+	// them holding either (see current).
 	Service
+	spec container.Spec
+	// name and container are the Service's and its container's names,
+	// which never change.
+	name, container string
+
 	m         *Manager
-	spec      container.Spec
 	listeners []net.Listener
 	// activity sees every connection, and every running Worktree using
 	// the Service (as one long connection), and decides when it is Idle.
@@ -180,7 +187,8 @@ func (m *Manager) Serve(svc Service) {
 	if m.closed || m.services[svc.Name()] != nil {
 		return
 	}
-	s := &managed{Service: svc, m: m, spec: m.spec(svc), state: Stopped, conns: map[net.Conn]bool{}}
+	spec := m.spec(svc)
+	s := &managed{Service: svc, m: m, spec: spec, name: svc.Name(), container: spec.Name, state: Stopped, conns: map[net.Conn]bool{}}
 	s.activity = activity.New(m.opts.Clock, m.idleTimeout(), s.goIdle)
 	m.services[svc.Name()] = s
 	for i, host := range m.opts.Hosts {
@@ -205,13 +213,15 @@ func (m *Manager) Serve(svc Service) {
 	m.wg.Go(s.prepare)
 }
 
-// spec is the container that runs svc.
+// spec is the container that runs svc. Its Image is "" if svc's Engine
+// has no image for its version (see engine.Manifest.ImageRef).
 func (m *Manager) spec(svc Service) container.Spec {
 	e := svc.Engine
 	name := m.Volume(svc.Ref()) // the container is named like its volume
+	image, _ := e.ImageRef(svc.Version)
 	spec := container.Spec{
 		Name:         name,
-		Image:        e.Image + ":" + svc.Version,
+		Image:        image,
 		Labels:       map[string]string{"dev.laneway.service": svc.Name()},
 		Port:         e.Port,
 		Volume:       name,
@@ -269,7 +279,8 @@ func (m *Manager) Pull(ctx context.Context, name string) error {
 	if !ok {
 		return fmt.Errorf("no Service %s", name)
 	}
-	return m.opts.Engine.Pull(ctx, s.spec.Image)
+	_, spec := s.current()
+	return m.opts.Engine.Pull(ctx, spec.Image)
 }
 
 // Exec runs cmd inside the container of the Service called name, starting
@@ -283,31 +294,32 @@ func (m *Manager) Exec(ctx context.Context, name string, cmd []string) (containe
 	if _, err := s.ensure(ctx); err != nil {
 		return container.Output{}, err
 	}
-	return m.opts.Engine.Exec(ctx, s.spec.Name, cmd)
+	return m.opts.Engine.Exec(ctx, s.container, cmd)
 }
 
-// Web starts the Service called name if needed, like Up, and returns the
-// host address its engine's web UI (Engine.WebPort) is published on, for
-// the proxy to forward to.
-func (m *Manager) Web(ctx context.Context, name string) (string, error) {
+// Forward starts the Service called name if needed, like Up, and returns
+// the host address its container port port (the Engine's Port or WebPort,
+// as a Service Domain's is) is published on, for the proxy to forward to.
+func (m *Manager) Forward(ctx context.Context, name string, port int) (string, error) {
 	s, ok := m.lookup(name)
 	if !ok {
 		return "", fmt.Errorf("no Service %s", name)
 	}
-	if s.Engine.WebPort == 0 {
-		return "", fmt.Errorf("Service %s has no web UI", name)
-	}
 	for attempt := 0; ; attempt++ {
+		svc, _ := s.current()
+		if port == 0 || (port != svc.Engine.Port && port != svc.Engine.WebPort) {
+			return "", fmt.Errorf("Service %s doesn't publish port %d", name, port)
+		}
 		addr, err := s.ensure(ctx)
 		if err != nil {
 			return "", err
 		}
-		web, running, err := m.opts.Engine.Running(ctx, s.spec.Name, s.Engine.WebPort)
+		published, running, err := m.opts.Engine.Running(ctx, s.container, port)
 		switch {
 		case err != nil:
-			return "", fmt.Errorf("finding Service %s's web UI: %w", name, err)
-		case running && web != "":
-			return web, nil
+			return "", fmt.Errorf("finding Service %s's port %d: %w", name, port, err)
+		case running && published != "":
+			return published, nil
 		case attempt > 0:
 			return "", fmt.Errorf("Service %s isn't running", name)
 		}
@@ -393,7 +405,8 @@ func (s *managed) status() Status {
 // and otherwise pulls its image.
 func (s *managed) prepare() {
 	ctx := s.m.ctx
-	addr, running, err := s.m.opts.Engine.Running(ctx, s.spec.Name, s.spec.Port)
+	_, spec := s.current()
+	addr, running, err := s.m.opts.Engine.Running(ctx, s.container, spec.Port)
 	if err != nil {
 		s.m.log.Warn("checking Service", "service", s.Name(), "err", err)
 		return
@@ -409,10 +422,30 @@ func (s *managed) prepare() {
 		s.activity.Touch()
 		return
 	}
-	if err := s.m.opts.Engine.Pull(ctx, s.spec.Image); err != nil && ctx.Err() == nil {
-		s.m.log.Warn("pulling Service image", "service", s.Name(), "image", s.spec.Image, "err", err)
+	s.pull(spec.Image)
+}
+
+// pull pulls image in the background of the daemon's life, so the
+// Service's next start doesn't wait for a download.
+func (s *managed) pull(image string) {
+	if image == "" {
+		return // its Engine has no image for its version: starting it says so
+	}
+	ctx := s.m.ctx
+	if err := s.m.opts.Engine.Pull(ctx, image); err != nil && ctx.Err() == nil {
+		s.m.log.Warn("pulling Service image", "service", s.Name(), "image", image, "err", err)
 	}
 }
+
+// current is the Service and its container's spec, which Update changes.
+func (s *managed) current() (Service, container.Spec) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Service, s.spec
+}
+
+// Name is how the CLI and API name the Service, such as "redis:7".
+func (s *managed) Name() string { return s.name }
 
 func (s *managed) accept(ln net.Listener) {
 	for {
@@ -511,7 +544,12 @@ func (s *managed) ensure(ctx context.Context) (string, error) {
 
 	ctx, cancel := context.WithTimeout(ctx, s.m.opts.StartTimeout)
 	defer cancel()
-	addr, err := s.m.opts.Engine.Start(ctx, s.spec)
+	var err error
+	if s.spec.Image == "" {
+		_, err = s.Engine.ImageRef(s.Version)
+	} else {
+		addr, err = s.m.opts.Engine.Start(ctx, s.spec)
+	}
 	if err == nil {
 		err = s.waitReady(ctx, addr)
 	}
@@ -641,6 +679,11 @@ func (s *managed) goIdle() {
 func (s *managed) stop(ctx context.Context, state string) error {
 	s.lifecycle.Lock()
 	defer s.lifecycle.Unlock()
+	return s.stopLocked(ctx, state)
+}
+
+// stopLocked is stop for a caller holding s.lifecycle.
+func (s *managed) stopLocked(ctx context.Context, state string) error {
 	s.mu.Lock()
 	wasUp := s.state == Running
 	s.mu.Unlock()

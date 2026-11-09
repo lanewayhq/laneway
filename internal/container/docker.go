@@ -156,6 +156,10 @@ func (e *Docker) pull(ctx context.Context, image string) error {
 
 // inspected is the part of a container inspection Laneway reads.
 type inspected struct {
+	Config struct {
+		Image  string
+		Labels map[string]string
+	}
 	State struct {
 		Running bool
 	}
@@ -199,18 +203,49 @@ func (e *Docker) Running(ctx context.Context, name string, port int) (string, bo
 	return addr, true, nil
 }
 
+// imageLabel records the image a container was created from, as Start was
+// given it: engines may report Config.Image differently, such as by ID.
+const imageLabel = "dev.laneway.image"
+
+// createdFrom is the image the inspected container was created from.
+func createdFrom(c inspected) string {
+	if image, ok := c.Config.Labels[imageLabel]; ok {
+		return image
+	}
+	return c.Config.Image
+}
+
 func (e *Docker) Start(ctx context.Context, spec Spec) (string, error) {
 	c, err := e.inspect(ctx, spec.Name)
-	if isStatus(err, http.StatusNotFound) {
+	exists := err == nil
+	if err != nil && !isStatus(err, http.StatusNotFound) {
+		return "", err
+	}
+	pulled := false
+	if exists && createdFrom(c) != spec.Image {
+		// Created from another image: pull the new one first, so the
+		// Service is never without a container for long, then remove the
+		// container (not its named volume) to create it again.
 		if err := e.Pull(ctx, spec.Image); err != nil {
 			return "", err
+		}
+		pulled = true
+		err := e.do(ctx, http.MethodDelete, "/containers/"+url.PathEscape(spec.Name), url.Values{"force": {"1"}}, nil, nil)
+		if err != nil && !isStatus(err, http.StatusNotFound) {
+			return "", fmt.Errorf("removing container %s to create it from %s: %w", spec.Name, spec.Image, err)
+		}
+		exists = false
+	}
+	if !exists {
+		if !pulled {
+			if err := e.Pull(ctx, spec.Image); err != nil {
+				return "", err
+			}
 		}
 		if err := e.create(ctx, spec); err != nil && !isStatus(err, http.StatusConflict) {
 			return "", fmt.Errorf("creating container %s: %w", spec.Name, err)
 		}
 		c.State.Running = false
-	} else if err != nil {
-		return "", err
 	}
 	if !c.State.Running {
 		err := e.do(ctx, http.MethodPost, "/containers/"+url.PathEscape(spec.Name)+"/start", nil, nil, nil)
@@ -243,10 +278,14 @@ func (e *Docker) create(ctx context.Context, spec Spec) error {
 	if spec.Volume != "" {
 		host["Mounts"] = []map[string]string{{"Type": "volume", "Source": spec.Volume, "Target": spec.VolumeTarget}}
 	}
+	labels := map[string]string{imageLabel: spec.Image}
+	for k, v := range spec.Labels {
+		labels[k] = v
+	}
 	body := map[string]any{
 		"Image":        spec.Image,
 		"Env":          spec.Env,
-		"Labels":       spec.Labels,
+		"Labels":       labels,
 		"ExposedPorts": exposed,
 		"HostConfig":   host,
 	}

@@ -42,7 +42,7 @@ func (d *Daemon) testDatabaseStep(p registry.Project, w worktreeRef, cfg recipe.
 		if !ok || !inService {
 			return fmt.Errorf("Laneway can't make Test Databases of %s databases; set database.test to off", cfg.Database.Engine)
 		}
-		server, release, err := d.databaseServer(ctx, svc, out)
+		server, release, err := d.startService(ctx, svc, out)
 		if err != nil {
 			return err
 		}

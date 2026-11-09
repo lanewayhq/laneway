@@ -5,12 +5,13 @@ import (
 	"fmt"
 
 	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/registry"
 )
 
 // unlink Unlinks the Project containing dir: its Worktrees' Processes stop,
-// its Domains and Aliases are forgotten, and the databases of every
-// Worktree become Orphans, kept for OrphanGrace so linking it again takes
+// its Domains and Aliases are forgotten, and the databases and Buckets of
+// every Worktree become Orphans, kept for OrphanGrace so linking it again takes
 // them back. Env files are left as they are, and on_remove doesn't run (no
 // Worktree was removed).
 func (d *Daemon) unlink(ctx context.Context, dir string) (api.UnlinkResponse, error) {
@@ -26,14 +27,17 @@ func (d *Daemon) unlink(ctx context.Context, dir string) (api.UnlinkResponse, er
 	// the main Worktree's if it can't be read.
 	now := d.cfg.Clock.Now()
 	var orphans []registry.Orphan
+	var gone []goneWorktree
 	for _, w := range worktrees {
 		cfg, err := d.plugins.ResolveDir(w.dir)
 		if err != nil {
 			if cfg, err = d.plugins.ResolveDir(p.Path); err != nil {
 				d.log.Error("finding the databases of an unlinked Worktree", "project", p.Name, "dir", w.dir, "err", err)
+				gone = append(gone, d.goneWorktreeOf(p, w, recipe.Resolved{}))
 				continue
 			}
 		}
+		gone = append(gone, d.goneWorktreeOf(p, w, cfg))
 		orphans = append(orphans, d.worktreeOrphans(p, w, cfg, now)...)
 	}
 	// Forgotten first, so a Worktree Watcher report meanwhile finds no
@@ -45,8 +49,9 @@ func (d *Daemon) unlink(ctx context.Context, dir string) (api.UnlinkResponse, er
 	for _, w := range worktrees {
 		d.stopWorktree(ctx, w.domain, w.dir)
 		d.preparer.Forget(w.dir)
+		d.forgetMadeBuckets(w.dir)
 	}
-	d.addOrphans(orphans)
+	d.addOrphans(orphans, gone)
 	d.projectUnlinked(p)
 	for _, o := range orphans {
 		res.Orphans = append(res.Orphans, apiOrphan(o))

@@ -22,6 +22,9 @@ func Encode(w io.Writer, l Layer) error {
 	if l.IdleTimeout != nil {
 		fmt.Fprintf(&b, "idle_timeout = %s\n", quote(l.IdleTimeout.String()))
 	}
+	if l.BucketCopyLimit != nil {
+		fmt.Fprintf(&b, "bucket_copy_limit = %s\n", quote(l.BucketCopyLimit.exact()))
+	}
 	if l.Plugins != nil {
 		quoted := make([]string, len(l.Plugins))
 		for i, p := range l.Plugins {
@@ -115,6 +118,15 @@ func Encode(w io.Writer, l Layer) error {
 		b.WriteString("[services]\n")
 		for _, k := range slices.Sorted(maps.Keys(l.Services)) {
 			fmt.Fprintf(&b, "%s = %s\n", key(k), quote(l.Services[k]))
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(l.Buckets)) {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "[buckets.%s]\n", key(name))
+		if public := l.Buckets[name].Public; public != nil {
+			fmt.Fprintf(&b, "public = %t\n", *public)
 		}
 	}
 	_, err := io.WriteString(w, b.String())

@@ -139,6 +139,24 @@ func printInfo(env Env, info api.Info) error {
 		}
 	}
 
+	if len(info.Buckets) > 0 {
+		fmt.Fprintln(env.Stdout)
+		tw = tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
+		for i, b := range info.Buckets {
+			label, access := "", ""
+			if i == 0 {
+				label = "Buckets"
+			}
+			if b.Public {
+				access = " (public)"
+			}
+			fmt.Fprintf(tw, "%s\t%s on %s%s\n", label, b.Name, b.Service, access)
+		}
+		if err := tw.Flush(); err != nil {
+			return err
+		}
+	}
+
 	if len(info.Services) > 0 {
 		fmt.Fprintln(env.Stdout, "\nServices")
 		tw = tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)

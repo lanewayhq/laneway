@@ -110,6 +110,9 @@ type Preparer struct {
 type job struct {
 	cancel context.CancelFunc
 	done   chan struct{}
+	// refresh marks a job Refresh started, whose Worktree was Ready before
+	// it, so its becoming Ready again isn't news (OnReady).
+	refresh bool
 }
 
 // Open loads the setup states recorded at path (a JSON file the Preparer
@@ -191,9 +194,25 @@ func (p *Preparer) Again(dir string, plan Plan) {
 	p.startLocked(dir, plan)
 }
 
+// Refresh prepares the Worktree at dir again with plan, which normally
+// runs only some of its steps, if it is Ready: for something its config
+// gained since it was prepared, such as a Bucket. The Worktree is Preparing
+// while the steps run and Failed if one fails, as in its first setup, and
+// retrying it then runs every step. OnReady isn't called when it is Ready
+// again. It does nothing unless the Worktree is Ready and no setup is
+// running.
+func (p *Preparer) Refresh(dir string, plan Plan) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed || p.running[dir] != nil || p.statuses[dir].State != Ready {
+		return
+	}
+	p.startLocked(dir, plan).refresh = true
+}
+
 // startLocked starts preparing the Worktree at dir in the background with
-// the steps plan gives. p.mu is held.
-func (p *Preparer) startLocked(dir string, plan Plan) {
+// the steps plan gives, and returns its job. p.mu is held.
+func (p *Preparer) startLocked(dir string, plan Plan) *job {
 	ctx, cancel := context.WithCancel(p.ctx)
 	j := &job{cancel: cancel, done: make(chan struct{})}
 	p.running[dir] = j
@@ -202,10 +221,11 @@ func (p *Preparer) startLocked(dir string, plan Plan) {
 		defer close(j.done)
 		defer cancel()
 		st := p.run(ctx, dir, j, plan)
-		if p.finish(ctx, dir, j, st) && st.State == Ready && p.onReady != nil {
+		if p.finish(ctx, dir, j, st) && st.State == Ready && !j.refresh && p.onReady != nil {
 			p.onReady(dir)
 		}
 	})
+	return j
 }
 
 // finish records the outcome st of the setup job j, unless the Worktree

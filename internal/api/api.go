@@ -26,10 +26,10 @@
 //	GET  /v1/services   -> ServiceList
 //	POST /v1/services/up    ServiceRequest -> ServiceList  (start one Service, or every one)
 //	POST /v1/services/down  ServiceRequest -> ServiceList  (stop one Service, or every one)
-//	GET  /v1/orphans    -> OrphanList  (databases of removed Worktrees and unlinked
+//	GET  /v1/orphans    -> OrphanList  (databases and Buckets of removed Worktrees and unlinked
 //	                    Projects, waiting out their grace period)
 //	DELETE /v1/projects?dir=<abs path> -> UnlinkResponse  (Unlink the Project containing dir:
-//	                    stop it, turn its databases into Orphans, forget its Domains)
+//	                    stop it, turn its databases and Buckets into Orphans, forget its Domains)
 //	POST /v1/gc         GCRequest -> GCResponse  (drop Orphans and leftover parallel test
 //	                    copies now; with preview, only list them)
 //
@@ -411,25 +411,39 @@ type ServiceRequest struct {
 // Project. It is kept for a grace period (24 hours), then dropped; `lane
 // gc` drops it at once.
 type Orphan struct {
-	// Database is the database's name in its Service.
-	Database string `json:"database"`
-	// Service is the database Service it lives in, "<engine>:<version>",
+	// Name is the database's name in its Service, or the Bucket's (on
+	// the wire "database", from before Buckets could be Orphans).
+	Name string `json:"database"`
+	// Service is the Service it lives in, "<engine>:<version>",
 	// such as postgres:18.
 	Service string `json:"service"`
 	// Project is the name of the Project it belonged to; Worktree is
 	// git's name for its Worktree, "" for the main Worktree.
 	Project  string `json:"project"`
 	Worktree string `json:"worktree,omitempty"`
-	// Kind is "database" (the Worktree's database), "test database" (its
-	// Test Database) or "parallel test copy" (a copy of its Test Database
-	// made by a parallel test run, <test database>_test_<n>).
-	Kind string `json:"kind"`
+	// Kind is what it was to its Worktree.
+	Kind OrphanKind `json:"kind"`
 	// Since is when it became an Orphan and Expires when it is dropped.
 	// Both are unset for a parallel test copy `lane gc` found that was
 	// never recorded as an Orphan.
 	Since   time.Time `json:"since,omitzero"`
 	Expires time.Time `json:"expires,omitzero"`
 }
+
+// OrphanKind is what an Orphan was to its Worktree.
+type OrphanKind string
+
+const (
+	// OrphanDatabase is the Worktree's database.
+	OrphanDatabase OrphanKind = "database"
+	// OrphanTestDatabase is its Test Database.
+	OrphanTestDatabase OrphanKind = "test database"
+	// OrphanParallelCopy is a copy of its Test Database made by a parallel
+	// test run, <test database>_test_<n>.
+	OrphanParallelCopy OrphanKind = "parallel test copy"
+	// OrphanBucket is one of its Buckets.
+	OrphanBucket OrphanKind = "bucket"
+)
 
 // OrphanList is every Orphan, oldest first.
 type OrphanList struct {
@@ -448,15 +462,17 @@ type UnlinkResponse struct {
 type GCRequest struct {
 	// Preview lists what would be dropped and drops nothing.
 	Preview bool `json:"preview,omitempty"`
-	// Databases limits the drop to these (as a preview listed them); empty
-	// means everything a preview would list.
-	Databases []OrphanRef `json:"databases,omitempty"`
+	// Orphans limits the drop to these (as a preview listed them); empty
+	// means everything a preview would list. On the wire "databases", from
+	// before Buckets could be Orphans.
+	Orphans []OrphanRef `json:"databases,omitempty"`
 }
 
-// OrphanRef names an Orphan: a database in a Service.
+// OrphanRef names an Orphan: a database, or a Bucket, in a Service.
 type OrphanRef struct {
-	Service  string `json:"service"`
-	Database string `json:"database"`
+	Service string `json:"service"`
+	// Name is the database's or the Bucket's (on the wire "database").
+	Name string `json:"database"`
 }
 
 // GCResponse is what was dropped, or with a preview what would be.

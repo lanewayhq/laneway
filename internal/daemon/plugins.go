@@ -74,6 +74,7 @@ func (d *Daemon) addPlugin(ctx context.Context, req api.AddPluginRequest) (api.A
 	if old != nil {
 		o := apiPlugin(*old)
 		res.Replaces = &o
+		d.updateServices(ctx, p)
 	}
 	return res, nil
 }
@@ -91,7 +92,11 @@ func apiPlugin(p plugin.Plugin) api.Plugin {
 		ap.Commands = append(ap.Commands, api.PluginCommand{Name: c.Name, Summary: c.Summary})
 	}
 	for _, e := range p.Engines {
-		ap.Engines = append(ap.Engines, api.PluginEngine{Name: e.Name, Image: e.Image, Port: e.Port})
+		image := e.Image
+		if image == "" { // it maps its versions to images: show the default one's
+			image, _ = e.ImageRef(e.DefaultVersion)
+		}
+		ap.Engines = append(ap.Engines, api.PluginEngine{Name: e.Name, Image: image, Port: e.Port})
 	}
 	for _, g := range p.Generators {
 		ap.Generators = append(ap.Generators, g.Name)

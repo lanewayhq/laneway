@@ -18,7 +18,7 @@ import (
 // dropped.
 func runGC(ctx context.Context, env Env, args []string) error {
 	fs := newFlags(env, "gc")
-	yes := fs.Bool("yes", false, "drop the databases without asking")
+	yes := fs.Bool("yes", false, "drop the Orphans without asking")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -38,27 +38,48 @@ func runGC(ctx context.Context, env Env, args []string) error {
 		return nil
 	}
 	if !*yes && env.Terminal {
-		fmt.Fprintln(env.Stdout, "These databases will be dropped, and their data lost:")
+		what := orphansNoun(preview.Orphans)
+		fmt.Fprintf(env.Stdout, "These %s will be dropped, and their data lost:\n", what)
 		printOrphans(env.Stdout, preview.Orphans)
-		if !confirm(env, fmt.Sprintf("Drop these %d databases? [y/N] ", len(preview.Orphans))) {
+		if !confirm(env, fmt.Sprintf("Drop these %d %s? [y/N] ", len(preview.Orphans), what)) {
 			return errors.New("nothing was dropped; run `lane gc --yes` to drop them without asking")
 		}
 	}
 	req := api.GCRequest{}
 	for _, o := range preview.Orphans {
-		req.Databases = append(req.Databases, api.OrphanRef{Service: o.Service, Database: o.Database})
+		req.Orphans = append(req.Orphans, api.OrphanRef{Service: o.Service, Name: o.Name})
 	}
 	res, err := c.GC(ctx, req)
 	if err != nil {
 		return err
 	}
 	for _, o := range res.Orphans {
-		fmt.Fprintf(env.Stdout, "Dropped %s (%s)\n", o.Database, o.Service)
+		fmt.Fprintf(env.Stdout, "Dropped %s (%s)\n", o.Name, o.Service)
 	}
 	if len(res.Errors) > 0 {
 		return errors.New(strings.Join(res.Errors, "\nlane gc: "))
 	}
 	return nil
+}
+
+// orphansNoun is what orphans are: "databases", "Buckets" (their kind is
+// "bucket") or "databases and Buckets".
+func orphansNoun(orphans []api.Orphan) string {
+	var databases, buckets bool
+	for _, o := range orphans {
+		if o.Kind == api.OrphanBucket {
+			buckets = true
+		} else {
+			databases = true
+		}
+	}
+	switch {
+	case databases && buckets:
+		return "databases and Buckets"
+	case buckets:
+		return "Buckets"
+	}
+	return "databases"
 }
 
 // printOrphans shows Orphans as a table.
@@ -73,7 +94,7 @@ func printOrphans(w io.Writer, orphans []api.Orphan) {
 		if !o.Since.IsZero() {
 			since = o.Since.Local().Format(time.DateTime)
 		}
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\n", o.Database, o.Service, o.Project, worktree, o.Kind, since)
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\n", o.Name, o.Service, o.Project, worktree, o.Kind, since)
 	}
 	tw.Flush()
 }

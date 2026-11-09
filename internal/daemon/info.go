@@ -26,6 +26,7 @@ func (d *Daemon) info(ctx context.Context, dir string) (api.Info, error) {
 		Aliases:          []api.InfoAlias{},
 		State:            d.worktreeState(wt.Domain),
 		Processes:        []api.InfoProcess{},
+		Buckets:          []api.InfoBucket{},
 		Services:         []api.InfoService{},
 		Integrations:     []string{},
 		IntegrationRules: []api.InfoIntegrationRule{},
@@ -51,6 +52,11 @@ func (d *Daemon) info(ctx context.Context, dir string) (api.Info, error) {
 		}
 	}
 	if cfgErr == nil {
+		if p, ok := d.registry.ProjectAt(wt.Project.Path); ok && wt.Domain != "" {
+			if w, ok := d.worktreeRefOf(p, dir); ok {
+				info.Buckets = d.bucketInfo(p, w, cfg)
+			}
+		}
 		info.Services = d.infoServices(cfg.Services)
 		info.Recipe, info.RecipeRule = cfg.Recipe, cfg.RecipeRule
 		info.Integrations = orEmpty(cfg.Integrations)
