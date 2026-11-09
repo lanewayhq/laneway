@@ -89,12 +89,8 @@ _Avoid_: SDK, interpreter
 ## Extending Laneway
 
 **Plugin**:
-A package that adds one or more Recipes, Integrations, Engines or Generators to Laneway. Most are installed separately from Laneway; a built-in Plugin ships inside it.
-_Avoid_: Extension, add-on, package, pack
-
-**Built-in Plugin**:
-A first-party Plugin shipped inside Laneway itself rather than installed. It behaves like any other Plugin, but can't be removed and no other Plugin may take its name.
-_Avoid_: Core feature, bundled extension
+A package that adds one or more Recipes, Integrations, Engines or Generators to Laneway. Laneway itself ships none: it fetches first-party Plugins, such as Laravel's, from the Catalog, and a developer adds any other by hand.
+_Avoid_: Extension, add-on, package, pack, built-in Plugin
 
 **Hand-added Plugin**:
 A Plugin a developer added themselves, from a directory or a GitHub repository, rather than one fetched from the Catalog. It is updated from where it was added.
@@ -125,7 +121,7 @@ A Plugin's reaction to an Event: the Effects it returns when that Event happens 
 _Avoid_: Callback, listener, handler
 
 **Catalog**:
-The list of first-party Plugins that Laneway may fetch on its own when a Project needs one. A Plugin outside the Catalog is only installed when a developer adds it by hand.
+The signed list of first-party Plugins that Laneway may fetch on its own when a Project needs one. Laneway carries a snapshot of it, so it knows which Plugins a Project needs even before it has reached the Catalog. A Plugin outside the Catalog is only installed when a developer adds it by hand.
 _Avoid_: Registry, marketplace, store, index
 
 **Generator**:
