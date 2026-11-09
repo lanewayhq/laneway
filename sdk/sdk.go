@@ -127,6 +127,12 @@ type RecipeResult struct {
 	// TestEnv is the env file the Project's tests read, which Laneway
 	// points at the Test Database; nil for .env.testing, replacing .env.
 	TestEnv *TestEnv `json:"test_env,omitempty"`
+	// ExportEnv says the stack reads its settings from the environment
+	// rather than from .env (such as Rails without the dotenv gem), so
+	// Laneway exports the Worktree's .env into the commands it runs there:
+	// setup steps, hooks' and commands' exec effects, and `lane exec`. Its
+	// Processes load .env themselves.
+	ExportEnv bool `json:"export_env,omitempty"`
 	// Warnings are problems worth telling the developer about that don't
 	// stop the Project running, each naming the file at fault.
 	Warnings []string `json:"warnings,omitempty"`

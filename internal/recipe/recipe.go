@@ -70,6 +70,10 @@ type Result struct {
 	// TestEnv is the env file the Project's tests read; zero for
 	// DefaultTestEnv.
 	TestEnv TestEnv
+	// ExportEnv says the stack reads its settings from the environment,
+	// not .env, so the commands Laneway runs in a Worktree get its .env
+	// exported (see Resolved.ExportEnv).
+	ExportEnv bool
 }
 
 // TestEnv is the env file a Project's tests read their settings from, which
@@ -165,6 +169,11 @@ type Resolved struct {
 	// hard-codes DB_DATABASE (Result.TestDatabaseWarnings). Each names the file it
 	// comes from. Empty when TestDatabase is false.
 	TestDatabaseWarnings []string
+	// ExportEnv is true when the Recipe says its stack reads settings from
+	// the environment rather than .env (Result.ExportEnv): setup steps,
+	// exec effects and `lane exec` then run with the Worktree's .env
+	// exported, as its Processes load it.
+	ExportEnv bool
 	// Warnings are problems that didn't stop resolution, such as unknown
 	// keys. Each names the file it comes from.
 	Warnings []string
@@ -550,6 +559,7 @@ func Resolve(in Input) (Resolved, error) {
 	case "", "auto":
 		res.TestDatabase = inService && answer.TestDatabase
 	}
+	res.ExportEnv = answer.ExportEnv
 	if res.TestDatabase {
 		res.TestEnv = cmp.Or(answer.TestEnv, DefaultTestEnv)
 		res.TestDatabaseWarnings = answer.TestDatabaseWarnings

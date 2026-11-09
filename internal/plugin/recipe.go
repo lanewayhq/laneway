@@ -31,6 +31,7 @@ type recipeResponse struct {
 	TestDatabase         bool            `json:"test_database"`
 	TestDatabaseWarnings []string        `json:"test_database_warnings"`
 	TestEnv              *testEnv        `json:"test_env"`
+	ExportEnv            bool            `json:"export_env"`
 	Warnings             []string        `json:"warnings"`
 }
 
@@ -61,7 +62,7 @@ func (r pluginRecipe) Defaults(dir string) (recipe.Result, error) {
 	for _, w := range res.Warnings {
 		l.Warnings = append(l.Warnings, r.source()+": "+w)
 	}
-	answer := recipe.Result{Layer: l, TestDatabase: res.TestDatabase, TestDatabaseWarnings: res.TestDatabaseWarnings}
+	answer := recipe.Result{Layer: l, TestDatabase: res.TestDatabase, TestDatabaseWarnings: res.TestDatabaseWarnings, ExportEnv: res.ExportEnv}
 	if t := res.TestEnv; t != nil {
 		// Laneway writes the file: it must be the Worktree's own.
 		if t.File == "" || t.File == "." || t.File == ".." || strings.ContainsAny(t.File, `/\`) {

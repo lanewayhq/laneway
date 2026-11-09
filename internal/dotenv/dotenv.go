@@ -10,7 +10,9 @@
 package dotenv
 
 import (
+	"os"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -129,6 +131,27 @@ func (f *File) Get(key string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// Environ is the env file at path as KEY=value environment entries, sorted
+// by key, each value as Get reads it: what a command started after `set -a;
+// . ./.env` sees. A missing or unreadable file sets nothing.
+func Environ(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	f := Parse(data)
+	var env []string
+	seen := map[string]bool{}
+	for i := len(f.entries) - 1; i >= 0; i-- {
+		if k := f.entries[i].key; k != "" && !seen[k] {
+			seen[k] = true
+			env = append(env, k+"="+decode(f.entries[i].value))
+		}
+	}
+	slices.Sort(env)
+	return env
 }
 
 // Set gives key the value, written so phpdotenv reads back exactly value.

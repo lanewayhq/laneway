@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/dotenv"
 	"github.com/lanewayhq/laneway/internal/prepare"
 	"github.com/lanewayhq/laneway/internal/proxy"
 	"github.com/lanewayhq/laneway/internal/recipe"
@@ -111,7 +112,9 @@ func (d *Daemon) teardown(p registry.Project, w worktreeRef) {
 // Project's PHP; plus LANEWAY_<VARIABLE> for every Env Patch template
 // variable (LANEWAY_PROJECT, LANEWAY_WORKTREE, LANEWAY_DOMAIN, LANEWAY_URL,
 // LANEWAY_DB, LANEWAY_TEST_DB, …) and LANEWAY_WORKTREE_PATH, so on_remove
-// steps know which Worktree went. cfg is the config the steps come from.
+// steps know which Worktree went; and, for a stack that doesn't read .env
+// itself (cfg.ExportEnv), dir's .env. cfg is the config the steps come
+// from.
 func (d *Daemon) setupEnv(ctx context.Context, p registry.Project, w worktreeRef, dir string, cfg recipe.Resolved) []string {
 	env := runtimes.Environ(ctx, dir, d.cfg.Env).Vars
 	vars := d.envVars(p, w, cfg.Database)
@@ -121,7 +124,12 @@ func (d *Daemon) setupEnv(ctx context.Context, p registry.Project, w worktreeRef
 	for _, k := range slices.Sorted(maps.Keys(vars)) {
 		env = append(env, "LANEWAY_"+strings.ToUpper(k)+"="+vars[k])
 	}
-	return append(env, "LANEWAY_WORKTREE_PATH="+w.dir)
+	env = append(env, "LANEWAY_WORKTREE_PATH="+w.dir)
+	if cfg.ExportEnv {
+		// The stack doesn't read .env itself (recipe.Resolved.ExportEnv).
+		env = append(env, dotenv.Environ(filepath.Join(dir, envFileName))...)
+	}
+	return env
 }
 
 // setupOf is the API view of the setup state of the Worktree at dir.

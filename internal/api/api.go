@@ -251,6 +251,11 @@ type WorktreeInfo struct {
 	// Project has no database, the Worktree has no Domain yet or its config
 	// can't be read.
 	Database *Database `json:"database,omitempty"`
+	// ExportEnv is true when the Project's stack reads its settings from
+	// the environment rather than its .env (such as Rails without the
+	// dotenv gem), so `lane exec` exports the Worktree's .env into the
+	// command's.
+	ExportEnv bool `json:"exportEnv,omitempty"`
 }
 
 // Database names the databases a Worktree uses.
