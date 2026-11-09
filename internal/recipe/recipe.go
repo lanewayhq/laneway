@@ -26,6 +26,9 @@ type Input struct {
 	// Recipes are the candidates; the first one to detect the Project
 	// supplies the defaults.
 	Recipes []Recipe
+	// Integrations are the candidates; every one that detects the Project
+	// adds its layer over the Recipe's.
+	Integrations []Integration
 	// Runtimes are the Runtimes resolved for Dir (see package runtimes).
 	// If set, they are checked against the Project's declared constraints
 	// into Resolved.RuntimeWarnings; nil skips the check.
@@ -67,6 +70,9 @@ type Resolved struct {
 	// Recipe is the name of the Recipe that detected the Project; "" if
 	// none did.
 	Recipe string
+	// Integrations are the names of the Integrations that detected the
+	// Project, in the order their layers apply (by name); nil if none did.
+	Integrations []string
 	// Name is the configured Project name; "" means use the directory name.
 	Name string
 	// Processes are the enabled Processes, sorted by name.
@@ -94,8 +100,8 @@ type Resolved struct {
 	// repeats.
 	Copy []string
 	// OnCreate are the setup steps (shell commands) run in a new Worktree:
-	// the Recipe's first, then the Project's layers' in order, unless a
-	// Project layer sets worktree.inherit_setup = false.
+	// the Recipe's and the Integrations' first, then the Project's layers'
+	// in order, unless a Project layer sets worktree.inherit_setup = false.
 	OnCreate []string
 	// OnRemove are the shell commands run in the main Worktree when a
 	// Worktree is removed, merged like OnCreate.
@@ -269,9 +275,9 @@ func (r Resolved) Layer() config.Layer {
 		OnCreate: slices.Clone(r.OnCreate),
 		OnRemove: slices.Clone(r.OnRemove),
 	}
-	if r.Recipe != "" && len(r.OnCreate)+len(r.OnRemove) > 0 {
-		// The Recipe's steps are written out, so they mustn't be
-		// inherited again.
+	if (r.Recipe != "" || len(r.Integrations) > 0) && len(r.OnCreate)+len(r.OnRemove) > 0 {
+		// The Recipe's and Integrations' steps are written out, so they
+		// mustn't be inherited again.
 		inherit := false
 		wt.InheritSetup = &inherit
 	}
@@ -321,21 +327,22 @@ func (r Resolved) WorktreeRootOf(mainDir string) string {
 var Builtin = []Recipe{Laravel{}}
 
 // ResolveDir resolves the Project in dir from its laneway.toml and
-// laneway.local.toml with the Builtin Recipes, checking the Runtimes found
-// for dir if any are given. It is how the daemon reads config, every time it
-// is about to start a Worktree's Processes.
+// laneway.local.toml with the Builtin Recipes and BuiltinIntegrations,
+// checking the Runtimes found for dir if any are given. It is how the daemon
+// reads config, every time it is about to start a Worktree's Processes.
 func ResolveDir(dir string, found ...runtimes.Runtime) (Resolved, error) {
 	layers, err := config.LoadLayers(dir)
 	if err != nil {
 		return Resolved{}, err
 	}
-	return Resolve(Input{Dir: dir, Layers: layers, Recipes: Builtin, Runtimes: found})
+	return Resolve(Input{Dir: dir, Layers: layers, Recipes: Builtin, Integrations: BuiltinIntegrations, Runtimes: found})
 }
 
-// Resolve merges the detected Recipe's defaults with in.Layers.
+// Resolve merges the detected Recipe's defaults, then the detected
+// Integrations', then in.Layers.
 func Resolve(in Input) (Resolved, error) {
 	var res Resolved
-	layers := in.Layers
+	var layers []config.Layer // the Recipe's, then the Integrations', then in.Layers
 	var detected Recipe
 	for _, r := range in.Recipes {
 		if !r.Detect(in.Dir) {
@@ -346,11 +353,24 @@ func Resolve(in Input) (Resolved, error) {
 			return Resolved{}, err
 		}
 		res.Recipe, detected = r.Name(), r
-		layers = append([]config.Layer{defaults}, layers...)
+		layers = append(layers, defaults)
 		break
 	}
-	// Setup steps append, the Recipe's first, unless a Project layer turns
-	// inheriting them off.
+	recipeLayers := len(layers)
+	integrations, names, err := detectIntegrations(in.Dir, in.Integrations)
+	if err != nil {
+		return Resolved{}, err
+	}
+	res.Integrations = names
+	if err := checkIntegrations(integrations, in.Layers); err != nil {
+		return Resolved{}, err
+	}
+	layers = append(layers, integrations...)
+	// The layers before project are the Recipe's and the Integrations'.
+	project := len(layers)
+	layers = append(layers, in.Layers...)
+	// Setup steps append, the Recipe's and Integrations' first, unless a
+	// Project layer turns inheriting them off.
 	inherit := true
 	var recipeCreate, recipeRemove []string
 
@@ -359,6 +379,8 @@ func Resolve(in Input) (Resolved, error) {
 		disabled bool
 		http     *bool
 		source   string // the layer that declared the Process
+		// integration marks a Process an Integration declared.
+		integration bool
 		// The layers that last set the command, http, start_mode and
 		// static_dir, for errors.
 		commandSource, httpSource, startModeSource, staticDirSource string
@@ -389,8 +411,9 @@ func Resolve(in Input) (Resolved, error) {
 				res.Copy = append(res.Copy, path)
 			}
 		}
-		if res.Recipe != "" && i == 0 {
-			recipeCreate, recipeRemove = wt.OnCreate, wt.OnRemove
+		if i < project {
+			recipeCreate = append(recipeCreate, wt.OnCreate...)
+			recipeRemove = append(recipeRemove, wt.OnRemove...)
 		} else {
 			res.OnCreate = append(res.OnCreate, wt.OnCreate...)
 			res.OnRemove = append(res.OnRemove, wt.OnRemove...)
@@ -428,7 +451,8 @@ func Resolve(in Input) (Resolved, error) {
 		for name, pl := range l.Processes {
 			p := procs[name]
 			if p == nil {
-				p = &merged{Process: Process{Name: name}, source: l.Source}
+				p = &merged{Process: Process{Name: name}, source: l.Source,
+					integration: recipeLayers <= i && i < project}
 				procs[name] = p
 			}
 			if pl.Command != nil {
@@ -510,8 +534,14 @@ func Resolve(in Input) (Resolved, error) {
 		enabled = append(enabled, p)
 	}
 	// A lone Process is the Primary Process unless it says it isn't HTTP.
-	if len(enabled) == 1 && (enabled[0].http == nil || *enabled[0].http) {
-		enabled[0].Primary = true
+	// Integrations' Processes don't count unless there are only those: an
+	// Integration never takes the Domain from the Project's own Process.
+	own := slices.DeleteFunc(slices.Clone(enabled), func(p *merged) bool { return p.integration })
+	if len(own) == 0 {
+		own = enabled
+	}
+	if len(own) == 1 && (own[0].http == nil || *own[0].http) {
+		own[0].Primary = true
 	}
 	var primary bool
 	for _, p := range enabled {

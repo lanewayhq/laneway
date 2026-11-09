@@ -48,6 +48,12 @@ type Info struct {
 	// Services are the Services the Worktree's config uses (including its
 	// database's), sorted by name, with how to connect to them.
 	Services []InfoService `json:"services"`
+	// Recipe is the name of the Recipe that recognised the Project, such
+	// as "laravel"; "" if none did.
+	Recipe string `json:"recipe"`
+	// Integrations are the names of the Integrations the Project uses, such
+	// as "vite", in the order their config applies.
+	Integrations []string `json:"integrations"`
 	// ConfigError is why the Worktree's laneway.toml or laneway.local.toml
 	// can't be used, naming the file and key; "" if they can. While it is
 	// set, Processes and Services are empty.

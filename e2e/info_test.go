@@ -268,6 +268,7 @@ var infoSchema = map[string]map[string]string{
 		"schemaVersion": "number", "project": "object", "worktree": "object", "domain": "string",
 		"url": "string", "aliases": "list", "setup": "object?", "state": "string", "processes": "list",
 		"database": "object?", "services": "list", "configError": "string",
+		"recipe": "string", "integrations": "list",
 	},
 	"project":   {"name": "string", "path": "string"},
 	"worktree":  {"name": "string", "path": "string", "main": "bool"},
@@ -357,7 +358,7 @@ func TestInfoJSONHasEveryDocumentedKeyAndNoOthers(t *testing.T) {
 	plain := gitfixture.New(t, "info-schema-plain")
 	d.MustRunCLI(plain.Dir, "link")
 	info := infoJSON(t, d, plain.Dir)
-	for _, list := range []string{"aliases", "processes", "services"} {
+	for _, list := range []string{"aliases", "processes", "services", "integrations"} {
 		assertLen(t, info, 0, list)
 	}
 	assertAt(t, info, nil, "database")
@@ -433,6 +434,31 @@ func TestInfoPrintsTheSameDetailsForPeople(t *testing.T) {
 	assertLineWith(t, out, "Test", "Database", "info_text__feature_test")
 	assertLineWith(t, out, "postgres:18", d.ServiceHost()+":5432", "laneway", "laneway", "running")
 	assertLineWith(t, out, "redis:7", d.ServiceHost()+":6379", "-", "laneway", "stopped")
+}
+
+func TestInfoNamesTheProjectsRecipeAndIntegrations(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	repo := laravelViteRepo(t, "info-recipe")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+
+	info := infoJSON(t, d, repo.Dir)
+	assertAt(t, info, "laravel", "recipe")
+	assertLen(t, info, 1, "integrations")
+	assertAt(t, info, "vite", "integrations", 0)
+
+	out := d.MustRunCLI(repo.Dir, "info").Stdout
+	assertLineWith(t, out, "Recipe", "laravel")
+	assertLineWith(t, out, "Integrations", "vite")
+
+	// Without either, there is nothing to name.
+	plain := routedProject(t, "info-no-recipe")
+	d.MustRunCLI(plain.Dir, "link")
+	info = infoJSON(t, d, plain.Dir)
+	assertAt(t, info, "", "recipe")
+	assertLen(t, info, 0, "integrations")
+	out = d.MustRunCLI(plain.Dir, "info").Stdout
+	assertLineWith(t, out, "Recipe", "-")
 }
 
 func TestInfoJSONsURLIsTheWorktreesPrimaryDomain(t *testing.T) {
