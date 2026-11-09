@@ -89,6 +89,38 @@ type Options struct {
 	// (DefaultLogBackups if 0).
 	LogMaxBytes int64
 	LogBackups  int
+	// OnEvent, if set, is told every time a Process starts (including
+	// after a crash), is stopped, or crashes. It is called with the
+	// Process locked, in the order things happen, so it must return
+	// quickly and must not call the Supervisor.
+	OnEvent func(Event)
+}
+
+// EventKind is what happened to a Process, for Options.OnEvent.
+type EventKind string
+
+const (
+	// Started: its command started, on Event.Port for an HTTP Process.
+	Started EventKind = "started"
+	// Stopped: it was stopped while running or waiting to restart.
+	Stopped EventKind = "stopped"
+	// Crashed: it exited without being stopped, or couldn't be restarted.
+	Crashed EventKind = "crashed"
+)
+
+// Event is something that happened to a Process.
+type Event struct {
+	Kind EventKind
+	// Group and Process say which Process.
+	Group, Process string
+	// Command is its latest run's command, with {port} replaced, and Port
+	// that run's port (0 for a Process that isn't HTTP).
+	Command string
+	Port    int
+	// Exit is how it crashed, such as "exit status 1", and Failed is true
+	// when it won't be restarted (see MaxCrashes); both only for Crashed.
+	Exit   string
+	Failed bool
 }
 
 // New returns a Supervisor that logs to log.
@@ -349,6 +381,7 @@ func (p *Process) startRun() error {
 	go p.wait(r, outputRead)
 	p.run, p.port, p.command, p.state = r, port, command, StateRunning
 	p.log.Info("process started", "port", port, "command", command)
+	p.emit(Started, "")
 	return nil
 }
 
@@ -379,12 +412,14 @@ func (p *Process) wait(r *run, outputRead <-chan struct{}) {
 	if r.exitErr != nil {
 		status = r.exitErr.Error()
 	}
-	p.crashed("exited (" + status + ")")
+	p.crashed("exited ("+status+")", status)
 }
 
-// crashed records a crash, then schedules a restart or marks the Process
-// failed. The caller holds p.mu.
-func (p *Process) crashed(what string) {
+// crashed records a crash, what happened, then schedules a restart or marks
+// the Process failed. exit is how it crashed, for OnEvent. The caller holds
+// p.mu.
+func (p *Process) crashed(what, exit string) {
+	defer func() { p.emit(Crashed, exit) }()
 	now := p.s.clock.Now()
 	p.crashes = slices.DeleteFunc(p.crashes, func(t time.Time) bool { return !t.After(now.Add(-CrashWindow)) })
 	p.crashes = append(p.crashes, now)
@@ -409,8 +444,26 @@ func (p *Process) restart() {
 	}
 	p.timer = nil
 	if err := p.startRun(); err != nil {
-		p.crashed(fmt.Sprintf("could not be restarted (%v)", err))
+		p.crashed(fmt.Sprintf("could not be restarted (%v)", err), err.Error())
 	}
+}
+
+// emit tells Options.OnEvent that kind happened to the Process. The caller
+// holds p.mu.
+func (p *Process) emit(kind EventKind, exit string) {
+	if p.s.opts.OnEvent == nil {
+		return
+	}
+	p.s.opts.OnEvent(Event{Kind: kind, Group: p.group, Process: p.spec.Name, Command: p.command, Port: p.port,
+		Exit: exit, Failed: p.state == StateFailed})
+}
+
+// emitStopped tells Options.OnEvent the Process was stopped, once it has
+// exited.
+func (p *Process) emitStopped() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.emit(Stopped, "")
 }
 
 // note adds a line from Laneway itself to the Process's output.
@@ -491,6 +544,11 @@ func (p *Process) WaitUp(ctx context.Context) error {
 // exited after StopTimeout or when ctx is done.
 func (p *Process) stop(ctx context.Context) {
 	p.mu.Lock()
+	// Stopping a Process that was running, or about to restart, is an
+	// event; stopping one that failed or was already stopped isn't.
+	if !p.stopped && (p.state == StateRunning || p.state == StateRestarting) {
+		defer p.emitStopped()
+	}
 	p.stopped = true
 	if p.timer != nil {
 		p.timer.Stop()

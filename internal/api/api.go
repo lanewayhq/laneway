@@ -50,6 +50,9 @@ type Project struct {
 	Path string `json:"path"`
 	// Worktrees are the Project's Worktrees, the main one first.
 	Worktrees []Worktree `json:"worktrees"`
+	// PluginItems are what Plugins the Project uses show on it; only
+	// GET /v1/projects and GET /v1/events fill them in.
+	PluginItems
 }
 
 // Process is one of a Worktree's Processes and what it is doing.
@@ -89,6 +92,9 @@ type Worktree struct {
 	// GET /v1/worktree, POST /v1/worktree/ready and the up/down/restart
 	// routes fill it in.
 	Setup *Setup `json:"setup,omitempty"`
+	// PluginItems are what Plugins the Worktree uses show on it; only
+	// GET /v1/projects and GET /v1/events fill them in.
+	PluginItems
 }
 
 // DeclaredProcess is a Process as the Worktree's config declares it.
@@ -195,6 +201,13 @@ type LinkResponse struct {
 	// EnvPatch lists the env files that were (or, with Preview, would be)
 	// changed, one per Worktree whose Env Patch wasn't already in place.
 	EnvPatch []EnvFilePatch `json:"envPatch,omitempty"`
+	// Fetched are the Plugins fetched from the Catalog and installed
+	// because the Project needs them (even when previewing, since the Env
+	// Patch can't be worked out without them).
+	Fetched []Plugin `json:"fetched,omitempty"`
+	// Warnings are problems that didn't stop Linking, such as a Catalog
+	// Laneway refused.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // EnvFilePatch is how the Env Patch changes one Worktree's env file. Only the
@@ -331,6 +344,18 @@ const (
 
 	// CodeInvalidPlugin: a Plugin can't be added; the message says why.
 	CodeInvalidPlugin = "invalid_plugin"
+
+	// CodeUnknownPlugin: no installed Plugin has the name.
+	CodeUnknownPlugin = "unknown_plugin"
+	// CodeUnknownCommand: the Plugin has no command of the name.
+	CodeUnknownCommand = "unknown_command"
+	// CodePluginInUse: a Plugin can't be removed while Linked Projects use
+	// it; the message lists them.
+	CodePluginInUse = "plugin_in_use"
+
+	// CodePluginsUnavailable: Linking needs Catalog Plugins that couldn't
+	// be fetched, such as when offline; the message names them.
+	CodePluginsUnavailable = "plugins_unavailable"
 )
 
 // Service is a shared Service, such as redis:7, and how to connect to it.
@@ -350,6 +375,9 @@ type Service struct {
 	// Error says why the Service can't be used (Laneway can't listen on
 	// its port, or its last start failed).
 	Error string `json:"error,omitempty"`
+	// PluginItems are what the Plugin that adds the Service's Engine shows
+	// on it, such as Mailpit's Inbox link.
+	PluginItems
 }
 
 // ServiceList is every Service Laneway serves, sorted by name.
@@ -448,6 +476,18 @@ type Plugin struct {
 	SHA256 string `json:"sha256,omitempty"`
 	// Recipes are the Recipes it adds.
 	Recipes []PluginRecipe `json:"recipes"`
+	// Integrations are the Integrations it adds.
+	Integrations []PluginIntegration `json:"integrations"`
+	// Commands are the commands it adds, run as `lane <plugin> <command>`.
+	Commands []PluginCommand `json:"commands"`
+	// Engines are the Engines it adds.
+	Engines []PluginEngine `json:"engines"`
+	// Generators are the names of the Generators it adds, run with
+	// `lane generate <plugin>`.
+	Generators []string `json:"generators"`
+	// Hooks are the lifecycle events it hooks, such as "ready", in
+	// lifecycle order.
+	Hooks []string `json:"hooks"`
 	// Effects are the kinds of effect it may return, each with what it
 	// lets the Plugin do; empty if it only returns config.
 	Effects []PluginEffect `json:"effects"`
@@ -461,6 +501,31 @@ type PluginRecipe struct {
 	// Detects describes the Projects its detection rule matches, such as
 	// "Procfile exists".
 	Detects string `json:"detects"`
+}
+
+// PluginIntegration is an Integration a Plugin adds.
+type PluginIntegration struct {
+	Name string `json:"name"`
+	// Detects describes the Projects its detection rule matches, such as
+	// "package.json depends on vite".
+	Detects string `json:"detects"`
+}
+
+// PluginCommand is a command a Plugin adds.
+type PluginCommand struct {
+	Name string `json:"name"`
+	// Summary says what it does.
+	Summary string `json:"summary"`
+}
+
+// PluginEngine is an Engine a Plugin adds: what Services of it run.
+type PluginEngine struct {
+	Name string `json:"name"`
+	// Image is the image repository its Services' containers run.
+	Image string `json:"image"`
+	// Port is its standard port, which a Service at its default version
+	// listens on.
+	Port int `json:"port"`
 }
 
 // PluginEffect is a kind of effect a Plugin may return.
@@ -492,4 +557,54 @@ type AddPluginResponse struct {
 	// Replaces is the installed Plugin of the same name it replaced (or
 	// would replace), if any.
 	Replaces *Plugin `json:"replaces,omitempty"`
+}
+
+// RemovePluginResponse is the body of DELETE /v1/plugins/{plugin}: the
+// Plugin removed.
+type RemovePluginResponse struct {
+	Plugin Plugin `json:"plugin"`
+	// Kept are the Services of the Plugin's Engines, stopped but with their
+	// data kept: adding the Plugin again brings them back as they were.
+	Kept []KeptService `json:"kept"`
+}
+
+// KeptService is a Service whose Engine's Plugin was removed, and the
+// volume its data is kept in.
+type KeptService struct {
+	Name   string `json:"name"`
+	Volume string `json:"volume"`
+}
+
+// PluginCommandRequest is the body of POST
+// /v1/plugins/{plugin}/commands/{command}: run a Plugin's command in a
+// Worktree and apply the effects it returns.
+type PluginCommandRequest struct {
+	// Dir is a directory inside the Worktree, an absolute path.
+	Dir string `json:"dir"`
+	// Worktree, if set, names the Worktree instead, as for ControlRequest.
+	Worktree string `json:"worktree,omitempty"`
+	// Args are the command's arguments.
+	Args []string `json:"args,omitempty"`
+}
+
+// PluginCommandResult is what a Plugin's command did.
+type PluginCommandResult struct {
+	// Effects are the effects applied, in order, with what each did.
+	Effects []AppliedEffect `json:"effects"`
+	// Warnings are the command's warnings, and the effects Laneway refused
+	// and why.
+	Warnings []string `json:"warnings"`
+	// Error, if set, is why the command failed: its module failed, or an
+	// effect did, and the effects after it weren't applied.
+	Error string `json:"error,omitempty"`
+}
+
+// AppliedEffect is an effect a Plugin's command returned that Laneway
+// applied.
+type AppliedEffect struct {
+	Kind string `json:"kind"`
+	// Command is an exec effect's command and arguments.
+	Command []string `json:"command,omitempty"`
+	// Output is an exec effect's output, stdout and stderr together.
+	Output string `json:"output,omitempty"`
 }

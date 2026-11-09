@@ -24,9 +24,11 @@ import (
 // serveRecordedServices serves the Services the Registry has ports for.
 func (d *Daemon) serveRecordedServices() {
 	for _, rs := range d.registry.Services() {
-		e, ok := engine.Lookup(rs.Engine)
+		e, ok := d.plugins.Engines().Lookup(rs.Engine)
 		if !ok {
-			d.log.Warn("unknown Service in the Registry", "engine", rs.Engine)
+			// Its Engine's Plugin was removed: its data is kept for
+			// when the Plugin is added again.
+			d.log.Info("not serving a Service whose Engine isn't installed", "service", rs.Name())
 			continue
 		}
 		d.services.Serve(service.Service{Engine: e, Version: rs.Version, Port: rs.Port})
@@ -36,7 +38,7 @@ func (d *Daemon) serveRecordedServices() {
 // serveServices records and serves the Services in services.
 func (d *Daemon) serveServices(services []recipe.Service) {
 	for _, s := range services {
-		e, ok := engine.Lookup(s.Engine)
+		e, ok := d.plugins.Engines().Lookup(s.Engine)
 		if !ok {
 			continue // config rejects unknown engines
 		}
@@ -63,7 +65,7 @@ func (d *Daemon) serveServicesOf(dir string) {
 func (d *Daemon) serviceVars(services []recipe.Service) map[string]string {
 	vars := map[string]string{}
 	for _, s := range services {
-		e, ok := engine.Lookup(s.Engine)
+		e, ok := d.plugins.Engines().Lookup(s.Engine)
 		if !ok {
 			continue
 		}
@@ -157,7 +159,9 @@ func apiService(st service.Status) api.Service {
 func (d *Daemon) listServices() api.ServiceList {
 	list := api.ServiceList{Services: []api.Service{}}
 	for _, st := range d.services.List() {
-		list.Services = append(list.Services, apiService(st))
+		s := apiService(st)
+		s.PluginItems = d.serviceItems(st)
+		list.Services = append(list.Services, s)
 	}
 	return list
 }

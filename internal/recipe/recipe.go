@@ -4,6 +4,7 @@
 package recipe
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"path/filepath"
@@ -31,6 +32,10 @@ type Input struct {
 	// Integrations are the candidates; every one that detects the Project
 	// adds its layer over the Recipe's.
 	Integrations []Integration
+	// Engines are the Engines Laneway can run, which the layers' Services,
+	// database engine and Service variables must be among (see
+	// config.Layer.CheckEngines).
+	Engines engine.Set
 	// Runtimes are the Runtimes resolved for Dir (see package runtimes).
 	// If set, they are checked against the Project's declared constraints
 	// into Resolved.RuntimeWarnings; nil skips the check.
@@ -44,35 +49,27 @@ type Recipe interface {
 	Name() string
 	// Detection is the rule a Project of this Recipe's kind matches.
 	Detection() detect.Rule
-	// Defaults is the bottom config layer for the Project in dir.
-	Defaults(dir string) (config.Layer, error)
+	// Defaults is the Recipe's answer for the Project in dir: the bottom
+	// config layer, and its Test Database decision.
+	Defaults(dir string) (Result, error)
 }
 
-// TestDatabaseRecipe is a Recipe that decides whether a Project it detected
-// has a Test Database when database.test is auto (or unset), for instance
-// from how the Project's tests are configured. Without it, auto is off.
-type TestDatabaseRecipe interface {
-	Recipe
-	// AutoTestDatabase reports whether the Project in dir uses a Test
-	// Database.
-	AutoTestDatabase(dir string) bool
-}
-
-// TestDatabaseWarner is a Recipe that can tell when the tests of a Project it
-// detected bypass the Project's Test Database.
-type TestDatabaseWarner interface {
-	Recipe
-	// TestDatabaseWarnings are the reasons the tests of the Project in dir
-	// may not use its Test Database, each naming the file at fault.
-	TestDatabaseWarnings(dir string) []string
-}
-
-// TestEnvRecipe is a Recipe whose Projects' tests read their settings from
-// an env file other than DefaultTestEnv.
-type TestEnvRecipe interface {
-	Recipe
-	// TestEnv is the env file the tests of the Recipe's Projects read.
-	TestEnv() TestEnv
+// Result is a Recipe's answer for a Project it detected.
+type Result struct {
+	// Layer is the bottom config layer, under the Integrations' and the
+	// Project's own.
+	Layer config.Layer
+	// TestDatabase decides database.test = auto (or unset): whether the
+	// Project's tests use a Test Database, for instance from how they are
+	// configured.
+	TestDatabase bool
+	// TestDatabaseWarnings are the reasons the Project's tests may not use
+	// its Test Database, each naming the file at fault, such as a
+	// phpunit.xml that hard-codes DB_DATABASE.
+	TestDatabaseWarnings []string
+	// TestEnv is the env file the Project's tests read; zero for
+	// DefaultTestEnv.
+	TestEnv TestEnv
 }
 
 // TestEnv is the env file a Project's tests read their settings from, which
@@ -152,15 +149,15 @@ type Resolved struct {
 	// also gets an empty Test Database, <database>_test, in the database's
 	// Service. True only when the database is in a Service
 	// (DatabaseService) and database.test is on, or auto and the Recipe
-	// decides so (TestDatabaseRecipe).
+	// decides so (Result.TestDatabase).
 	TestDatabase bool
 	// TestEnv is the env file the Project's tests read, which Laneway
-	// points at the Test Database (TestEnvRecipe, else DefaultTestEnv).
+	// points at the Test Database (Result.TestEnv, else DefaultTestEnv).
 	// Zero when TestDatabase is false.
 	TestEnv TestEnv
 	// TestDatabaseWarnings are why the Project's tests may not use the
 	// Test Database although there is one, such as a phpunit.xml that
-	// hard-codes DB_DATABASE (TestDatabaseWarner). Each names the file it
+	// hard-codes DB_DATABASE (Result.TestDatabaseWarnings). Each names the file it
 	// comes from. Empty when TestDatabase is false.
 	TestDatabaseWarnings []string
 	// Warnings are problems that didn't stop resolution, such as unknown
@@ -219,7 +216,8 @@ func (m StartMode) String() string {
 
 // Database is the resolved [database] table, merged key by key.
 type Database struct {
-	// Engine is one of config.DatabaseEngines, or "" for no database.
+	// Engine is sqlite or an Engine with database commands
+	// (database.EngineNames), or "" for no database.
 	Engine string
 	// Path is the SQLite file, relative to the Worktree.
 	Path string
@@ -362,39 +360,28 @@ func (r Resolved) WorktreeRootOf(mainDir string) string {
 	}
 }
 
-// Builtin are the Recipes Laneway ships, in detection order.
-var Builtin = []Recipe{Laravel{}, Rails{}}
-
-// ResolveDir resolves the Project in dir from its laneway.toml and
-// laneway.local.toml with the Builtin Recipes and BuiltinIntegrations,
-// checking the Runtimes found for dir if any are given. The daemon and the
-// CLI read config through plugin.Host.ResolveDir instead, which adds the
-// installed Plugins' Recipes.
-func ResolveDir(dir string, found ...runtimes.Runtime) (Resolved, error) {
-	layers, err := config.LoadLayers(dir)
-	if err != nil {
-		return Resolved{}, err
-	}
-	return Resolve(Input{Dir: dir, Layers: layers, Recipes: Builtin, Integrations: BuiltinIntegrations, Runtimes: found})
-}
-
 // Resolve merges the detected Recipe's defaults, then the detected
 // Integrations', then in.Layers.
 func Resolve(in Input) (Resolved, error) {
+	for _, l := range in.Layers {
+		if err := l.CheckEngines(in.Engines); err != nil {
+			return Resolved{}, err
+		}
+	}
 	var res Resolved
 	var layers []config.Layer // the Recipe's, then the Integrations', then in.Layers
-	var detected Recipe
+	var answer Result         // the detected Recipe's
 	for _, r := range in.Recipes {
 		matched, ok := r.Detection().Match(in.Dir)
 		if !ok {
 			continue
 		}
-		defaults, err := r.Defaults(in.Dir)
-		if err != nil {
+		var err error
+		if answer, err = r.Defaults(in.Dir); err != nil {
 			return Resolved{}, err
 		}
-		res.Recipe, res.RecipeRule, detected = r.Name(), matched, r
-		layers = append(layers, defaults)
+		res.Recipe, res.RecipeRule = r.Name(), matched
+		layers = append(layers, answer.Layer)
 		break
 	}
 	recipeLayers := len(layers)
@@ -409,6 +396,11 @@ func Resolve(in Input) (Resolved, error) {
 	layers = append(layers, integrations...)
 	// The layers before project are the Recipe's and the Integrations'.
 	project := len(layers)
+	for _, l := range layers {
+		if err := l.CheckEngines(in.Engines); err != nil {
+			return Resolved{}, err
+		}
+	}
 	layers = append(layers, in.Layers...)
 	// Setup steps append, the Recipe's and Integrations' first, unless a
 	// Project layer turns inheriting them off.
@@ -539,7 +531,7 @@ func Resolve(in Input) (Resolved, error) {
 	}
 	// A database in a Service needs the Service: at the version
 	// [services] pins, else the engine's default.
-	e, inService := engine.Lookup(res.Database.Engine)
+	e, inService := in.Engines.Lookup(res.Database.Engine)
 	if inService && services[e.Name] == "" {
 		services[e.Name] = e.DefaultVersion
 	}
@@ -551,17 +543,11 @@ func Resolve(in Input) (Resolved, error) {
 	case "on":
 		res.TestDatabase = inService
 	case "", "auto":
-		r, ok := detected.(TestDatabaseRecipe)
-		res.TestDatabase = inService && ok && r.AutoTestDatabase(in.Dir)
+		res.TestDatabase = inService && answer.TestDatabase
 	}
 	if res.TestDatabase {
-		res.TestEnv = DefaultTestEnv
-		if r, ok := detected.(TestEnvRecipe); ok {
-			res.TestEnv = r.TestEnv()
-		}
-	}
-	if w, ok := detected.(TestDatabaseWarner); ok && res.TestDatabase {
-		res.TestDatabaseWarnings = w.TestDatabaseWarnings(in.Dir)
+		res.TestEnv = cmp.Or(answer.TestEnv, DefaultTestEnv)
+		res.TestDatabaseWarnings = answer.TestDatabaseWarnings
 	}
 	if inherit {
 		res.OnCreate = append(slices.Clone(recipeCreate), res.OnCreate...)

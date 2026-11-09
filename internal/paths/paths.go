@@ -16,6 +16,9 @@ type Paths struct {
 	Socket string
 	// ConfigDir holds the global config file.
 	ConfigDir string
+	// CacheDir holds what Laneway can make again, such as compiled Plugin
+	// modules.
+	CacheDir string
 }
 
 // FromEnv resolves Paths from environment variables read through getenv:
@@ -23,6 +26,7 @@ type Paths struct {
 //   - state:  $XDG_STATE_HOME/laneway, else $HOME/.local/state/laneway
 //   - socket: $XDG_RUNTIME_DIR/laneway/laneway.sock, else <state>/run/laneway.sock
 //   - config: $XDG_CONFIG_HOME/laneway, else $HOME/.config/laneway
+//   - cache:  $XDG_CACHE_HOME/laneway, else $HOME/.cache/laneway, else <state>/cache
 func FromEnv(getenv func(string) string) (Paths, error) {
 	home := getenv("HOME")
 	stateHome := getenv("XDG_STATE_HOME")
@@ -37,6 +41,14 @@ func FromEnv(getenv func(string) string) (Paths, error) {
 		p.ConfigDir = filepath.Join(configHome, "laneway")
 	} else if home != "" {
 		p.ConfigDir = filepath.Join(home, ".config", "laneway")
+	}
+	switch cacheHome := getenv("XDG_CACHE_HOME"); {
+	case cacheHome != "":
+		p.CacheDir = filepath.Join(cacheHome, "laneway")
+	case home != "":
+		p.CacheDir = filepath.Join(home, ".cache", "laneway")
+	default:
+		p.CacheDir = filepath.Join(p.StateDir, "cache")
 	}
 
 	if runtimeDir := getenv("XDG_RUNTIME_DIR"); runtimeDir != "" {
@@ -94,5 +106,11 @@ func (p Paths) Plugins() string {
 // PluginCache is the directory Plugins' compiled WASM modules are kept in,
 // so a module is compiled once, not every time Laneway starts.
 func (p Paths) PluginCache() string {
-	return filepath.Join(p.StateDir, "plugin-cache")
+	return filepath.Join(p.CacheDir, "plugins")
+}
+
+// Catalog is the directory the last Catalog Laneway verified is kept in,
+// so it still knows what Projects need when it can't reach the Catalog.
+func (p Paths) Catalog() string {
+	return filepath.Join(p.StateDir, "catalog")
 }

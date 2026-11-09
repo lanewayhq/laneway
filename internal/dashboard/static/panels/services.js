@@ -1,9 +1,11 @@
 // The Services panel: every shared Service (redis:7, postgres:18,
 // mailpit:v1…) with its engine, version, address, login and state, and
 // Start/Stop buttons (POST /v1/services/{up|down}). Stopping keeps the data
-// (it is in the Service's volume). Mailpit's rows link its inbox, served at
-// mail.<the Dashboard's Domain>. It re-renders on every `services` event.
+// (it is in the Service's volume). Each row also shows the links and badges
+// of the Plugin that adds its Engine, such as Mailpit's Inbox (see
+// pluginitems.js). It re-renders on every `services` event.
 import { h } from "../dom.js";
+import { pluginBadges, pluginLinks } from "../pluginitems.js";
 
 export default {
   id: "services",
@@ -31,10 +33,9 @@ export default {
       h("td", {}, s.version),
       h("td", {}, h("code", {}, `${s.host}:${s.port}`)),
       h("td", {}, login(s)),
-      h("td", {}, badge(s.state), s.error ? h("div", { class: "error" }, s.error) : ""),
+      h("td", {}, badge(s.state), ...pluginBadges(s), s.error ? h("div", { class: "error" }, s.error) : ""),
       h("td", { class: "actions" },
-        button(s, "up", "Start"), button(s, "down", "Stop"),
-        s.engine === "mailpit" ? inbox() : ""));
+        button(s, "up", "Start"), button(s, "down", "Stop"), ...pluginLinks(s)));
 
     const button = (s, action, label) => {
       const key = `${s.name}:${action}`;
@@ -64,13 +65,6 @@ function login(s) {
     return "-";
   }
   return h("code", {}, s.user ? `${s.user} / ${s.password}` : s.password);
-}
-
-// inbox links Mailpit's web UI, which the daemon serves at mail.<the
-// Dashboard's Domain> (location.host keeps a non-443 port).
-function inbox() {
-  const host = `mail.${location.host}`;
-  return h("a", { class: "inbox", href: `https://${host}/`, target: "_blank", rel: "noopener" }, "Inbox");
 }
 
 function badge(state) {

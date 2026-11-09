@@ -37,7 +37,7 @@ func (d *Daemon) unlink(ctx context.Context, dir string) (api.UnlinkResponse, er
 				continue
 			}
 		}
-		orphans = append(orphans, worktreeOrphans(p, w, cfg, now)...)
+		orphans = append(orphans, d.worktreeOrphans(p, w, cfg, now)...)
 	}
 	// Forgotten first, so a Worktree Watcher report meanwhile finds no
 	// Project to sync.
@@ -50,6 +50,7 @@ func (d *Daemon) unlink(ctx context.Context, dir string) (api.UnlinkResponse, er
 		d.preparer.Forget(w.dir)
 	}
 	d.addOrphans(orphans)
+	d.projectUnlinked(p)
 	for _, o := range orphans {
 		res.Orphans = append(res.Orphans, apiOrphan(o))
 	}

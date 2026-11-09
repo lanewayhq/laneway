@@ -19,12 +19,12 @@ func (setupStack) Name() string { return "setup-stack" }
 
 func (setupStack) Detection() detect.Rule { return detect.Rule{File: "setup-stack"} }
 
-func (setupStack) Defaults(dir string) (config.Layer, error) {
-	return config.ParseLayer("the setup-stack Recipe", []byte(`
+func (setupStack) Defaults(dir string) (recipe.Result, error) {
+	return layered(config.ParseLayer("the setup-stack Recipe", []byte(`
 [worktree]
 on_create = ["composer install", "php artisan storage:link"]
 on_remove = ["php artisan cache:clear"]
-`))
+`)))
 }
 
 func TestTheRecipesSetupStepsRunFirstThenEachLayersInOrder(t *testing.T) {
@@ -88,7 +88,7 @@ func TestSetupConfigWrittenAsALayerResolvesToItself(t *testing.T) {
 			}
 			dir := filepath.Join("testdata", fixture)
 			for _, recipes := range [][]recipe.Recipe{nil, {setupStack{}}} {
-				again, err := recipe.Resolve(recipe.Input{Dir: dir, Layers: []config.Layer{written}, Recipes: recipes})
+				again, err := recipe.Resolve(recipe.Input{Engines: builtinEngines(), Dir: dir, Layers: []config.Layer{written}, Recipes: recipes})
 				if err != nil {
 					t.Fatal(err)
 				}
