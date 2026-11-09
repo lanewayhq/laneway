@@ -27,7 +27,7 @@ import (
 //
 // A Catalog that can't be fetched falls back to the copy kept last time;
 // with neither, nothing is fetched and the Project resolves with what is
-// installed (unchecked says why). A Catalog that is refused (its signature
+// installed, with a warning (unchecked says why). A Catalog that is refused (its signature
 // isn't Laneway's) is reported in warnings. It fails, naming them, if a
 // Plugin the Project needs can't be fetched, such as when offline.
 func (d *Daemon) fetchCatalogPlugins(ctx context.Context, dir string) (res catalogFetched, err error) {
@@ -45,7 +45,12 @@ func (d *Daemon) fetchCatalogPlugins(ctx context.Context, dir string) (res catal
 		if len(named) > 0 {
 			return res, uncheckedNamedError(named, loadErr)
 		}
+		// Without a Catalog, Laneway can't tell which of its Plugins
+		// detect the Project, so it can't name them: it says so.
 		res.unchecked = loadErr
+		res.warnings = append(res.warnings, fmt.Sprintf("Laneway has never been able to fetch the Catalog (%v), "+
+			"so it couldn't fetch any Plugin from it this Project needs, such as its Recipe; "+
+			"once Laneway can reach the Catalog, run `lane link` again", loadErr))
 		return res, nil
 	}
 	f := catalogFetch{d: d, ctx: ctx, latest: latestAllowed(cat, d.pins(dir)), failed: map[string]error{}}

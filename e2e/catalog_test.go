@@ -273,3 +273,17 @@ func TestAPluginAddedByHandIsntReplacedByTheCatalogs(t *testing.T) {
 	}
 	assertLineWith(t, d.MustRunCLI(d.Home, "plugin", "list").Stdout, "kv", "0.1.0", local)
 }
+
+func TestLinkingWithoutEverReachingTheCatalogWarnsThatPluginsItNeedsMayNotBeThere(t *testing.T) {
+	t.Parallel()
+	cat := fullCatalog(t)
+	cat.Offline()
+	d := catalogDaemon(t, cat)
+	repo := procfileRepo(t, "never-online-procfile", "web: sleep 60\n")
+
+	res := d.MustRunCLI(repo.Dir, "link", "--yes")
+
+	assertContains(t, res.Stderr, "warning: Laneway has never been able to fetch the Catalog")
+	assertContains(t, res.Stderr, "so it couldn't fetch any Plugin from it this Project needs")
+	assertContains(t, res.Stderr, "run `lane link` again")
+}
