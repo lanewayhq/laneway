@@ -191,3 +191,75 @@ func TestWithoutEverReachingTheCatalogAConfigErrorOnStartIsntPutDownToPluginsLan
 	assertContains(t, w, "unknown template variable {domian}")
 	assertNotContains(t, w, "couldn't fetch any Plugin from it this Project needs")
 }
+
+func TestFetchingAPluginLeavesTheAlwaysProcessesOfProjectsNotUsingItAsTheyAre(t *testing.T) {
+	t.Parallel()
+	cat := testkit.NewCatalog(t)
+	cat.Publish(testkit.Plugin(t, "kv"))
+	d := catalogDaemon(t, cat)
+	pids := gitfixture.TempDir(t)
+	otherPID, userPID := filepath.Join(pids, "other"), filepath.Join(pids, "user")
+	other := alwaysProject(t, "no-kv", "", otherPID)
+	user := alwaysProject(t, "uses-kv", "[services]\nkv = \"1\"\n", userPID)
+	d.MustRunCLI(other.Dir, "link", "--yes")
+	d.MustRunCLI(user.Dir, "link", "--yes")
+	waitForPID(t, userPID)
+	cat.Offline()
+	d.Stop()
+	removeFile(t, userPID)
+	upgrade(t, d) // kv can't be fetched again, so uses-kv's always Process doesn't start
+	waitForPID(t, otherPID)
+	d.MustRunCLI(other.Dir, "down", "worker") // which the developer then stops
+	removeFile(t, otherPID)
+
+	cat.Online()
+	d.RunCLI(user.Dir, "doctor")
+
+	waitForPID(t, userPID)
+	if _, err := os.Stat(otherPID); err == nil {
+		t.Fatal("fetching kv started again the always Process of a Project that doesn't use kv, which the developer stopped")
+	}
+}
+
+func TestAWorktreeSetUpWithoutAPluginItNeedsIsSetUpAgainOnceLaneDoctorFetchesIt(t *testing.T) {
+	t.Parallel()
+	cat := testkit.NewCatalog(t)
+	cat.Publish(testkit.Plugin(t, "layers"))
+	cat.Offline() // Laneway has never reached it
+	d := catalogDaemon(t, cat)
+	repo := gitfixture.New(t, "assets-later").
+		WriteFile("assets.json", layerJSON(t, map[string]any{"worktree": map[string]any{"on_create": []string{"touch assets-set-up"}}})).
+		Commit("an assets Integration with a setup step")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	marker := filepath.Join(repo.Dir, "assets-set-up")
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("the assets Integration's setup step ran without its Plugin")
+	}
+
+	cat.Online()
+	d.RunCLI(repo.Dir, "doctor")
+
+	eventually(t, "the assets Integration's setup step to run", func() bool {
+		_, err := os.Stat(marker)
+		return err == nil
+	})
+}
+
+// alwaysProject is a repo with config extra and an always Process,
+// worker, that writes its pid to pidFile.
+func alwaysProject(t *testing.T, name, extra, pidFile string) *gitfixture.Repo {
+	t.Helper()
+	return gitfixture.New(t, name).
+		WriteFile("laneway.toml", fmt.Sprintf("%s[processes.worker]\ncommand = %q\nstart_mode = \"always\"\n",
+			extra, "echo $$ > "+pidFile+"; exec sleep 600")).
+		Commit("an always Process")
+}
+
+// removeFile removes the file at path.
+func removeFile(t *testing.T, path string) {
+	t.Helper()
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+}

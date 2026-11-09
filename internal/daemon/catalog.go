@@ -120,6 +120,11 @@ func (d *Daemon) fetchCatalogPluginsFrom(ctx context.Context, cat *catalog.Catal
 		f.fetch(name)
 	}
 	res.fetched = f.fetched
+	if len(f.fetched) > 0 {
+		// Linked Projects may have been waiting for them, such as when the
+		// daemon couldn't fetch them when it started.
+		d.background(func() { d.pluginsFetched(f.fetched) })
+	}
 	if len(f.failed) > 0 {
 		return res, f.error(d.catalog.URL(), remedy)
 	}
@@ -182,6 +187,7 @@ func (f *catalogFetch) fetch(name string) {
 		return
 	}
 	f.d.log.Info("Plugin fetched from the Catalog", "plugin", p.Name, "version", p.Version, "sha256", p.SHA256)
+	f.d.pluginsGen.Add(1)
 	f.fetched = append(f.fetched, p)
 }
 

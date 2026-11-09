@@ -3,10 +3,14 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/lanewayhq/laneway/internal/catalog"
+	"github.com/lanewayhq/laneway/internal/envpatch"
+	"github.com/lanewayhq/laneway/internal/plugin"
 	"github.com/lanewayhq/laneway/internal/prepare"
+	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/registry"
 )
 
@@ -36,31 +40,27 @@ func (d *Daemon) fetchLinkedProjectsPlugins() {
 		d.catalogMu.Lock()
 		cat, loadErr := d.loadCatalog(ctx)
 		d.catalogMu.Unlock()
-		fetched := false
 		for _, p := range projects {
 			if ctx.Err() != nil {
 				return
 			}
-			fetched = d.fetchOnStart(ctx, cat, loadErr, p) || fetched
-		}
-		if fetched {
-			d.pluginsFetched()
+			d.fetchOnStart(ctx, cat, loadErr, p)
 		}
 	})
 }
 
 // fetchOnStart fetches the Catalog Plugins the Linked Project p needs from
-// cat (see fetchCatalogPluginsFrom), records what it couldn't fetch, and
-// reports whether it fetched any. It takes catalogMu for the Project alone,
-// so `lane link` and `lane status` don't wait for every Project's
-// downloads, and records the outcome before releasing it, so it can't undo
-// what a fetch right after, such as `lane doctor`'s, records.
-func (d *Daemon) fetchOnStart(ctx context.Context, cat *catalog.Catalog, loadErr error, p registry.Project) bool {
+// cat (see fetchCatalogPluginsFrom) and records what it couldn't fetch. It
+// takes catalogMu for the Project alone, so `lane link` and `lane status`
+// don't wait for every Project's downloads, and records the outcome before
+// releasing it, so it can't undo what a fetch right after, such as `lane
+// doctor`'s, records.
+func (d *Daemon) fetchOnStart(ctx context.Context, cat *catalog.Catalog, loadErr error, p registry.Project) {
 	d.catalogMu.Lock()
 	defer d.catalogMu.Unlock()
 	res, err := d.fetchCatalogPluginsFrom(ctx, cat, loadErr, p.Path, remedyStart)
 	if ctx.Err() != nil {
-		return false
+		return
 	}
 	switch {
 	case err != nil:
@@ -75,7 +75,6 @@ func (d *Daemon) fetchOnStart(ctx context.Context, cat *catalog.Catalog, loadErr
 				res.unchecked, err, remedyStart))
 		}
 	}
-	return len(res.fetched) > 0
 }
 
 // setUnfetched records why Laneway couldn't fetch the Catalog Plugins the
@@ -106,14 +105,16 @@ func (d *Daemon) unfetchedWarnings(dir string) []string {
 	return nil
 }
 
-// pluginsFetched brings the Linked Projects up to date with Catalog Plugins
-// just fetched. Until then their config may not have resolved, so the
-// Services whose Engines were missing weren't served, the Env Patch wasn't
-// applied, always Processes didn't start and setups failed at step
-// "config": those setups are retried, and the rest is done once each
-// Worktree is Ready. A Worktree's lazy Processes need nothing: they read
-// config anew when they start.
-func (d *Daemon) pluginsFetched() {
+// pluginsFetched brings the Worktrees of Linked Projects that use the
+// Catalog Plugins just fetched up to date with them. Until then their
+// config didn't resolve, or resolved without them: the Services whose
+// Engines were missing weren't served, and the Worktree may have been set up
+// and served without them (see catchUp). Worktrees that don't use them are
+// left as they are, so an always Process the developer stopped stays
+// stopped. A Worktree's lazy Processes need nothing: they read config anew
+// when they start.
+func (d *Daemon) pluginsFetched(fetched []plugin.Plugin) {
+	gen := d.pluginsGen.Load()
 	d.serveRecordedServices()
 	for _, p := range d.registry.Projects() {
 		worktrees := []worktreeRef{mainWorktreeRef(p)}
@@ -121,22 +122,61 @@ func (d *Daemon) pluginsFetched() {
 			worktrees = append(worktrees, linkedWorktreeRef(p, w))
 		}
 		for _, w := range worktrees {
-			if st := d.preparer.Status(w.dir); st.State == prepare.Failed && st.Step == prepare.StepConfig {
-				d.prepare(p, w, true)
+			cfg, err := d.plugins.ResolveDir(w.dir)
+			if err != nil || !slices.ContainsFunc(fetched, func(pl plugin.Plugin) bool { return usesPlugin(cfg, pl) }) {
+				continue
 			}
 			d.serveServicesOf(w.dir)
-			if s := d.servedWorktree(w.domain); s != nil {
-				d.catchUp(s)
-			}
+			d.catchUp(p, w, gen)
 		}
 	}
 }
 
-// catchUp applies the Env Patch of the Worktree served as s, restarting its
-// running Processes if that changed .env, and starts its always Processes,
-// in the background once it is Ready.
-func (d *Daemon) catchUp(s *served) {
+// usesPlugin reports whether a Worktree whose resolved config is cfg uses
+// the Plugin p: as p.UsedBy says, or in an env template, through a Service
+// variable of one of its Engines, such as {redis_port}.
+func usesPlugin(cfg recipe.Resolved, p plugin.Plugin) bool {
+	if len(p.UsedBy(cfg)) > 0 {
+		return true
+	}
+	templates := slices.Concat(slices.Collect(maps.Values(cfg.Env)), slices.Collect(maps.Values(cfg.LinkedEnv)))
+	for _, e := range p.Engines {
+		for _, v := range e.Variables() {
+			if slices.ContainsFunc(templates, func(t string) bool { return envpatch.Uses(t, v) }) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// catchUp brings the Worktree w of the Project p, whose config uses Catalog
+// Plugins fetched (pluginsGen reached gen), up to date with them, in the
+// background. Its setup is retried if it failed, and run again if it read
+// config before they were fetched; then, if it was served before they were,
+// its Env Patch is applied, restarting its running Processes if that
+// changed .env, and its always Processes start, once it is Ready. Each is
+// done once for gen, however many fetches reach it.
+func (d *Daemon) catchUp(p registry.Project, w worktreeRef, gen uint64) {
+	again := d.setupCatchesUp(w.dir, gen)
+	s := d.servedWorktree(w.domain)
+	if s != nil && !s.catchesUp(gen) {
+		s = nil
+	}
 	d.background(func() {
+		switch {
+		case d.preparer.Status(w.dir).State == prepare.Failed:
+			d.prepare(p, w, true)
+		case again:
+			// A setup still running finishes first.
+			if _, err := d.preparer.Wait(d.stopping, w.dir); err != nil {
+				return
+			}
+			d.preparer.Again(w.dir, d.setupPlan(p, w))
+		}
+		if s == nil {
+			return
+		}
 		if err := d.waitForReady(s); err != nil {
 			return
 		}
@@ -147,4 +187,35 @@ func (d *Daemon) catchUp(s *served) {
 		s.lifecycle.Unlock()
 		d.startAlways(s)
 	})
+}
+
+// setupReadsConfig records that the setup of the Worktree at dir is
+// reading its config, with the Plugins installed as of pluginsGen.
+func (d *Daemon) setupReadsConfig(dir string) {
+	d.setupGensMu.Lock()
+	defer d.setupGensMu.Unlock()
+	if d.setupGens == nil {
+		d.setupGens = map[string]uint64{}
+	}
+	d.setupGens[dir] = d.pluginsGen.Load()
+}
+
+// setupCatchesUp reports whether the setup of the Worktree at dir read its
+// config, while this daemon ran, before pluginsGen reached gen, and if so
+// records that it is caught up to gen.
+func (d *Daemon) setupCatchesUp(dir string, gen uint64) bool {
+	d.setupGensMu.Lock()
+	defer d.setupGensMu.Unlock()
+	if read, ok := d.setupGens[dir]; !ok || read >= gen {
+		return false
+	}
+	d.setupGens[dir] = gen
+	return true
+}
+
+// catchesUp reports whether s was served before pluginsGen reached gen,
+// and if so records that it is caught up to gen.
+func (s *served) catchesUp(gen uint64) bool {
+	served := s.pluginsGen.Load()
+	return served < gen && s.pluginsGen.CompareAndSwap(served, gen)
 }

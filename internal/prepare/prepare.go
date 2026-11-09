@@ -175,6 +175,25 @@ func (p *Preparer) Begin(dir string, plan Plan, retry bool) {
 			return
 		}
 	}
+	p.startLocked(dir, plan)
+}
+
+// Again prepares the Worktree at dir anew, from the first step, if its
+// setup has finished, Ready or Failed: for one that read its config before
+// something the config needs, such as a Plugin, was installed. It does
+// nothing while setup is running.
+func (p *Preparer) Again(dir string, plan Plan) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed || p.running[dir] != nil || !p.statuses[dir].Done() {
+		return
+	}
+	p.startLocked(dir, plan)
+}
+
+// startLocked starts preparing the Worktree at dir in the background with
+// the steps plan gives. p.mu is held.
+func (p *Preparer) startLocked(dir string, plan Plan) {
 	ctx, cancel := context.WithCancel(p.ctx)
 	j := &job{cancel: cancel, done: make(chan struct{})}
 	p.running[dir] = j

@@ -37,11 +37,6 @@ func (d *Daemon) fetchPlugins(ctx context.Context, req api.FetchPluginsRequest) 
 		return api.FetchPluginsResponse{}, err
 	}
 	res := api.FetchPluginsResponse{Warnings: fetched.warnings}
-	if len(fetched.fetched) > 0 {
-		// Linked Projects may have been waiting for them, such as when
-		// the daemon couldn't fetch them when it started.
-		d.background(d.pluginsFetched)
-	}
 	for _, p := range fetched.fetched {
 		res.Fetched = append(res.Fetched, apiPlugin(p))
 	}

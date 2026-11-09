@@ -156,6 +156,13 @@ type Daemon struct {
 	// Engine Laneway can fetch from an unknown one (see
 	// plugin.Options.Catalog).
 	lastCatalog *atomic.Pointer[catalog.Catalog]
+	// pluginsGen counts the Catalog Plugins fetched since the daemon
+	// started, so that what read config before one was can catch up with
+	// it (see pluginsFetched); setupGens is its value when each Worktree's
+	// setup, by directory, last read config.
+	pluginsGen  atomic.Uint64
+	setupGensMu sync.Mutex
+	setupGens   map[string]uint64
 	// unfetched is why Laneway couldn't fetch the Catalog Plugins each
 	// Linked Project needs when it started, by Project path, until a later
 	// fetch for it succeeds (see startfetch.go).
