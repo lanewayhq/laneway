@@ -1,0 +1,25 @@
+# PostgreSQL. Versions 9.3 and up are supported.
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  # For details on connection pooling, see Rails configuration guide
+  max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+
+development:
+  <<: *default
+  database: shop_development
+
+test:
+  <<: *default
+  database: shop_test
+
+production:
+  primary: &primary_production
+    <<: *default
+    database: shop_production
+    username: shop
+    password: <%= ENV["SHOP_DATABASE_PASSWORD"] %>
+  cache:
+    <<: *primary_production
+    database: shop_production_cache
+    migrations_paths: db/cache_migrate

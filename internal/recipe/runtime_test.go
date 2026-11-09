@@ -241,3 +241,64 @@ func TestAManifestThatIsNotJSONIsARuntimeWarning(t *testing.T) {
 
 	assertRuntimeWarning(t, res, runtimes.PHP, []string{"composer.json"}, nil)
 }
+
+func ruby(version string) runtimes.Runtime {
+	return runtimes.Runtime{Name: runtimes.Ruby, Version: version, Path: "/opt/ruby/bin/ruby"}
+}
+
+var noRuby = runtimes.Runtime{Name: runtimes.Ruby}
+
+func TestAMissingRubyAProjectWithAGemfileNeedsSuggestsTheVersionItsGemfileAsksFor(t *testing.T) {
+	dir := project(t, map[string]string{"Gemfile": "source \"https://rubygems.org\"\n\nruby \"3.4.7\"\n\ngem \"rails\"\n"})
+
+	res := resolveWith(t, dir, noPHP, noNode, noRuby)
+
+	assertRuntimeWarning(t, res, runtimes.Ruby,
+		[]string{"Ruby was not found through mise or on PATH", "Gemfile"},
+		[]string{"mise use ruby@3.4"})
+}
+
+func TestARubyOutsideTheGemfilesRubyIsARuntimeWarning(t *testing.T) {
+	dir := project(t, map[string]string{"Gemfile": "ruby \"~> 3.4\"\ngem \"rails\"\n"})
+
+	res := resolveWith(t, dir, noPHP, noNode, ruby("3.3.6"))
+
+	assertRuntimeWarning(t, res, runtimes.Ruby,
+		[]string{"Ruby 3.3.6", `"~> 3.4"`, "Gemfile"},
+		[]string{"mise use ruby@3.4"})
+}
+
+// The Gemfile's ruby is read the way Bundler reads it: RubyGems version
+// requirements, all of which must hold, or the version in a file.
+func TestTheGemfilesRubyFollowsRubyGemsSyntax(t *testing.T) {
+	tests := []struct {
+		ruby, rubyVersion string // the Gemfile's ruby arguments, and .ruby-version
+		version           string
+		satisfied         bool
+	}{
+		{`"3.4.7"`, "", "3.4.7", true},
+		{`"3.4.7"`, "", "3.4.6", false},
+		{`"~> 3.3"`, "", "3.9.1", true},
+		{`"~> 3.3"`, "", "4.0.0", false},
+		{`"~> 3.3.5"`, "", "3.3.9", true},
+		{`"~> 3.3.5"`, "", "3.4.0", false},
+		{`">= 3.1", "< 4"`, "", "3.4.1", true},
+		{`">= 3.1", "< 4"`, "", "4.0.0", false},
+		{`'>= 3.2'`, "", "3.1.6", false},
+		{`file: ".ruby-version"`, "ruby-3.4.7\n", "3.4.7", true},
+		{`file: ".ruby-version"`, "3.4.7\n", "3.4.1", false},
+		{`"3.4.7", engine: "ruby", engine_version: "3.4.7"`, "", "3.4.7", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.ruby+" "+tt.version, func(t *testing.T) {
+			files := map[string]string{"Gemfile": "source \"https://rubygems.org\"\nruby " + tt.ruby + "\ngem \"rails\"\n"}
+			if tt.rubyVersion != "" {
+				files[".ruby-version"] = tt.rubyVersion
+			}
+			res := resolveWith(t, project(t, files), noPHP, noNode, ruby(tt.version))
+			if got := len(res.RuntimeWarnings) == 0; got != tt.satisfied {
+				t.Errorf("Ruby %s satisfies ruby %s: got %v, want %v (warnings %+v)", tt.version, tt.ruby, got, tt.satisfied, res.RuntimeWarnings)
+			}
+		})
+	}
+}
