@@ -44,6 +44,7 @@ const railsServer = withEnv + "exec bin/rails server -b 127.0.0.1 -p {port}"
 
 func (Rails) Defaults(dir string) (config.Layer, error) {
 	l := config.Layer{Source: "the rails Recipe", Processes: map[string]config.ProcessLayer{}}
+	railsProcfileProcesses(&l, dir)
 	l.Processes["web"] = config.ProcessLayer{Command: ptr(railsServer), Primary: ptr(true)}
 	l.Env = map[string]string{}
 	railsDatabase(&l, dir)

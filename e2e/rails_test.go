@@ -175,3 +175,18 @@ func TestExecOfBundlerWithoutRubySuggestsInstallingTheGemfilesRubyWithMise(t *te
 	assertContains(t, res.Stderr, "bundle was not found through mise or on PATH")
 	assertContains(t, res.Stderr, "`mise use ruby@3.4`")
 }
+
+func TestARailsAppsProcfileDevWatchersRunAsProcessesReadingItsEnv(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	railsStubs(t, d)
+	repo := railsRepo(t, "rails-procfile", railsPostgresYml).
+		WriteFile("Procfile.dev", "web: bin/rails server -p 3000\njs: echo \"js watching for DATABASE_URL=$DATABASE_URL\" && exec sleep 600\n").
+		Commit("run the JS watcher with bin/dev")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+
+	startByBrowsing(t, d, "rails-procfile.localhost")
+
+	waitForLogs(t, d, repo.Dir, []string{"logs", "js"},
+		fmt.Sprintf("js watching for DATABASE_URL=postgresql://laneway:laneway@%s:5432/rails_procfile", d.ServiceHost()))
+}
