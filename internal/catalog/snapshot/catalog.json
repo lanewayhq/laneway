@@ -39,6 +39,20 @@
               }
             }
           ]
+        },
+        {
+          "version": "0.2.0",
+          "api_version": 1,
+          "url": "https://github.com/lanewayhq/plugins/releases/download/laravel/v0.2.0/laravel-0.2.0.tar.gz",
+          "sha256": "01c23f96f0f5c8b06f1354b1c5505b6bff7afdffd2b4b60777850751824ae19c",
+          "recipes": [
+            {
+              "name": "laravel",
+              "detect": {
+                "file": "artisan"
+              }
+            }
+          ]
         }
       ]
     },
@@ -50,6 +64,15 @@
           "api_version": 1,
           "url": "https://github.com/lanewayhq/plugins/releases/download/mailpit/v1.0.0/mailpit-1.0.0.tar.gz",
           "sha256": "5d5acfd689fd7190b6f48fdf1e7ec7966dd9715621991f9517f4af2ad7b03fe9",
+          "engines": [
+            "mailpit"
+          ]
+        },
+        {
+          "version": "1.1.0",
+          "api_version": 1,
+          "url": "https://github.com/lanewayhq/plugins/releases/download/mailpit/v1.1.0/mailpit-1.1.0.tar.gz",
+          "sha256": "68c471c11eed989b0c03ec6a9a271c3acd30f3650ebc3e0839d57d34c3611411",
           "engines": [
             "mailpit"
           ]
@@ -136,6 +159,20 @@
           "sha256": "e08829e39d0bc39ea6ab65171e51ec6c7b6b18d9d264a42eb7af3d4d9694c818",
           "engines": [
             "redis"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "rustfs",
+      "releases": [
+        {
+          "version": "1.0.0",
+          "api_version": 1,
+          "url": "https://github.com/lanewayhq/plugins/releases/download/rustfs/v1.0.0/rustfs-1.0.0.tar.gz",
+          "sha256": "5673377ab127205797e79f2a1ecc36a58f5bd3d39364490d9d5b2e6e97e5a41d",
+          "engines": [
+            "rustfs"
           ]
         }
       ]
