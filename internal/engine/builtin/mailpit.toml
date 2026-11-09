@@ -1,0 +1,25 @@
+# Mailpit: an SMTP server that catches all mail, and an inbox to read it
+# (web_port, served at the mail Domain). It accepts any login or none, so
+# apps can use the shared credentials or no credentials. Mail is kept in the
+# volume, so it survives Idle.
+name = "mailpit"
+default_version = "v1"
+image = "docker.io/axllent/mailpit"
+port = 1025
+web_port = 8025
+data_dir = "/data"
+
+[env]
+MP_DATABASE = "/data/mailpit.db"
+MP_SMTP_AUTH_ACCEPT_ANY = "true"
+MP_SMTP_AUTH_ALLOW_INSECURE = "true"
+
+# SMTP's greeting once it is ready...
+[[ready]]
+kind = "banner"
+expect = "220"
+
+# ...and the inbox, so its first page doesn't fail while Mailpit starts.
+[[ready]]
+kind = "http"
+port = 8025

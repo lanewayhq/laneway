@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lanewayhq/laneway/internal/pgwire"
+	"github.com/lanewayhq/laneway/internal/testkit/pgwire"
 )
 
 // TestPostgresDatabasesOnARealContainerEngine is the slow tier for Postgres:

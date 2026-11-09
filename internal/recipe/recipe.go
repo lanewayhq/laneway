@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/runtimes"
 	"github.com/lanewayhq/laneway/internal/service"
 )
@@ -498,7 +499,7 @@ func Resolve(in Input) (Resolved, error) {
 	}
 	// A database in a Service needs the Service: at the version
 	// [services] pins, else the engine's default.
-	e, inService := service.Lookup(res.Database.Engine)
+	e, inService := engine.Lookup(res.Database.Engine)
 	if inService && services[e.Name] == "" {
 		services[e.Name] = e.DefaultVersion
 	}

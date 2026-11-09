@@ -6,8 +6,9 @@
 // Servers are chosen by image: see Fake.Serve. Commands run in a container
 // (Exec) are answered per image too, by a Command sharing the container's
 // Volume: see Fake.AnswerCommands. Redis, Mailpit, Postgres and MySQL are
-// built in; adding a Service engine to the fake means writing a Server (and
-// a Command, if Laneway runs commands in it) for its image.
+// built in; adding an Engine to the fake means writing a Server for its
+// image, and a Command if its manifest runs commands in the container (a
+// command readiness probe, or database commands).
 package containertest
 
 import (

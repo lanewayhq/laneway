@@ -10,7 +10,7 @@ import (
 
 	"github.com/lanewayhq/laneway/internal/config"
 	"github.com/lanewayhq/laneway/internal/dotenv"
-	"github.com/lanewayhq/laneway/internal/service"
+	"github.com/lanewayhq/laneway/internal/engine"
 )
 
 // Laravel is the Laravel Recipe: a Project with an artisan file. Its
@@ -99,19 +99,19 @@ func laravelServices(l *config.Layer, env laravelEnv) {
 		env.setting("QUEUE_CONNECTION", "database") == "redis" ||
 		env.setting("SESSION_DRIVER", "database") == "redis"
 	if redis {
-		l.Services[service.Redis.Name] = service.Redis.DefaultVersion
+		l.Services["redis"] = defaultVersion("redis")
 		l.Env["REDIS_HOST"] = "{redis_host}"
 		l.Env["REDIS_PORT"] = "{redis_port}"
 		l.Env["REDIS_PASSWORD"] = "{redis_password}"
 	}
-	l.Services[service.Mailpit.Name] = service.Mailpit.DefaultVersion
+	l.Services["mailpit"] = defaultVersion("mailpit")
 	l.Env["MAIL_MAILER"] = "smtp"
 	l.Env["MAIL_HOST"] = "{mailpit_host}"
 	l.Env["MAIL_PORT"] = "{mailpit_port}"
 }
 
 // laravelConnections maps the Laravel DB_CONNECTION values Laneway has a
-// database engine (database.Engines) for to that engine.
+// database engine (database.New) for to that engine.
 var laravelConnections = map[string]string{"sqlite": "sqlite", "pgsql": "postgres", "mysql": "mysql"}
 
 // laravelDatabase gives the Project the database its DB_CONNECTION names: a
@@ -119,7 +119,7 @@ var laravelConnections = map[string]string{"sqlite": "sqlite", "pgsql": "postgre
 // Worktree.
 func laravelDatabase(l *config.Layer, dir string, env laravelEnv) {
 	connection := env.setting("DB_CONNECTION", "sqlite")
-	engine, ok := laravelConnections[connection]
+	dbEngine, ok := laravelConnections[connection]
 	if !ok {
 		known := slices.Sorted(maps.Keys(laravelConnections))
 		l.Warnings = append(l.Warnings, fmt.Sprintf("%s: DB_CONNECTION is %q, which Laneway has no database for "+
@@ -130,12 +130,12 @@ func laravelDatabase(l *config.Layer, dir string, env laravelEnv) {
 	}
 	l.Env["DB_CONNECTION"] = connection
 	l.Env["DB_DATABASE"] = "{db}"
-	if _, inService := service.Lookup(engine); !inService {
+	if _, inService := engine.Lookup(dbEngine); !inService {
 		// A file in each Worktree.
-		l.Database = &config.DatabaseLayer{Engine: ptr(engine), Path: ptr(sqlitePath(dir, env))}
+		l.Database = &config.DatabaseLayer{Engine: ptr(dbEngine), Path: ptr(sqlitePath(dir, env))}
 		return
 	}
-	l.Database = &config.DatabaseLayer{Engine: ptr(engine)}
+	l.Database = &config.DatabaseLayer{Engine: ptr(dbEngine)}
 	l.Env["DB_HOST"] = "{db_host}"
 	l.Env["DB_PORT"] = "{db_port}"
 	l.Env["DB_USERNAME"] = "{db_username}"
@@ -185,3 +185,13 @@ func (e laravelEnv) setting(key, def string) string {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// defaultVersion is the default version of the Engine called name, one
+// Laneway has built in.
+func defaultVersion(name string) string {
+	e, ok := engine.Lookup(name)
+	if !ok {
+		panic("no Engine " + name)
+	}
+	return e.DefaultVersion
+}

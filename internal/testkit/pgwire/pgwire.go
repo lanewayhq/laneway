@@ -1,11 +1,13 @@
-// Package pgwire is a small Postgres client: just enough of the frontend/
-// backend protocol (v3) for Laneway to manage databases in its Postgres
-// Service. It logs in (cleartext, MD5 or SCRAM-SHA-256 passwords) and runs
-// simple queries, whose results come back as text.
+// Package pgwire is a small Postgres client for tests: just enough of the
+// frontend/backend protocol (v3) to read and change databases in Laneway's
+// Postgres Service, as an app would. Laneway itself carries no Postgres
+// client: it manages databases with the commands in the Postgres Engine's
+// manifest, run inside the Service's container (package engine). It logs in
+// (cleartext, MD5 or SCRAM-SHA-256 passwords) and runs simple queries, whose
+// results come back as text.
 //
-// It is written here rather than taken from a driver for the same reason the
-// container engine client is: Laneway needs a handful of statements, and a
-// driver would bring in far more than that.
+// It is written here rather than taken from a driver because the tests need
+// a handful of statements, and a driver would bring in far more than that.
 package pgwire
 
 import (

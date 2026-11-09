@@ -1,0 +1,11 @@
+# Redis. It has no users: clients log in with the shared password alone.
+# appendonly keeps the data in the volume across restarts.
+name = "redis"
+default_version = "7"
+image = "docker.io/library/redis"
+port = 6379
+data_dir = "/data"
+command = ["redis-server", "--requirepass", "{password}", "--appendonly", "yes"]
+
+[[ready]]
+kind = "redis-ping"

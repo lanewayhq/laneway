@@ -10,6 +10,7 @@ import (
 
 	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/service"
 )
@@ -23,7 +24,7 @@ import (
 // serveRecordedServices serves the Services the Registry has ports for.
 func (d *Daemon) serveRecordedServices() {
 	for _, rs := range d.registry.Services() {
-		e, ok := service.Lookup(rs.Engine)
+		e, ok := engine.Lookup(rs.Engine)
 		if !ok {
 			d.log.Warn("unknown Service in the Registry", "engine", rs.Engine)
 			continue
@@ -35,7 +36,7 @@ func (d *Daemon) serveRecordedServices() {
 // serveServices records and serves the Services in services.
 func (d *Daemon) serveServices(services []recipe.Service) {
 	for _, s := range services {
-		e, ok := service.Lookup(s.Engine)
+		e, ok := engine.Lookup(s.Engine)
 		if !ok {
 			continue // config rejects unknown engines
 		}
@@ -62,7 +63,7 @@ func (d *Daemon) serveServicesOf(dir string) {
 func (d *Daemon) serviceVars(services []recipe.Service) map[string]string {
 	vars := map[string]string{}
 	for _, s := range services {
-		e, ok := service.Lookup(s.Engine)
+		e, ok := engine.Lookup(s.Engine)
 		if !ok {
 			continue
 		}
@@ -147,7 +148,7 @@ func apiService(st service.Status) api.Service {
 		Host:     st.Host,
 		Port:     st.Port,
 		User:     st.Engine.User,
-		Password: service.Password,
+		Password: engine.Password,
 		State:    st.State,
 		Error:    st.Error,
 	}

@@ -16,7 +16,7 @@ import (
 
 	"github.com/lanewayhq/laneway/internal/config"
 	"github.com/lanewayhq/laneway/internal/dotenv"
-	"github.com/lanewayhq/laneway/internal/service"
+	"github.com/lanewayhq/laneway/internal/engine"
 )
 
 // Rails is the Rails Recipe: a Project whose Gemfile declares the rails gem
@@ -54,7 +54,7 @@ func (Rails) Defaults(dir string) (config.Layer, error) {
 }
 
 // railsAdapters maps the Active Record adapters Laneway has a database
-// engine (database.Engines) for to that engine.
+// engine (database.New) for to that engine.
 var railsAdapters = map[string]string{
 	"sqlite3":    "sqlite",
 	"postgresql": "postgres",
@@ -78,7 +78,7 @@ func railsDatabase(l *config.Layer, dir string) {
 	if db.adapter == "" {
 		return
 	}
-	engine, ok := railsAdapters[db.adapter]
+	dbEngine, ok := railsAdapters[db.adapter]
 	if !ok {
 		known := slices.Sorted(maps.Keys(railsAdapters))
 		l.Warnings = append(l.Warnings, fmt.Sprintf("%s: %s uses the %q adapter, which Laneway has no database for "+
@@ -87,13 +87,13 @@ func railsDatabase(l *config.Layer, dir string) {
 			strings.Join(known[:len(known)-1], ", "), known[len(known)-1], config.FileName))
 		return
 	}
-	if _, inService := service.Lookup(engine); !inService {
+	if _, inService := engine.Lookup(dbEngine); !inService {
 		// A file in each Worktree.
-		l.Database = &config.DatabaseLayer{Engine: ptr(engine), Path: ptr(railsSQLitePath(dir, db.database))}
+		l.Database = &config.DatabaseLayer{Engine: ptr(dbEngine), Path: ptr(railsSQLitePath(dir, db.database))}
 		l.Env["DATABASE_URL"] = db.adapter + ":{db}"
 		return
 	}
-	l.Database = &config.DatabaseLayer{Engine: ptr(engine)}
+	l.Database = &config.DatabaseLayer{Engine: ptr(dbEngine)}
 	l.Env["DATABASE_URL"] = db.adapter + "://{db_username}:{db_password}@{db_host}:{db_port}/{db}"
 }
 
