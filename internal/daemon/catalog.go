@@ -19,9 +19,11 @@ import (
 
 // fetchCatalogPlugins installs the Catalog Plugins the Project in dir needs
 // and doesn't have yet, each at its latest release for this Laneway's Plugin
-// API version (spec #48, ADR-0007): a Recipe that detects it, if no Recipe
-// Laneway has does; each Integration that detects it; and the Engines its
-// config names. Only Catalog Plugins are fetched this way.
+// API version (spec #48, ADR-0007): the Plugins its config names (see
+// namedplugins.go); a Recipe that detects it, if no Recipe Laneway has does;
+// each Integration that detects it; and the Engines its config names. Only
+// Catalog Plugins are fetched this way: config naming any other fails,
+// saying to add it by hand.
 //
 // A Catalog that can't be fetched falls back to the copy kept last time;
 // with neither, nothing is fetched and the Project resolves with what is
@@ -38,7 +40,11 @@ func (d *Daemon) fetchCatalogPlugins(ctx context.Context, dir string) (res catal
 			res.warnings = append(res.warnings, loadErr.Error())
 		}
 	}
+	named := d.missingNamedPlugins(dir)
 	if cat == nil {
+		if len(named) > 0 {
+			return res, uncheckedNamedError(named, loadErr)
+		}
 		res.unchecked = loadErr
 		return res, nil
 	}
@@ -47,7 +53,20 @@ func (d *Daemon) fetchCatalogPlugins(ctx context.Context, dir string) (res catal
 		delete(f.latest, p.Name)
 	}
 
-	// The Recipe and Integrations first: their config may name Engines.
+	// The Plugins its config names first, since they may add its Recipe.
+	var notInCatalog []namedPlugin
+	for _, p := range named {
+		if _, ok := f.latest[p.name]; ok {
+			f.fetch(p.name)
+		} else {
+			notInCatalog = append(notInCatalog, p)
+		}
+	}
+	if len(notInCatalog) > 0 {
+		return res, notInCatalogError(notInCatalog)
+	}
+
+	// Then the Recipe and Integrations: their config may name Engines.
 	if !anyDetects(d.plugins.Recipes(), dir) {
 	recipes:
 		for _, name := range f.names() {
