@@ -331,6 +331,11 @@ const (
 
 	// CodeInvalidPlugin: a Plugin can't be added; the message says why.
 	CodeInvalidPlugin = "invalid_plugin"
+
+	// CodeUnknownPlugin: no installed Plugin has the name.
+	CodeUnknownPlugin = "unknown_plugin"
+	// CodeUnknownCommand: the Plugin has no command of the name.
+	CodeUnknownCommand = "unknown_command"
 )
 
 // Service is a shared Service, such as redis:7, and how to connect to it.
@@ -448,6 +453,8 @@ type Plugin struct {
 	SHA256 string `json:"sha256,omitempty"`
 	// Recipes are the Recipes it adds.
 	Recipes []PluginRecipe `json:"recipes"`
+	// Commands are the commands it adds, run as `lane <plugin> <command>`.
+	Commands []PluginCommand `json:"commands"`
 	// Effects are the kinds of effect it may return, each with what it
 	// lets the Plugin do; empty if it only returns config.
 	Effects []PluginEffect `json:"effects"`
@@ -461,6 +468,13 @@ type PluginRecipe struct {
 	// Detects describes the Projects its detection rule matches, such as
 	// "Procfile exists".
 	Detects string `json:"detects"`
+}
+
+// PluginCommand is a command a Plugin adds.
+type PluginCommand struct {
+	Name string `json:"name"`
+	// Summary says what it does.
+	Summary string `json:"summary"`
 }
 
 // PluginEffect is a kind of effect a Plugin may return.
@@ -492,4 +506,38 @@ type AddPluginResponse struct {
 	// Replaces is the installed Plugin of the same name it replaced (or
 	// would replace), if any.
 	Replaces *Plugin `json:"replaces,omitempty"`
+}
+
+// PluginCommandRequest is the body of POST
+// /v1/plugins/{plugin}/commands/{command}: run a Plugin's command in a
+// Worktree and apply the effects it returns.
+type PluginCommandRequest struct {
+	// Dir is a directory inside the Worktree, an absolute path.
+	Dir string `json:"dir"`
+	// Worktree, if set, names the Worktree instead, as for ControlRequest.
+	Worktree string `json:"worktree,omitempty"`
+	// Args are the command's arguments.
+	Args []string `json:"args,omitempty"`
+}
+
+// PluginCommandResult is what a Plugin's command did.
+type PluginCommandResult struct {
+	// Effects are the effects applied, in order, with what each did.
+	Effects []AppliedEffect `json:"effects"`
+	// Warnings are the command's warnings, and the effects Laneway refused
+	// and why.
+	Warnings []string `json:"warnings"`
+	// Error, if set, is why the command failed: its module failed, or an
+	// effect did, and the effects after it weren't applied.
+	Error string `json:"error,omitempty"`
+}
+
+// AppliedEffect is an effect a Plugin's command returned that Laneway
+// applied.
+type AppliedEffect struct {
+	Kind string `json:"kind"`
+	// Command is an exec effect's command and arguments.
+	Command []string `json:"command,omitempty"`
+	// Output is an exec effect's output, stdout and stderr together.
+	Output string `json:"output,omitempty"`
 }

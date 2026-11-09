@@ -45,8 +45,11 @@ type Request struct {
 	// manifest declares it.
 	Name string `json:"name"`
 	// Dir is the Project's directory as the module sees it: mounted
-	// read-only, and the module's working directory.
+	// read-only, and the module's working directory. For a CallCommand it
+	// is the Worktree the command was run in.
 	Dir string `json:"dir"`
+	// Args are a CallCommand's arguments, after the command's name.
+	Args []string `json:"args,omitempty"`
 }
 
 // Response is what a Plugin's module writes on stdout.
@@ -56,6 +59,8 @@ type Response struct {
 	Error string `json:"error,omitempty"`
 	// RecipeResult answers a CallRecipe.
 	*RecipeResult
+	// Effects answer a CallCommand: what Laneway does, in order.
+	Effects []Effect `json:"effects,omitempty"`
 }
 
 // RecipeResult is what a Recipe returns for a Project it detected.
@@ -136,7 +141,8 @@ type Recipe func(Project) (RecipeResult, error)
 // Plugin is what a Plugin's module handles, by the names its manifest
 // declares.
 type Plugin struct {
-	Recipes map[string]Recipe
+	Recipes  map[string]Recipe
+	Commands map[string]Command
 }
 
 // Run answers the request on stdin and exits: it is a Plugin module's whole
@@ -179,6 +185,16 @@ func handle(p Plugin, req Request) (Response, error) {
 			return Response{}, err
 		}
 		return Response{RecipeResult: &res}, nil
+	case CallCommand:
+		command, ok := p.Commands[req.Name]
+		if !ok {
+			return Response{}, fmt.Errorf("this Plugin has no command %q", req.Name)
+		}
+		effects, err := command(project, req.Args)
+		if err != nil {
+			return Response{}, err
+		}
+		return Response{Effects: effects}, nil
 	}
 	return Response{}, errors.New("this Plugin doesn't answer " + req.Call + " calls")
 }
