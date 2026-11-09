@@ -395,13 +395,17 @@ func TestTheLaravelRecipesConfigWrittenAsALayerResolvesToItself(t *testing.T) {
 				t.Fatalf("reading back:\n%s\n%v", buf.String(), err)
 			}
 			for _, recipes := range [][]recipe.Recipe{nil, recipe.Builtin} {
-				again, err := recipe.Resolve(recipe.Input{Dir: filepath.Join("testdata", fixture), Layers: []config.Layer{written}, Recipes: recipes})
-				if err != nil {
-					t.Fatal(err)
-				}
-				again.Recipe, again.Warnings = res.Recipe, res.Warnings
-				if !reflect.DeepEqual(again, res) {
-					t.Errorf("with Recipes %v, the written config\n%s\nresolves to\n  %+v\nwant\n  %+v", recipes, buf.String(), again, res)
+				for _, integrations := range [][]recipe.Integration{nil, recipe.BuiltinIntegrations} {
+					again, err := recipe.Resolve(recipe.Input{Dir: filepath.Join("testdata", fixture), Layers: []config.Layer{written},
+						Recipes: recipes, Integrations: integrations})
+					if err != nil {
+						t.Fatal(err)
+					}
+					again.Recipe, again.Integrations, again.Warnings = res.Recipe, res.Integrations, res.Warnings
+					if !reflect.DeepEqual(again, res) {
+						t.Errorf("with Recipes %v and Integrations %v, the written config\n%s\nresolves to\n  %+v\nwant\n  %+v",
+							recipes, integrations, buf.String(), again, res)
+					}
 				}
 			}
 		})
