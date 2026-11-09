@@ -62,9 +62,6 @@ var builtinFiles embed.FS
 // listed.
 var builtinOrder = []string{"redis", "mailpit", "postgres", "mysql"}
 
-// builtinSource is the Source of a built-in Plugin.
-const builtinSource = "built into Laneway"
-
 // builtin are the Plugins built into Laneway. They aren't installed, so
 // Host.List doesn't list them, and an installed Plugin can't take their
 // names or their Engines' names.
@@ -88,7 +85,7 @@ var builtin = sync.OnceValue(func() []Plugin {
 		if err != nil {
 			panic(err)
 		}
-		plugins = append(plugins, Plugin{Manifest: m, Dir: dir, Source: builtinSource, Engines: engines})
+		plugins = append(plugins, Plugin{Manifest: m, Dir: dir, Source: BuiltinSource, Engines: engines})
 	}
 	return plugins
 })

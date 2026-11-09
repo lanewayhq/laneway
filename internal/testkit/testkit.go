@@ -101,6 +101,7 @@ func StartDaemon(t testing.TB, opts ...Option) *Daemon {
 	env := map[string]string{
 		"HOME":            home,
 		"XDG_RUNTIME_DIR": runtimeDir,
+		"XDG_CACHE_HOME":  cacheHome,
 		"PATH":            path,
 	}
 	p, err := paths.FromEnv(func(k string) string { return env[k] })

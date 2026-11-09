@@ -1,7 +1,6 @@
 package recipe_test
 
 import (
-	"encoding/json"
 	"reflect"
 	"testing"
 
@@ -19,8 +18,8 @@ type ruleRecipe struct {
 
 func (r ruleRecipe) Name() string           { return r.name }
 func (r ruleRecipe) Detection() detect.Rule { return r.rule }
-func (r ruleRecipe) Defaults(string) (config.Layer, error) {
-	return config.Layer{Source: "the " + r.name + " Recipe"}, nil
+func (r ruleRecipe) Defaults(string) (recipe.Result, error) {
+	return recipe.Result{Layer: config.Layer{Source: "the " + r.name + " Recipe"}}, nil
 }
 
 // detectRecipe resolves a Project with the given files against one Recipe
@@ -79,20 +78,6 @@ func TestARecipeDeclaringAnyOfTwoRulesNamesTheOneTheProjectMatched(t *testing.T)
 		if _, matched := detectRecipe(t, map[string]string{"Gemfile": tc.gemfile}, rule); matched != tc.matched {
 			t.Errorf("Gemfile %q: matched by %q, want %q", tc.gemfile, matched, tc.matched)
 		}
-	}
-}
-
-func TestARailsAppDeclaringOnlyRailtiesIsARailsProject(t *testing.T) {
-	dir := project(t, map[string]string{
-		"config/application.rb": "module Shop\n  class Application < Rails::Application\n  end\nend\n",
-		"Gemfile":               "gem \"railties\"\ngem \"activerecord\"\n",
-	})
-	res, err := resolveBuiltin(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.Recipe != "rails" || res.RecipeRule != "config/application.rb exists and Gemfile declares railties" {
-		t.Errorf("Recipe %q matched by %q, want rails matched by its config/application.rb and railties", res.Recipe, res.RecipeRule)
 	}
 }
 
@@ -184,32 +169,5 @@ func TestRulesNestAndNameOnlyWhatMatched(t *testing.T) {
 				t.Errorf("matched by %q, want %q", matched, tc.matched)
 			}
 		})
-	}
-}
-
-func TestTheBuiltinRecipesAndIntegrationsDetectByRulesThatAreJSONData(t *testing.T) {
-	want := map[string]string{
-		"laravel": `{"file":"artisan"}`,
-		"rails":   `{"all":[{"file":"config/application.rb"},{"any":[{"gem":"rails"},{"gem":"railties"}]}]}`,
-		"vite":    `{"any":[{"package":"vite"},{"package":"laravel-vite-plugin"}]}`,
-	}
-	rules := map[string]detect.Rule{}
-	for _, r := range recipe.Builtin {
-		rules[r.Name()] = r.Detection()
-	}
-	for _, in := range recipe.BuiltinIntegrations {
-		rules[in.Name()] = in.Detection()
-	}
-	for name, rule := range rules {
-		var read detect.Rule
-		if err := json.Unmarshal([]byte(want[name]), &read); err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-		if !reflect.DeepEqual(read, rule) {
-			t.Errorf("%s's rule is %+v, want %s", name, rule, want[name])
-		}
-	}
-	if len(rules) != len(want) {
-		t.Errorf("built-in rules for %d Recipes and Integrations, want %d", len(rules), len(want))
 	}
 }
