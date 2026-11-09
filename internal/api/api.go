@@ -356,6 +356,11 @@ const (
 	// CodePluginsUnavailable: Linking needs Catalog Plugins that couldn't
 	// be fetched, such as when offline; the message names them.
 	CodePluginsUnavailable = "plugins_unavailable"
+
+	// CodeSourceChanged: a Plugin's source (such as its GitHub release)
+	// has something other than the preview the developer confirmed, so
+	// nothing was installed.
+	CodeSourceChanged = "source_changed"
 )
 
 // Service is a shared Service, such as redis:7, and how to connect to it.
@@ -560,6 +565,10 @@ type AddPluginRequest struct {
 	// Global adds it as a machine-wide Plugin, which only the global
 	// config or a Project's laneway.local.toml turns on.
 	Global bool `json:"global,omitempty"`
+	// Digest, required unless previewing, is the Digest of the preview the
+	// developer confirmed: if the source has anything else now, such as a
+	// GitHub release replaced since, nothing is added (CodeSourceChanged).
+	Digest string `json:"digest,omitempty"`
 }
 
 // AddPluginResponse is the Plugin added (or, previewing, that would be).
@@ -568,6 +577,9 @@ type AddPluginResponse struct {
 	// Replaces is the installed Plugin of the same name it replaced (or
 	// would replace), if any.
 	Replaces *Plugin `json:"replaces,omitempty"`
+	// Digest, previewing, hashes what was read from the source (its
+	// manifest, Engine files and module), for confirming it.
+	Digest string `json:"digest,omitempty"`
 }
 
 // UpdateHandAddedRequest is the body of POST /v1/plugins/{plugin}/update:
@@ -578,6 +590,9 @@ type UpdateHandAddedRequest struct {
 	// Preview only reads and checks what's there, changing nothing, so the
 	// developer can confirm it first.
 	Preview bool `json:"preview,omitempty"`
+	// Digest, required unless previewing, is the Digest of the preview the
+	// developer confirmed, as for AddPluginRequest.
+	Digest string `json:"digest,omitempty"`
 }
 
 // UpdateHandAddedResponse is the Plugin as updated (or, previewing, as it
@@ -588,6 +603,8 @@ type UpdateHandAddedResponse struct {
 	// UpToDate is true when the source has the version and hash already
 	// installed, so nothing changes.
 	UpToDate bool `json:"upToDate,omitempty"`
+	// Digest, previewing, is as for AddPluginResponse.
+	Digest string `json:"digest,omitempty"`
 }
 
 // RemovePluginResponse is the body of DELETE /v1/plugins/{plugin}: the

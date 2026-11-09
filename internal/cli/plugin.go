@@ -68,7 +68,7 @@ func runPluginAdd(ctx context.Context, env Env, args []string) error {
 	if err := checkPluginName(preview.Plugin); err != nil {
 		return err
 	}
-	req.Preview = false
+	req.Preview, req.Digest = false, preview.Digest
 	if !*yes {
 		printPlugin(env.Stdout, preview)
 		if !confirm(env, "Add it? [y/N] ") {

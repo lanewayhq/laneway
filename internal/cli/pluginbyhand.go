@@ -34,7 +34,7 @@ func updateByHand(ctx context.Context, env Env, c *client.Client, names []string
 			declined = append(declined, name)
 			continue
 		}
-		res, err := c.UpdateHandAdded(ctx, name, api.UpdateHandAddedRequest{})
+		res, err := c.UpdateHandAdded(ctx, name, api.UpdateHandAddedRequest{Digest: preview.Digest})
 		if err != nil {
 			return err
 		}

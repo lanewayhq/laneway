@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/lanewayhq/laneway/internal/api"
@@ -46,13 +47,17 @@ func (d *Daemon) updateHandAdded(ctx context.Context, name string, req api.Updat
 		return res, nil
 	}
 	if req.Preview {
+		res.Digest = p.Digest
 		return res, nil
 	}
-	add := d.plugins.AddFrom
-	if was.Global {
-		add = d.plugins.AddGlobal // it stays machine-wide
+	if req.Digest == "" {
+		return api.UpdateHandAddedResponse{}, &api.Error{Code: api.CodeBadRequest, Message: "digest must be the digest of the preview the developer confirmed"}
 	}
-	p, _, err = add(src, source)
+	p, _, err = d.plugins.AddPreviewed(src, source, was.Global, req.Digest) // a machine-wide Plugin stays machine-wide
+	if errors.Is(err, plugin.ErrChanged) {
+		return api.UpdateHandAddedResponse{}, &api.Error{Code: api.CodeSourceChanged,
+			Message: fmt.Sprintf("%s changed since it was shown, so Plugin %s wasn't updated; run `lane plugin update %s` again to see what it has now", source, name, name)}
+	}
 	if err != nil {
 		return api.UpdateHandAddedResponse{}, &api.Error{Code: api.CodeInvalidPlugin, Message: err.Error()}
 	}
