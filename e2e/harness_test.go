@@ -599,7 +599,6 @@ func TestHarnessAddNeedsAKnownHarnessAndAGitRepository(t *testing.T) {
 		{"harness"},
 		{"harness", "add"},
 		{"harness", "add", "cursor"},
-		{"harness", "add", "claude", "t3"},
 		{"harness", "remove", "claude"},
 	} {
 		res := d.RunCLI(repo.Dir, args...)
@@ -617,6 +616,31 @@ func TestHarnessAddNeedsAKnownHarnessAndAGitRepository(t *testing.T) {
 		t.Errorf("outside a git repository: exited %d, want 1:\n%s", res.ExitCode, res.Output())
 	}
 	assertContains(t, res.Stderr, "not inside a git repository")
+}
+
+func TestHarnessAddNamesTheUnknownFlagOrExtraArgumentAfterTheHarness(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	repo := gitfixture.New(t, "harness-after-name")
+
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"harness", "add", "claude", "--yes"}, "flag provided but not defined: -yes"},
+		{[]string{"harness", "add", "claude", "-bogus"}, "flag provided but not defined: -bogus"},
+		{[]string{"harness", "add", "claude", "t3"}, `unexpected argument "t3"`},
+		{[]string{"harness", "add"}, "name one Harness"},
+	} {
+		res := d.RunCLI(repo.Dir, tc.args...)
+		if res.ExitCode != 2 {
+			t.Errorf("lane %s exited %d, want 2:\n%s", strings.Join(tc.args, " "), res.ExitCode, res.Output())
+		}
+		assertContains(t, res.Stderr, tc.want)
+	}
+	if out := repo.Git("status", "--porcelain"); out != "" {
+		t.Errorf("usage errors changed files:\n%s", out)
+	}
 }
 
 func TestHarnessAddKeepsWindowsLineEndingsInMarkdown(t *testing.T) {
