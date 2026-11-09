@@ -25,7 +25,7 @@ A Worktree is Ready once its own database and Buckets exist and its env file has
 _Avoid_: Provisioned, set up, initialised
 
 **Preparing**:
-A Worktree is Preparing from when Laneway finds it until it is Ready: the files config says to copy are copied from the main Worktree, its database and Buckets are being made, its env file patched and its Project's steps run.
+A Worktree is Preparing from when Laneway finds it until it is Ready: the files config says to copy are copied from the main Worktree, its database and Buckets are being made, its env file patched and its Project's steps run. A Ready Worktree is Preparing again, for its Bucket steps only, when linking its Project again gives it Buckets it doesn't have yet.
 _Avoid_: Provisioning, setting up, initialising
 
 **Test Database**:

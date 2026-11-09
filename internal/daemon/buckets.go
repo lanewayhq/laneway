@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/lanewayhq/laneway/internal/api"
@@ -111,10 +112,68 @@ func (d *Daemon) bucketSteps(p registry.Project, w worktreeRef, cfg recipe.Resol
 			if err != nil {
 				return err
 			}
-			return configureBucket(ctx, c, b, d.worktreeOrigins(p, w), out)
+			if err := configureBucket(ctx, c, b, d.worktreeOrigins(p, w), out); err != nil {
+				return err
+			}
+			d.bucketMade(w.dir, b.Name)
+			return nil
 		}})
 	}
 	return steps
+}
+
+// bucketMade records that the setup of the Worktree at dir has made its
+// Bucket name (and configured it), while this daemon ran.
+func (d *Daemon) bucketMade(dir, name string) {
+	d.madeBucketsMu.Lock()
+	defer d.madeBucketsMu.Unlock()
+	if d.madeBuckets == nil {
+		d.madeBuckets = map[string][]string{}
+	}
+	if !slices.Contains(d.madeBuckets[dir], name) {
+		d.madeBuckets[dir] = append(d.madeBuckets[dir], name)
+	}
+}
+
+// bucketsMade reports whether the setup of the Worktree at dir has made
+// every Bucket in buckets while this daemon ran.
+func (d *Daemon) bucketsMade(dir string, buckets []worktreeBucket) bool {
+	d.madeBucketsMu.Lock()
+	defer d.madeBucketsMu.Unlock()
+	return !slices.ContainsFunc(buckets, func(b worktreeBucket) bool { return !slices.Contains(d.madeBuckets[dir], b.Name) })
+}
+
+// forgetMadeBuckets forgets what bucketMade recorded for the Worktree at
+// dir, which is gone or Preparing anew.
+func (d *Daemon) forgetMadeBuckets(dir string) {
+	d.madeBucketsMu.Lock()
+	defer d.madeBucketsMu.Unlock()
+	delete(d.madeBuckets, dir)
+}
+
+// prepareNewBuckets makes the Buckets the config of the Project p's Ready
+// Worktrees gives them and their setup hasn't made, such as once p declares
+// an object storage Service or another [buckets.<name>]: a Ready Worktree
+// isn't prepared again, so each such one runs its Bucket steps again
+// (Preparer.Refresh), Preparing until they end. A Bucket that exists is left
+// as it is and configured again, so a Worktree whose Buckets this daemon
+// hasn't seen made (it started since) does no harm by running them.
+func (d *Daemon) prepareNewBuckets(p registry.Project) {
+	for _, w := range d.worktreesOf(p) {
+		cfg, err := d.plugins.ResolveDir(w.dir)
+		if err != nil {
+			continue
+		}
+		if buckets := d.worktreeBuckets(p, w, cfg); len(buckets) > 0 && !d.bucketsMade(w.dir, buckets) {
+			d.preparer.Refresh(w.dir, func(ctx context.Context) ([]prepare.Step, error) {
+				cfg, err := d.plugins.ResolveDir(w.dir)
+				if err != nil {
+					return nil, err
+				}
+				return d.bucketSteps(p, w, cfg), nil
+			})
+		}
+	}
 }
 
 // worktreeOrigins are the origins browsers reach the Worktree w at: its own

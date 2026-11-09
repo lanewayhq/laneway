@@ -98,6 +98,7 @@ func (d *Daemon) teardown(p registry.Project, w worktreeRef) {
 	d.setupGensMu.Lock()
 	delete(d.setupGens, w.dir)
 	d.setupGensMu.Unlock()
+	d.forgetMadeBuckets(w.dir)
 	d.preparer.Go(fmt.Sprintf("on_remove for Worktree %q of Project %q", w.name, p.Name),
 		func(ctx context.Context) ([]prepare.Step, error) {
 			cfg, err := d.plugins.ResolveDir(p.Path)

@@ -216,3 +216,43 @@ func TestInfoListsTheWorktreesBuckets(t *testing.T) {
 	out := d.MustRunCLI(wt.Dir, "info").Stdout
 	assertLineWith(t, out, "Buckets", "bk-info--feature", "on", "objects:1")
 }
+
+func TestDeclaringObjectStorageInAReadyProjectAndLinkingAgainMakesItsBuckets(t *testing.T) {
+	t.Parallel()
+	d := objectsDaemon(t)
+	repo := gitfixture.New(t, "bk-later").WriteFile("README.md", "a shop\n").Commit("a shop")
+	d.MustRunCLI(repo.Dir, "link")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	wt := repo.AddWorktree("feature")
+	d.MustRunCLI(wt.Dir, "worktree", "ready")
+
+	// The objects Plugin is installed already, so Linking fetches nothing.
+	declared := "[services]\nobjects = \"1\"\n\n[buckets.public]\npublic = true\n"
+	repo.WriteFile("laneway.toml", declared)
+	wt.WriteFile("laneway.toml", declared)
+	d.MustRunCLI(repo.Dir, "link")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	d.MustRunCLI(wt.Dir, "worktree", "ready")
+
+	assertBuckets(t, d, "bk-later", "bk-later--feature", "bk-later-public", "bk-later-public--feature")
+	assertOrigins(t, d, "bk-later-public--feature", "https://feature.bk-later.localhost")
+	if status, _ := anonymousGet(t, d, "/bk-later-public--feature/missing.txt"); status != http.StatusNotFound {
+		t.Fatalf("an anonymous GET in the public Bucket answered %d, want 404: it may be read", status)
+	}
+}
+
+func TestDeclaringAnotherBucketInAReadyProjectAndLinkingAgainMakesIt(t *testing.T) {
+	t.Parallel()
+	d := objectsDaemon(t)
+	repo := serviceProject(t, "bk-more", `objects = "1"`, "")
+	d.MustRunCLI(repo.Dir, "link")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	assertBuckets(t, d, "bk-more")
+
+	repo.WriteFile("laneway.toml", "[services]\nobjects = \"1\"\n\n[buckets.exports]\n")
+	d.MustRunCLI(repo.Dir, "link")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+
+	assertBuckets(t, d, "bk-more", "bk-more-exports")
+	assertOrigins(t, d, "bk-more-exports", "https://bk-more.localhost")
+}

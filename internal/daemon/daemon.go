@@ -163,6 +163,10 @@ type Daemon struct {
 	pluginsGen  atomic.Uint64
 	setupGensMu sync.Mutex
 	setupGens   map[string]uint64
+	// madeBuckets are the Buckets each Worktree's setup, by directory, has
+	// made while this daemon ran (see prepareNewBuckets).
+	madeBucketsMu sync.Mutex
+	madeBuckets   map[string][]string
 	// unfetched is why Laneway couldn't fetch the Catalog Plugins each
 	// Linked Project needs when it started, by Project path, until a later
 	// fetch for it succeeds (see startfetch.go).

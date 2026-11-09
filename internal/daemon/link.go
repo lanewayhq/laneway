@@ -95,6 +95,8 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 		res.AlreadyLinked = true
 		// Linking from a Worktree the Watcher hasn't reported yet finds it.
 		d.syncWorktrees(ctx, project)
+		// Its config may give its Worktrees Buckets they don't have yet.
+		d.prepareNewBuckets(project)
 	case errors.Is(err, registry.ErrNameTaken):
 		taken, _ := d.nameTaken(name)
 		return api.LinkResponse{}, nameTakenError(name, taken)

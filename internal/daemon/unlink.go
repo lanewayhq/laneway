@@ -49,6 +49,7 @@ func (d *Daemon) unlink(ctx context.Context, dir string) (api.UnlinkResponse, er
 	for _, w := range worktrees {
 		d.stopWorktree(ctx, w.domain, w.dir)
 		d.preparer.Forget(w.dir)
+		d.forgetMadeBuckets(w.dir)
 	}
 	d.addOrphans(orphans, gone)
 	d.projectUnlinked(p)
