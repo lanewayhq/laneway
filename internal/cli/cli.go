@@ -13,6 +13,7 @@ import (
 	"os"
 	"sort"
 
+	"github.com/lanewayhq/laneway/internal/catalog"
 	"github.com/lanewayhq/laneway/internal/client"
 	"github.com/lanewayhq/laneway/internal/paths"
 	"github.com/lanewayhq/laneway/internal/platform"
@@ -42,6 +43,11 @@ type Env struct {
 	// Platform does everything OS-specific (install, doctor, open). If nil,
 	// the real one for this machine is detected.
 	Platform platform.Platform
+	// Catalog is where the Catalog is and the key it is signed with: what
+	// `lane daemon` fetches from, and what commands reading config without
+	// the daemon check the copy it keeps against, to tell an Engine Laneway
+	// can fetch from an unknown one. The zero Location is Laneway's own.
+	Catalog catalog.Location
 }
 
 // Exit codes.

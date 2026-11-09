@@ -7,9 +7,11 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"sync"
 	"text/tabwriter"
 
 	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/catalog"
 	"github.com/lanewayhq/laneway/internal/github"
 	"github.com/lanewayhq/laneway/internal/paths"
 	"github.com/lanewayhq/laneway/internal/plugin"
@@ -217,11 +219,15 @@ func andList(items []string) string {
 }
 
 // openPlugins opens the installed Plugins, for commands that resolve a
-// Project's config without the daemon. The caller closes the Host.
+// Project's config without the daemon. The caller closes the Host. Config
+// naming an Engine that the copy of the Catalog the daemon keeps (or the
+// snapshot in Laneway) has, but that isn't installed, says to fetch it, as
+// it does in the daemon.
 func openPlugins(env Env) (*plugin.Host, error) {
 	p, err := paths.FromEnv(env.Getenv)
 	if err != nil {
 		return nil, err
 	}
-	return plugin.Open(plugin.Options{Dir: p.Plugins(), CacheDir: p.PluginCache(), GlobalConfig: p.GlobalConfig()})
+	cached := sync.OnceValue(func() *catalog.Catalog { return catalog.NewSource(env.Catalog, p.Catalog()).Cached() })
+	return plugin.Open(plugin.Options{Dir: p.Plugins(), CacheDir: p.PluginCache(), GlobalConfig: p.GlobalConfig(), Catalog: cached})
 }

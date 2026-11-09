@@ -332,7 +332,7 @@ func (h *Host) List() []Plugin {
 // the installed Plugins', by Plugin name, then in the order each declares
 // them.
 func (h *Host) Recipes() []recipe.Recipe {
-	return h.recipes(h.Engines(), h.catalogEngines())
+	return h.recipes(h.Engines(), h.CatalogEngines())
 }
 
 // recipes are Recipes, whose layers' Services may name engines.
@@ -373,7 +373,7 @@ func (h *Host) resolveDir(dir string, assumed []*engine.Manifest, found []runtim
 		return recipe.Resolved{}, err
 	}
 	engines := append(h.Engines(), assumed...)
-	catalog := h.catalogEngines()
+	catalog := h.CatalogEngines()
 	res, err := recipe.Resolve(recipe.Input{
 		Dir:            dir,
 		Layers:         layers,
@@ -387,10 +387,10 @@ func (h *Host) resolveDir(dir string, assumed []*engine.Manifest, found []runtim
 	return res, err
 }
 
-// catalogEngines are the Engines Laneway hasn't installed but can fetch
+// CatalogEngines are the Engines Laneway hasn't installed but can fetch
 // from the Catalog (see Options.Catalog): those that each Catalog Plugin not
 // installed adds at its latest release for this Laneway's Plugin API.
-func (h *Host) catalogEngines() []string {
+func (h *Host) CatalogEngines() []string {
 	if h.opts.Catalog == nil {
 		return nil
 	}

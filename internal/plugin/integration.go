@@ -58,7 +58,7 @@ func (h *Host) integrationsTaken(p Plugin) error {
 // installed Plugins'. The Recipe Resolver applies the detected ones by name,
 // whichever Plugin adds them.
 func (h *Host) Integrations() []recipe.Integration {
-	return h.integrations(h.Engines(), h.catalogEngines())
+	return h.integrations(h.Engines(), h.CatalogEngines())
 }
 
 // integrations are Integrations, whose layers' Services may name engines.

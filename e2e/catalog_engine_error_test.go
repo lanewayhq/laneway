@@ -92,3 +92,20 @@ func TestARecipeServiceWhoseEngineIsInTheCatalogButNotInstalledSaysToRunLaneDoct
 	want := "the laravel Recipe (Plugin laravel): services.mailpit: " + notInstalled("mailpit")
 	eventually(t, "lane info to say mailpit isn't installed", func() bool { return strings.Contains(configError(t, d, repo.Dir), want) })
 }
+
+func TestCommandsReadingConfigWithoutTheDaemonSayToRunLaneDoctorForAnEngineInTheCatalogButNotInstalled(t *testing.T) {
+	t.Parallel()
+	cat := testkit.NewCatalog(t)
+	cat.Publish(testkit.Plugin(t, "kv"))
+	d := catalogDaemon(t, cat)
+	repo := serviceProject(t, "kv-cli-not-installed", `kv = "1"`, "")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	cat.Offline()
+
+	upgrade(t, d)
+
+	want := "laneway.toml: services.kv: " + notInstalled("kv")
+	assertContains(t, d.RunCLI(repo.Dir, "worktree", "add", "feature").Stderr, want)
+	d.Stop() // so lane init reads config without fetching
+	assertContains(t, d.RunCLI(repo.Dir, "init", "--force").Stderr, want)
+}
