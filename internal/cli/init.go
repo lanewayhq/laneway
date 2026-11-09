@@ -49,7 +49,7 @@ func runInit(ctx context.Context, env Env, args []string) error {
 	}
 	defer plugins.Close()
 	in := recipe.Input{Dir: checkout.Dir, Recipes: plugins.Recipes(), Integrations: plugins.Integrations(), Engines: plugins.Engines(),
-		CatalogEngines: plugins.CatalogEngines()}
+		FetchableEngines: plugins.FetchableEngines()}
 	committed, err := config.LoadLayer(path)
 	switch {
 	case err == nil && !*force:

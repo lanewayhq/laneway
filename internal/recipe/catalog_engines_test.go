@@ -12,8 +12,8 @@ import (
 )
 
 // resolveWithout resolves testdata/<fixture> as if the Engine name weren't
-// installed and catalog were the Engines Laneway can fetch from the Catalog.
-func resolveWithout(t *testing.T, fixture, name string, catalog ...string) error {
+// installed and fetchable were the Engines Laneway can fetch from the Catalog.
+func resolveWithout(t *testing.T, fixture, name string, fetchable ...string) error {
 	t.Helper()
 	dir := filepath.Join("testdata", fixture)
 	layers, err := config.LoadLayers(dir)
@@ -21,7 +21,7 @@ func resolveWithout(t *testing.T, fixture, name string, catalog ...string) error
 		t.Fatal(err)
 	}
 	engines := slices.DeleteFunc(slices.Clone(firstPartyEngines()), func(e *engine.Manifest) bool { return e.Name == name })
-	_, err = recipe.Resolve(recipe.Input{Engines: engines, CatalogEngines: catalog, Dir: dir, Layers: layers})
+	_, err = recipe.Resolve(recipe.Input{Engines: engines, FetchableEngines: fetchable, Dir: dir, Layers: layers})
 	return err
 }
 

@@ -269,35 +269,29 @@ func processKeys(l Layer) []toml.Key {
 }
 
 // CheckEngines checks what in the layer needs an Engine Laneway can run,
-// engines: the Services it declares, database.engine, and the Service
-// variables its templates use. Engines come from Plugins, so this is checked
-// once they are known, when the Recipe Resolver merges the layer, not when
-// it's parsed. Naming an Engine among catalog, the Engines Laneway hasn't
-// installed but can fetch from the Catalog, is an EngineNotInstalled error
-// rather than an unknown Engine. Errors name the layer's Source and the key
-// at fault.
-func (l Layer) CheckEngines(engines engine.Set, catalog []string) error {
-	if err := l.checkEngines(engines, catalog); err != nil {
+// one of engines.Installed: the Services it declares, database.engine, and
+// the Service variables its templates use. Engines come from Plugins, so
+// this is checked once they are known, when the Recipe Resolver merges the
+// layer, not when it's parsed. Naming one Laneway can fetch from the
+// Catalog is an engine.NotInstalled error rather than an unknown Engine.
+// Errors name the layer's Source and the key at fault.
+func (l Layer) CheckEngines(engines engine.Known) error {
+	if err := l.checkEngines(engines); err != nil {
 		return fmt.Errorf("%s: %w", l.Source, err)
 	}
 	return nil
 }
 
-func (l Layer) checkEngines(engines engine.Set, catalog []string) error {
-	// fetchable reports whether the Engine name is one Laneway can fetch.
-	fetchable := func(name string) bool {
-		_, installed := engines.Lookup(name)
-		return !installed && slices.Contains(catalog, name)
-	}
+func (l Layer) checkEngines(engines engine.Known) error {
 	if db := l.Database; db != nil && db.Engine != nil {
-		if names := database.EngineNames(engines); !slices.Contains(names, *db.Engine) {
-			if fetchable(*db.Engine) {
-				return fmt.Errorf("database.engine: %w", EngineNotInstalled(*db.Engine))
+		if names := database.EngineNames(engines.Installed); !slices.Contains(names, *db.Engine) {
+			if engines.CanFetch(*db.Engine) {
+				return fmt.Errorf("database.engine: %w", engine.NotInstalled(*db.Engine))
 			}
 			return fmt.Errorf("database.engine must be %s, not %q", oneOf(names), *db.Engine)
 		}
 	}
-	serviceVars := engines.Variables()
+	serviceVars := engines.Installed.Variables()
 	for _, env := range []struct {
 		table     string
 		templates map[string]string
@@ -310,11 +304,11 @@ func (l Layer) checkEngines(engines engine.Set, catalog []string) error {
 			}
 			// A Service variable of an Engine Laneway can fetch, such as
 			// {redis_port}, isn't unknown.
-			for _, name := range catalog {
-				if fetchable(name) && slices.ContainsFunc(engine.Assumed(name).Variables(), func(v string) bool {
+			for _, name := range engines.Fetchable {
+				if engines.CanFetch(name) && slices.ContainsFunc(engine.Assumed(name).Variables(), func(v string) bool {
 					return envpatch.Uses(tmpl, v)
 				}) {
-					err = EngineNotInstalled(name)
+					err = engine.NotInstalled(name)
 					break
 				}
 			}
@@ -322,21 +316,11 @@ func (l Layer) checkEngines(engines engine.Set, catalog []string) error {
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(l.Services)) {
-		if _, ok := engines.Lookup(name); !ok {
-			if fetchable(name) {
-				return fmt.Errorf("services.%s: %w", key(name), EngineNotInstalled(name))
-			}
-			return fmt.Errorf("services.%s: Laneway has no Service %q; the Services are %s",
-				key(name), name, strings.Join(engines.Names(), ", "))
+		if _, err := engines.Lookup(name); err != nil {
+			return fmt.Errorf("services.%s: %w", key(name), err)
 		}
 	}
 	return nil
-}
-
-// EngineNotInstalled is the error for config naming the Engine name, which
-// Laneway hasn't installed but can fetch from the Catalog.
-func EngineNotInstalled(name string) error {
-	return fmt.Errorf("the %s Engine isn't installed; run `lane doctor` to fetch it from the Catalog", name)
 }
 
 // validate checks what can be checked within one layer. Rules that need

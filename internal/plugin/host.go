@@ -332,15 +332,15 @@ func (h *Host) List() []Plugin {
 // the installed Plugins', by Plugin name, then in the order each declares
 // them.
 func (h *Host) Recipes() []recipe.Recipe {
-	return h.recipes(h.Engines(), h.CatalogEngines())
+	return h.recipes(h.knownEngines())
 }
 
 // recipes are Recipes, whose layers' Services may name engines.
-func (h *Host) recipes(engines engine.Set, catalog []string) []recipe.Recipe {
+func (h *Host) recipes(engines engine.Known) []recipe.Recipe {
 	var recipes []recipe.Recipe
 	for _, p := range h.List() {
 		for _, r := range p.Recipes {
-			recipes = append(recipes, pluginRecipe{host: h, plugin: p, decl: r, engines: engines, catalog: catalog})
+			recipes = append(recipes, pluginRecipe{host: h, plugin: p, decl: r, engines: engines})
 		}
 	}
 	return recipes
@@ -372,25 +372,30 @@ func (h *Host) resolveDir(dir string, assumed []*engine.Manifest, found []runtim
 	if err != nil {
 		return recipe.Resolved{}, err
 	}
-	engines := append(h.Engines(), assumed...)
-	catalog := h.CatalogEngines()
+	engines := engine.Known{Installed: append(h.Engines(), assumed...), Fetchable: h.FetchableEngines()}
 	res, err := recipe.Resolve(recipe.Input{
-		Dir:            dir,
-		Layers:         layers,
-		Recipes:        h.recipes(engines, catalog),
-		Engines:        engines,
-		CatalogEngines: catalog,
-		Integrations:   h.integrations(engines, catalog),
-		Runtimes:       found,
+		Dir:              dir,
+		Layers:           layers,
+		Recipes:          h.recipes(engines),
+		Engines:          engines.Installed,
+		FetchableEngines: engines.Fetchable,
+		Integrations:     h.integrations(engines),
+		Runtimes:         found,
 	})
 	res.Plugins = on
 	return res, err
 }
 
-// CatalogEngines are the Engines Laneway hasn't installed but can fetch
-// from the Catalog (see Options.Catalog): those that each Catalog Plugin not
-// installed adds at its latest release for this Laneway's Plugin API.
-func (h *Host) CatalogEngines() []string {
+// knownEngines are the installed Engines and those Laneway can fetch.
+func (h *Host) knownEngines() engine.Known {
+	return engine.Known{Installed: h.Engines(), Fetchable: h.FetchableEngines()}
+}
+
+// FetchableEngines are the names of the Engines Laneway hasn't installed but
+// can fetch from the Catalog (see Options.Catalog): those that each Catalog
+// Plugin not installed adds at its latest release for this Laneway's Plugin
+// API.
+func (h *Host) FetchableEngines() []string {
 	if h.opts.Catalog == nil {
 		return nil
 	}
