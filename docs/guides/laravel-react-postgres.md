@@ -175,13 +175,15 @@ ls bun.lock
 
 `--react` picks the React starter kit, and the installer then asks:
 
-- **which of the starter kit's features to keep**
-- **Pest or PHPUnit**: either works with everything below
-- **whether to install Laravel Boost**: see §9.1 if you say yes
+- **Pest or PHPUnit**: either works with everything below (`--pest` or `--phpunit` answers it)
+- **whether to install Laravel Boost**: see §9.1 if you say yes (`--boost` or `--no-boost`)
+- **which authentication features to enable**: email verification, registration, two-factor authentication, passkeys and password confirmation, all selected by default. The kit's own installer (Laravel Chisel, run as `php artisan install:features`) asks this, removes the files of the features you leave out, and then deletes itself. Passkeys have a catch with Worktrees and Aliases (§8).
 
-For starter kits the installer runs `composer create-project laravel/react-starter-kit .starter-kit --stability=dev`, so you get the current kit: Laravel 13, Inertia 3, React 19 and Vite+.
+`--teams` adds team support and `--workos` uses WorkOS for authentication instead of Laravel's own. Either one installs a different branch of the kit; nothing below depends on them.
 
-`--bun` makes Bun the package manager. The kit's own post-create hook runs `npm install` first, because the kit ships no lockfile. The installer then runs `bun install` and `bun run build`, and `bun.lock` is created. Laneway's Laravel Recipe picks the package manager from the lockfile, so it uses `bun install` in every Worktree from now on. Bun also copies the kit's `pnpm-workspace.yaml` into `package.json` as `"workspaces": ["."]`. That's harmless: leave both files.
+For starter kits the installer runs `composer create-project laravel/react-starter-kit .starter-kit --stability=dev`, so you get the current kit: Laravel 13, Inertia 3, React 19, Vite+, Fortify (authentication) and Wayfinder (typed TypeScript functions for your routes and controller actions).
+
+`--bun` makes Bun the package manager. The kit's own installer runs `npm install` first, because the kit ships no lockfile. The installer then runs `bun install` and `bun run build`, and `bun.lock` is created. Laneway's Laravel Recipe picks the package manager from the lockfile, so it uses `bun install` in every Worktree from now on. Bun also copies the kit's `pnpm-workspace.yaml` into `package.json` as `"workspaces": ["."]`. That's harmless: leave both files.
 
 It takes about two minutes, and it migrates a temporary SQLite database, which the next step removes. Moving the app afterwards is safe: `vendor/` and `node_modules/.bin` only use relative paths.
 
@@ -189,7 +191,8 @@ Notes:
 
 - **Don't pass `--database=pgsql`.** For a starter kit the installer leaves the database question out and uses SQLite. With `--database=pgsql`, it runs `php artisan migrate` against Postgres before Laneway has created a database, so that step fails, and it writes `DB_DATABASE=.starter_kit` (from the folder name). Switch to Postgres in §5.2 instead.
 - The installer sets `APP_URL=http://localhost:8000` in `.env`. That's harmless: the next step deletes `.env`, and Laneway's Env Patch sets `APP_URL`.
-- Run it in a terminal. When its output isn't a terminal (piped to `tee`, in CI), the installer adds `--no-ansi` to every command, and `bun install` stops with "bun install has no --no-ansi flag". In that case, run `bun install && bun run build` in `.starter-kit` yourself afterwards.
+- **Run it yourself, in a terminal, not through an AI agent.** When its output isn't a terminal (piped to `tee`, in CI), the installer adds `--no-ansi` to every command, and `bun install` stops with "bun install has no --no-ansi flag". When it detects an AI agent (Claude Code, Codex, Cursor and others, from variables such as `CLAUDECODE`), it prints a one-line JSON result and still reports success, but Bun never installs the packages: there's no `bun.lock`, and `package.json` has no `"workspaces"`. Either way, check `ls bun.lock`. If it's missing, run `bun install && bun run build` in `.starter-kit` yourself before moving the app up.
+- The installer's last message says to start the app with `composer run dev` (which now runs `php artisan dev`: `artisan serve`, a queue listener, `pail` and `bun run dev`). Don't, here: Laneway runs the web server, the queue worker and Vite for you (§6), and a Vite started by hand leaves a `public/hot` that points pages at the wrong server (§11).
 
 ---
 
@@ -259,11 +262,14 @@ http = true
 
 `{vite_config}` is a config Laneway generates around your `vite.config.ts`. It moves Vite's live-reload socket to `wss://vite.<domain>` behind Laneway's proxy, so HMR works over HTTPS without changing your project.
 
-Then add migrations to the setup steps (`on_create` in the `[worktree]` table `lane init` wrote), so each new Worktree's database is migrated for its own branch. A cloned database is already migrated, so this is a no-op until the branch adds a migration:
+Then add two setup steps to `on_create` in the `[worktree]` table `lane init` wrote:
+
+- **`php artisan migrate --force`**, so each new Worktree's database is migrated for its own branch. A cloned database is already migrated, so this is a no-op until the branch adds a migration.
+- **`php artisan wayfinder:generate --with-form`**. The kit's pages import Wayfinder's generated TypeScript (`@/routes`, `@/actions`), and the kit's `.gitignore` keeps it out of git (`/resources/js/actions`, `/resources/js/routes`, `/resources/js/wayfinder`), so a new worktree starts without it. The `vite` Process and `bun run build` generate it whenever they start, so pages work without this step. What doesn't is anything run in a new Worktree before its first page load, such as an agent's `lane exec bun run types:check`, which fails with "Cannot find module '@/routes'".
 
 ```toml
 [worktree]
-on_create = ["composer install", "grep -Eq \"^APP_KEY=[\\\"']?[^\\\"'[:space:]#]\" .env || php artisan key:generate", "bun install", "php artisan storage:link", "php artisan migrate --force"]
+on_create = ["composer install", "grep -Eq \"^APP_KEY=[\\\"']?[^\\\"'[:space:]#]\" .env || php artisan key:generate", "bun install", "php artisan storage:link", "php artisan migrate --force", "php artisan wayfinder:generate --with-form"]
 ```
 
 The full file should now look like this:
@@ -283,7 +289,7 @@ static_dir = "public"
 
 [worktree]
 inherit_setup = false
-on_create = ["composer install", "grep -Eq \"^APP_KEY=[\\\"']?[^\\\"'[:space:]#]\" .env || php artisan key:generate", "bun install", "php artisan storage:link", "php artisan migrate --force"]
+on_create = ["composer install", "grep -Eq \"^APP_KEY=[\\\"']?[^\\\"'[:space:]#]\" .env || php artisan key:generate", "bun install", "php artisan storage:link", "php artisan migrate --force", "php artisan wayfinder:generate --with-form"]
 
 [database]
 engine = "postgres"
@@ -347,7 +353,7 @@ Laneway shows each env file it will create or change, as a diff of only the keys
 1. **database**: the first connection to port 5432 starts the shared `postgres:18` container (the image is pulled the first time, so this one is slow), and Laneway creates the database `shop`
 2. **test database**: an empty `shop_test`
 3. **env**: `.env` is created from `.env.example` with the Env Patch applied (`APP_URL=https://shop.localhost`, `DB_HOST=127.0.0.1`, `DB_PORT=5432`, `DB_DATABASE=shop`, `DB_USERNAME=laneway`, `DB_PASSWORD=laneway`, `MAIL_MAILER=smtp`, `MAIL_HOST=127.0.0.1`, `MAIL_PORT=1025`), and `.env.testing` gets the same keys with `DB_DATABASE=shop_test`. Before Laneway first changes an existing file, it saves the original as `<file>.laneway.bak`.
-4. **setup steps** (`[worktree] on_create`): `composer install`, `php artisan key:generate` (only if `APP_KEY` is empty), `bun install`, `storage:link`, `migrate --force`
+4. **setup steps** (`[worktree] on_create`): `composer install`, `php artisan key:generate` (only if `APP_KEY` is empty), `bun install`, `storage:link`, `migrate --force`, `wayfinder:generate`
 
 Wait for it, then open the app:
 
@@ -439,7 +445,7 @@ Laneway then prepares the new Worktree:
 | Buckets (with RustFS, §10) | `shop`         | `shop--feature-x`, a **copy** of `shop` with its files                              |
 | `.env`         | yours                      | a copy of the main Worktree's `.env` (same `APP_KEY`), with its own URL and database |
 | Cache/Redis keys | Laravel's defaults       | `CACHE_PREFIX` / `REDIS_PREFIX` = `shop_feature-x_`, so queues and caches never cross |
-| Setup steps    | run at link                | run again: `composer install`, `bun install`, `migrate --force`                     |
+| Setup steps    | run at link                | run again: `composer install`, `bun install`, `migrate --force`, `wayfinder:generate` |
 | Gitignored files | yours                    | the paths in `[worktree] copy` in `laneway.toml`, copied from the main Worktree (see §9.2)       |
 
 ```sh
@@ -467,6 +473,7 @@ The newest Alias becomes the Worktree's **Primary Domain**, and the Worktree's U
 - **`.env` follows it.** Laneway re-applies the Worktree's `.env` (and `.env.testing`), so `APP_URL` and anything else rendered from `{url}` or `{domain}` use the new name, and restarts the Worktree's running Processes (`php artisan serve`, queue workers, Vite) so they read it. Vite's live reload then connects at `vite.checkout.shop.localhost`. This happens in the background once the Worktree is Ready, so `.env` changes a moment after the command returns, and an Alias added while the Worktree is still being prepared takes effect when preparing finishes. A stopped Worktree only gets its `.env` rewritten and isn't started; its Processes pick up the new URL at their next start. The databases keep their names.
 - **The old names keep serving it.** `t3-298e5f25.shop.localhost` and any older Alias still reach the Worktree, but a browser loading a page there (a `GET` navigation) gets a temporary redirect (`307`, not cached) to the same path and query on the Primary Domain, so tabs opened before the Worktree was named move over on their next reload. Fetches, form posts, webhooks and `curl` on the old names are served as before, and `vite.<old name>` is never redirected.
 - **You log in again once.** Cookies belong to a host, so the browser has no session on the new name until you log in there.
+- **Passkeys don't follow it.** The kit's `config/fortify.php` takes the passkey relying party from `APP_URL`'s host, and a passkey only works for the relying party it was registered with. A passkey registered on `t3-298e5f25.shop.localhost` isn't offered on `checkout.shop.localhost`, and passkeys in a database a Worktree cloned from `shop` were registered on `shop.localhost`. Log in with the password there, and register another passkey if you need one.
 - **Removing the Alias moves the URL back** to the previous Alias, or to the Worktree's own Domain if it has none: the command says where, `.env` and the running Processes follow the same way, and the redirect goes with it.
 
 The main Worktree follows the same rule: `lane worktree alias demo` there makes `https://demo.shop.localhost/` its URL and redirects page loads from `shop.localhost`.
@@ -564,6 +571,8 @@ If you wrote `laneway.toml` with `lane init` before this change, add `redis = "7
 ## 10. Optional: object storage (S3) with RustFS
 
 If production keeps uploads on S3, use S3 locally too rather than the `local` disk, so private files, presigned URLs and browser uploads behave as they will in production. Laneway's first-party `rustfs` Plugin runs [RustFS](https://rustfs.com), S3-compatible object storage, as one shared Service like Postgres, and gives each Worktree its own **Bucket**, so two Worktrees (or two agents) never overwrite or delete each other's files. Nothing turns it on by itself: the Project declares it.
+
+> Object storage is newer than Laneway v0.1.0, the release `install.sh` installs today (§2), and needs the release after it.
 
 ### 10.1 Declare RustFS
 
@@ -723,6 +732,9 @@ S3 clients outside the app, such as a GUI, can use `http://127.0.0.1:9000` with 
 | `lane harness add claude`: "Laneway couldn't fetch the Plugin claude from the Catalog" | The same, for the Harness Plugin (§9.1). Get online and run it again. |
 | `lane worktree ready` exits 1 at `bun install`: "bun: not found" | The Worktree's `mise.toml` has no `bun` (§3), or it isn't installed yet. Add it, run `mise install`, then `lane worktree ready --retry`. |
 | The `vite` Process fails right away: `node_modules/.bin/vite: not found` | The Vite+ starter kit has no `vite` binary. Apply the `vp dev` override from §5.4, then `lane restart vite`. |
+| `lane init` shows `npm install` in `on_create`, not `bun install` | The app has no `bun.lock`, usually because an AI agent ran `laravel new` (§4.2). Run `bun install`, commit `bun.lock`, then `lane init` again and re-apply your edits. |
+| `bun run types:check` or the editor: "Cannot find module '@/routes'" (or `@/actions`) in a new Worktree | Wayfinder's generated files are gitignored and nothing has generated them yet. Add the `wayfinder:generate` step from §5.4, or run `lane exec php artisan wayfinder:generate --with-form` once. |
+| Logging in with a passkey fails, or the browser offers none, in a Worktree or after adding an Alias | Passkeys belong to the host they were registered on (§8). Log in with the password and register one on this host. |
 | Pages load without CSS or JS, or with a CORS or mixed-content error | Check `lane logs vite`. Check `public/hot` holds `https://vite.<domain>…` and not `http://127.0.0.1…`. A stale file from running `bun run dev` by hand is the usual cause: delete it, then `lane restart vite`. |
 | Tests touch `shop` or run on SQLite | `phpunit.xml` still sets `DB_CONNECTION` / `DB_DATABASE` (§5.3). Laneway warns about `DB_DATABASE` in `lane doctor` and in the Worktree's setup warnings. |
 | No Test Database even after adding `.env.testing` | The decision is made when the Worktree is prepared. Add `test = "on"` under `[database]` in `laneway.toml`. Existing Worktrees pick it up on `lane unlink` + `lane link` (their databases come straight back from Orphans). New ones get it right away. |
