@@ -1,0 +1,6 @@
+# Every change needs the maintainer's review: CI, the release workflow
+# and the install script above all.
+* @mrsafalpiya
+/.github/ @mrsafalpiya
+/install.sh @mrsafalpiya
+/internal/catalog/ @mrsafalpiya
