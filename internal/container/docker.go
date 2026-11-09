@@ -265,18 +265,44 @@ func (e *Docker) Stop(ctx context.Context, name string) error {
 	return err
 }
 
+// removeAttempts is how many times Remove asks the engine to delete a
+// container, and removeRetryDelay how long it waits between attempts.
+const removeAttempts = 3
+
+var removeRetryDelay = time.Second
+
 // Remove deletes the named container, stopping it first, and its named
 // volume (if any). Laneway itself never removes Services; tests clean up with
 // it.
+//
+// A forced delete stops the container first, and rootless Podman can fail
+// that stop with HTTP 500 ("could not be stopped: given PID did not die
+// within timeout") when the process is slow to die. Remove then kills the
+// container and tries the delete again, a bounded number of times.
 func (e *Docker) Remove(ctx context.Context, name, volume string) error {
-	err := e.do(ctx, http.MethodDelete, "/containers/"+url.PathEscape(name), url.Values{"force": {"1"}, "v": {"1"}}, nil, nil)
-	if err != nil && !isStatus(err, http.StatusNotFound) {
-		return err
+	path := "/containers/" + url.PathEscape(name)
+	for attempt := 1; ; attempt++ {
+		err := e.do(ctx, http.MethodDelete, path, url.Values{"force": {"1"}, "v": {"1"}}, nil, nil)
+		if err == nil || isStatus(err, http.StatusNotFound) {
+			break
+		}
+		if !isStatus(err, http.StatusInternalServerError) || attempt == removeAttempts {
+			return err
+		}
+		// The kill's answer doesn't matter: 404 or 409 mean the container
+		// is gone or no longer running, and the next delete reports
+		// anything else.
+		e.do(ctx, http.MethodPost, path+"/kill", nil, nil, nil)
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(removeRetryDelay):
+		}
 	}
 	if volume == "" {
 		return nil
 	}
-	err = e.do(ctx, http.MethodDelete, "/volumes/"+url.PathEscape(volume), url.Values{"force": {"1"}}, nil, nil)
+	err := e.do(ctx, http.MethodDelete, "/volumes/"+url.PathEscape(volume), url.Values{"force": {"1"}}, nil, nil)
 	if isStatus(err, http.StatusNotFound) {
 		return nil
 	}
