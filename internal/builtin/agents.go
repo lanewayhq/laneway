@@ -1,10 +1,12 @@
-package harness
+package builtin
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
+
+	"github.com/lanewayhq/laneway/sdk"
 )
 
 const (
@@ -32,91 +34,42 @@ const claudeImport = "@" + agentsFile + "\n"
 // importsAgents matches an existing import of AGENTS.md in CLAUDE.md.
 var importsAgents = regexp.MustCompile(`(^|\s)@(\./)?AGENTS\.md(\s|$)`)
 
-// instructionEdits add the agent instructions where the Project's agents
+// instructionEffects add the agent instructions where the Project's agents
 // read them: Laravel Boost's guidelines if the Project uses Boost, else
 // AGENTS.md, imported into CLAUDE.md if importIntoClaude.
-func instructionEdits(root string, importIntoClaude bool) ([]edit, error) {
-	boost, err := usesBoost(root)
-	if err != nil {
-		return nil, err
+func instructionEffects(p sdk.Project, importIntoClaude bool) ([]sdk.Effect, error) {
+	if usesBoost(p) {
+		return boostEffects(p), nil
 	}
-	if boost {
-		return boostEdits(root)
+	effects := []sdk.Effect{sdk.File(sdk.Markdown(agentsFile, agentsBlock))}
+	if importIntoClaude && needsClaudeImport(p) {
+		effects = append(effects, sdk.File(sdk.Markdown(claudeFile, claudeImport)))
 	}
-	agents, err := agentsEdit(root)
-	if err != nil {
-		return nil, err
-	}
-	edits := []edit{agents}
-	if !importIntoClaude {
-		return edits, nil
-	}
-	imp, ok, err := claudeImportEdit(root)
-	if err != nil {
-		return nil, err
-	}
-	if ok {
-		edits = append(edits, imp)
-	}
-	return edits, nil
+	return effects, nil
 }
 
-// agentsEdit adds Laneway's block to AGENTS.md, creating the file if needed.
-func agentsEdit(root string) (edit, error) {
-	return markdownEdit(root, agentsFile, agentsBlock)
-}
-
-// claudeImportEdit adds a marked import of AGENTS.md to CLAUDE.md. It returns
-// false when there is nothing to do: no CLAUDE.md (Claude Code then reads
-// AGENTS.md itself), CLAUDE.md is AGENTS.md (a link), or CLAUDE.md already
-// imports it.
-func claudeImportEdit(root string) (edit, bool, error) {
-	old, err := readFile(root, claudeFile)
-	if err != nil || old == nil {
-		return edit{}, false, err
-	}
-	if sameFile(filepath.Join(root, claudeFile), filepath.Join(root, agentsFile)) {
-		return edit{}, false, nil
-	}
-	if begin, _, err := findBlock(string(old)); err == nil && begin < 0 && importsAgents.Match(old) {
-		return edit{}, false, nil
-	}
-	e, err := markdownEdit(root, claudeFile, claudeImport)
-	return e, true, err
-}
-
-// markdownEdit merges body into the marked block of the file rel.
-func markdownEdit(root, rel, body string) (edit, error) {
-	old, err := readFile(root, rel)
-	if err != nil {
-		return edit{}, err
-	}
-	doc, err := mergeBlock(string(old), body)
-	if err != nil {
-		return edit{}, fmt.Errorf("%s: %w", rel, err)
-	}
-	return edit{path: rel, old: old, new: []byte(doc)}, nil
-}
-
-// removeBlockEdit takes Laneway's block out of the file rel. It returns false
-// when there is nothing to do: no file, or no block in it.
-func removeBlockEdit(root, rel string) (edit, bool, error) {
-	old, err := readFile(root, rel)
-	if err != nil || old == nil {
-		return edit{}, false, err
-	}
-	doc, ok, err := removeBlock(string(old))
-	if err != nil {
-		return edit{}, false, fmt.Errorf("%s: %w", rel, err)
-	}
-	return edit{path: rel, old: old, new: []byte(doc)}, ok, nil
-}
-
-func sameFile(a, b string) bool {
-	ia, err := os.Stat(a)
+// needsClaudeImport reports whether CLAUDE.md needs a marked import of
+// AGENTS.md. It doesn't when there is no CLAUDE.md (Claude Code then reads
+// AGENTS.md itself), when CLAUDE.md is AGENTS.md (a link), or when CLAUDE.md
+// imports it outside a Laneway block. A CLAUDE.md with a Laneway block keeps
+// it up to date.
+func needsClaudeImport(p sdk.Project) bool {
+	data, err := p.ReadFile(claudeFile)
 	if err != nil {
 		return false
 	}
-	ib, err := os.Stat(b)
+	if sameFile(p, claudeFile, agentsFile) {
+		return false
+	}
+	return strings.Contains(string(data), "<!-- laneway:begin") || !importsAgents.Match(data)
+}
+
+// sameFile reports whether a and b in the Project are one file.
+func sameFile(p sdk.Project, a, b string) bool {
+	ia, err := os.Stat(filepath.Join(p.Dir, a))
+	if err != nil {
+		return false
+	}
+	ib, err := os.Stat(filepath.Join(p.Dir, b))
 	return err == nil && os.SameFile(ia, ib)
 }

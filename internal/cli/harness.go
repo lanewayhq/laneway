@@ -2,18 +2,19 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"slices"
 	"strings"
-
-	"github.com/lanewayhq/laneway/internal/gitrepo"
-	"github.com/lanewayhq/laneway/internal/harness"
 )
 
-// runHarness is `lane harness add <harness>`. Like `init`, it works on the
-// current Worktree's files only, so it doesn't need the daemon.
+// harnesses are the Harnesses `lane harness add` knows, each the name of
+// the built-in Plugin whose Generator sets it up.
+var harnesses = []string{"claude", "t3"}
+
+// runHarness is `lane harness add <harness>`, a shortcut for `lane generate
+// <harness>` kept for the Harness Generators built into Laneway.
 func runHarness(ctx context.Context, env Env, args []string) error {
-	names := strings.Join(harness.Names(), "|")
+	names := strings.Join(harnesses, "|")
 	if len(args) == 0 || args[0] != "add" {
 		return usageError{fmt.Sprintf("use `lane harness add <%s>`", names)}
 	}
@@ -25,30 +26,8 @@ func runHarness(ctx context.Context, env Env, args []string) error {
 		return usageError{fmt.Sprintf("name one Harness: `lane harness add <%s>`", names)}
 	}
 	name := fs.Arg(0)
-
-	checkout, err := gitrepo.Resolve(ctx, env.Dir)
-	if errors.Is(err, gitrepo.ErrNotGitRepo) {
-		return fmt.Errorf("%s is not inside a git repository; run `lane harness add` from a git repository", env.Dir)
+	if !slices.Contains(harnesses, name) {
+		return usageError{fmt.Sprintf("unknown Harness %q; use one of: %s", name, strings.Join(harnesses, ", "))}
 	}
-	if err != nil {
-		return err
-	}
-	res, err := harness.Add(checkout.Dir, name)
-	if errors.Is(err, harness.ErrUnknownHarness) {
-		return usageError{fmt.Sprintf("unknown Harness %q; use one of: %s", name, strings.Join(harness.Names(), ", "))}
-	}
-	for _, c := range res.Changes {
-		switch {
-		case c.Created:
-			fmt.Fprintf(env.Stdout, "Created %s\n", c.Path)
-		case c.Changed:
-			fmt.Fprintf(env.Stdout, "Updated %s\n", c.Path)
-		default:
-			fmt.Fprintf(env.Stdout, "%s is up to date\n", c.Path)
-		}
-	}
-	for _, w := range res.Warnings {
-		fmt.Fprintf(env.Stderr, "warning: %s\n", w)
-	}
-	return err
+	return generate(ctx, env, name, "lane harness add")
 }

@@ -159,7 +159,9 @@ func apiService(st service.Status) api.Service {
 func (d *Daemon) listServices() api.ServiceList {
 	list := api.ServiceList{Services: []api.Service{}}
 	for _, st := range d.services.List() {
-		list.Services = append(list.Services, apiService(st))
+		s := apiService(st)
+		s.PluginItems = d.serviceItems(st)
+		list.Services = append(list.Services, s)
 	}
 	return list
 }
