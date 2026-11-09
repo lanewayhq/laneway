@@ -169,7 +169,7 @@ func TestTheInboxExplainsHowToDeclareMailpitWhenNoProjectUsesIt(t *testing.T) {
 	}
 }
 
-func TestOnAFreshInstallTheInboxSaysToDeclareMailpitInAProject(t *testing.T) {
+func TestOnAFreshInstallTheInboxSaysToDeclareTheEngineServingItInAProject(t *testing.T) {
 	t.Parallel()
 	d, _ := dashboardDaemon(t, "mail-fresh")
 
@@ -178,6 +178,9 @@ func TestOnAFreshInstallTheInboxSaysToDeclareMailpitInAProject(t *testing.T) {
 	if res.StatusCode != http.StatusBadGateway {
 		t.Fatalf("GET the inbox with no Mailpit Plugin = %d, want 502:\n%s", res.StatusCode, res.Body)
 	}
-	assertContains(t, res.Body, "no Project uses an inbox yet, such as Mailpit")
+	// Until the Mailpit Plugin is fetched, no Engine manifest says that
+	// mail is its Service Domain (the Catalog lists Engines' names only).
+	assertContains(t, res.Body, "nothing is served at mail.mail-fresh.localhost yet")
+	assertContains(t, res.Body, "Declare the Engine that does in the [services] table")
 	assertContains(t, res.Body, "Linking it fetches its Plugin from the Catalog")
 }

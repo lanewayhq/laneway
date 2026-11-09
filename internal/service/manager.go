@@ -286,28 +286,28 @@ func (m *Manager) Exec(ctx context.Context, name string, cmd []string) (containe
 	return m.opts.Engine.Exec(ctx, s.spec.Name, cmd)
 }
 
-// Web starts the Service called name if needed, like Up, and returns the
-// host address its engine's web UI (Engine.WebPort) is published on, for
-// the proxy to forward to.
-func (m *Manager) Web(ctx context.Context, name string) (string, error) {
+// Forward starts the Service called name if needed, like Up, and returns
+// the host address its container port port (the Engine's Port or WebPort,
+// as a Service Domain's is) is published on, for the proxy to forward to.
+func (m *Manager) Forward(ctx context.Context, name string, port int) (string, error) {
 	s, ok := m.lookup(name)
 	if !ok {
 		return "", fmt.Errorf("no Service %s", name)
 	}
-	if s.Engine.WebPort == 0 {
-		return "", fmt.Errorf("Service %s has no web UI", name)
+	if port == 0 || (port != s.Engine.Port && port != s.Engine.WebPort) {
+		return "", fmt.Errorf("Service %s doesn't publish port %d", name, port)
 	}
 	for attempt := 0; ; attempt++ {
 		addr, err := s.ensure(ctx)
 		if err != nil {
 			return "", err
 		}
-		web, running, err := m.opts.Engine.Running(ctx, s.spec.Name, s.Engine.WebPort)
+		published, running, err := m.opts.Engine.Running(ctx, s.spec.Name, port)
 		switch {
 		case err != nil:
-			return "", fmt.Errorf("finding Service %s's web UI: %w", name, err)
-		case running && web != "":
-			return web, nil
+			return "", fmt.Errorf("finding Service %s's port %d: %w", name, port, err)
+		case running && published != "":
+			return published, nil
 		case attempt > 0:
 			return "", fmt.Errorf("Service %s isn't running", name)
 		}
