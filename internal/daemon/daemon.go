@@ -204,6 +204,8 @@ func Start(cfg Config) (*Daemon, error) {
 		Log:      log,
 		Timeout:  cfg.PluginTimeout,
 		Builtin:  builtin.Plugins(),
+		// The global config may turn on machine-wide Plugins.
+		GlobalConfig: cfg.Paths.GlobalConfig(),
 	})
 	if err != nil {
 		ln.Close()

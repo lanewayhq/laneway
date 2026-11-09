@@ -95,11 +95,13 @@ func (h *Host) Hooking(event string, res recipe.Resolved) []Plugin {
 
 // usedBy reports whether a Project whose config is res uses the Plugin, so
 // its hooks fire there: its Recipe or one of its Integrations detected the
-// Project, or the Project uses one of its Engines. (Recipe, Integration and
-// Engine names are unique across Plugins and Laneway.) Plugins named in
-// config should count too, once config can name them.
+// Project, the Project uses one of its Engines, or its config turns the
+// Plugin on (Resolved.Plugins; only personal config can turn on a
+// machine-wide Plugin). (Recipe, Integration and Engine names are unique
+// across Plugins and Laneway.)
 func (p Plugin) usedBy(res recipe.Resolved) bool {
-	return slices.ContainsFunc(p.Recipes, func(r RecipeDecl) bool { return r.Name == res.Recipe }) ||
+	return slices.Contains(res.Plugins, p.Name) ||
+		slices.ContainsFunc(p.Recipes, func(r RecipeDecl) bool { return r.Name == res.Recipe }) ||
 		slices.ContainsFunc(p.Integrations, func(i IntegrationDecl) bool { return slices.Contains(res.Integrations, i.Name) }) ||
 		slices.ContainsFunc(p.Engines, func(e *engine.Manifest) bool {
 			return slices.ContainsFunc(res.Services, func(s recipe.Service) bool { return s.Engine == e.Name })

@@ -470,6 +470,9 @@ type Plugin struct {
 	Effects []PluginEffect `json:"effects"`
 	// HTTPHosts are the hosts its http effects may reach.
 	HTTPHosts []string `json:"httpHosts"`
+	// Global is true for a machine-wide Plugin (`lane plugin add
+	// --global`), which only personal config turns on.
+	Global bool `json:"global,omitempty"`
 }
 
 // PluginRecipe is a Recipe a Plugin adds.
@@ -526,6 +529,9 @@ type AddPluginRequest struct {
 	// Preview only reads and checks the Plugin, adding nothing, so the
 	// developer can confirm what it may do first.
 	Preview bool `json:"preview,omitempty"`
+	// Global adds it as a machine-wide Plugin, which only the global
+	// config or a Project's laneway.local.toml turns on.
+	Global bool `json:"global,omitempty"`
 }
 
 // AddPluginResponse is the Plugin added (or, previewing, that would be).

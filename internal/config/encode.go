@@ -22,6 +22,13 @@ func Encode(w io.Writer, l Layer) error {
 	if l.IdleTimeout != nil {
 		fmt.Fprintf(&b, "idle_timeout = %s\n", quote(l.IdleTimeout.String()))
 	}
+	if l.Plugins != nil {
+		quoted := make([]string, len(l.Plugins))
+		for i, p := range l.Plugins {
+			quoted[i] = quote(p)
+		}
+		fmt.Fprintf(&b, "plugins = [%s]\n", strings.Join(quoted, ", "))
+	}
 	for _, name := range slices.Sorted(maps.Keys(l.Processes)) {
 		p := l.Processes[name]
 		if b.Len() > 0 {

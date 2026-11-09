@@ -54,6 +54,9 @@ type Options struct {
 	Timeout time.Duration
 	// Builtin are the Plugins built into Laneway.
 	Builtin []Builtin
+	// GlobalConfig is the global config file, whose plugins turn on
+	// machine-wide Plugins in every Project; "" for none.
+	GlobalConfig string
 }
 
 // Plugin is a Plugin: its manifest, and where it came from.
@@ -70,6 +73,9 @@ type Plugin struct {
 	SHA256 string
 	// Engines are the Engines it adds, read from its EngineFiles.
 	Engines []*engine.Manifest
+	// Global is true for a machine-wide Plugin, added with `lane plugin
+	// add --global`: only personal config may turn it on (see global.go).
+	Global bool
 
 	// serve answers a built-in Plugin's calls (see Builtin).
 	serve func([]byte) ([]byte, error)
@@ -79,6 +85,7 @@ type Plugin struct {
 type installed struct {
 	Source string `json:"source"`
 	SHA256 string `json:"sha256,omitempty"`
+	Global bool   `json:"global,omitempty"`
 }
 
 // Host keeps the installed Plugins and runs their modules. It is safe for
@@ -150,7 +157,7 @@ func loadInstalled(dir string) (Plugin, error) {
 	if err != nil {
 		return Plugin{}, err
 	}
-	return Plugin{Manifest: m, Dir: dir, Source: in.Source, SHA256: in.SHA256, Engines: engines}, nil
+	return Plugin{Manifest: m, Dir: dir, Source: in.Source, SHA256: in.SHA256, Engines: engines, Global: in.Global}, nil
 }
 
 // Inspect reads the Plugin in the directory src without adding it, and
@@ -209,12 +216,17 @@ func (h *Host) Inspect(src string) (Plugin, error) {
 // Add installs the Plugin in the directory src, copying its manifest and
 // module so that later changes to src don't change what runs. A Plugin of the
 // same name is replaced. It returns the Plugin added and the one it
-// replaced, if any.
+// replaced, if any. See AddGlobal for a machine-wide Plugin.
 func (h *Host) Add(src string) (added Plugin, replaced *Plugin, err error) {
+	return h.add(src, false)
+}
+
+func (h *Host) add(src string, global bool) (added Plugin, replaced *Plugin, err error) {
 	p, err := h.Inspect(src)
 	if err != nil {
 		return Plugin{}, nil, err
 	}
+	p.Global = global
 	if err := os.MkdirAll(h.opts.Dir, 0o755); err != nil {
 		return Plugin{}, nil, err
 	}
@@ -232,7 +244,7 @@ func (h *Host) Add(src string) (added Plugin, replaced *Plugin, err error) {
 			return Plugin{}, nil, err
 		}
 	}
-	record, err := json.Marshal(installed{Source: p.Source, SHA256: p.SHA256})
+	record, err := json.Marshal(installed{Source: p.Source, SHA256: p.SHA256, Global: p.Global})
 	if err != nil {
 		return Plugin{}, nil, err
 	}
@@ -287,13 +299,18 @@ func (h *Host) Recipes() []recipe.Recipe {
 }
 
 // ResolveDir is recipe.ResolveDir with the installed Plugins' Recipes and
-// Integrations as well as Laneway's own (see Recipes and Integrations).
+// Integrations as well as Laneway's own (see Recipes and Integrations), and
+// the Plugins the config turns on (see turnedOn) in Resolved.Plugins.
 func (h *Host) ResolveDir(dir string, found ...runtimes.Runtime) (recipe.Resolved, error) {
 	layers, err := config.LoadLayers(dir)
 	if err != nil {
 		return recipe.Resolved{}, err
 	}
-	return recipe.Resolve(recipe.Input{
+	on, err := h.turnedOn(layers)
+	if err != nil {
+		return recipe.Resolved{}, err
+	}
+	res, err := recipe.Resolve(recipe.Input{
 		Dir:          dir,
 		Layers:       layers,
 		Recipes:      h.Recipes(),
@@ -301,6 +318,8 @@ func (h *Host) ResolveDir(dir string, found ...runtimes.Runtime) (recipe.Resolve
 		Integrations: h.Integrations(),
 		Runtimes:     found,
 	})
+	res.Plugins = on
+	return res, err
 }
 
 // call runs p's module for req about the Project in dir, decoding its
