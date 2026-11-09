@@ -68,6 +68,8 @@ type Response struct {
 	*IntegrationResult
 	// CommandResult answers a CallCommand.
 	*CommandResult
+	// GeneratorResult answers a CallGenerator.
+	*GeneratorResult
 	// HookResult answers a CallHook.
 	*HookResult
 }
@@ -87,6 +89,8 @@ func (r Response) MarshalJSON() ([]byte, error) {
 		return json.Marshal(r.IntegrationResult)
 	case r.CommandResult != nil:
 		return json.Marshal(r.CommandResult)
+	case r.GeneratorResult != nil:
+		return json.Marshal(r.GeneratorResult)
 	case r.HookResult != nil:
 		return json.Marshal(r.HookResult)
 	}
@@ -192,6 +196,7 @@ type Plugin struct {
 	Recipes      map[string]Recipe
 	Integrations map[string]Integration
 	Commands     map[string]Command
+	Generators   map[string]Generator
 	// Hooks are by event, such as EventReady.
 	Hooks map[string]Hook
 }
@@ -266,6 +271,16 @@ func handle(p Plugin, req Request) (Response, error) {
 			return Response{}, err
 		}
 		return Response{CommandResult: &CommandResult{Effects: effects}}, nil
+	case CallGenerator:
+		generator, ok := p.Generators[req.Name]
+		if !ok {
+			return Response{}, fmt.Errorf("this Plugin has no Generator %q", req.Name)
+		}
+		res, err := generator(project)
+		if err != nil {
+			return Response{}, err
+		}
+		return Response{GeneratorResult: &res}, nil
 	}
 	return Response{}, errors.New("this Plugin doesn't answer " + req.Call + " calls")
 }

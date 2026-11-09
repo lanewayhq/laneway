@@ -10,6 +10,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/builtin"
 	"github.com/lanewayhq/laneway/internal/paths"
 	"github.com/lanewayhq/laneway/internal/plugin"
 )
@@ -109,6 +110,9 @@ func printPlugin(w io.Writer, res api.AddPluginResponse) {
 	for _, e := range p.Engines {
 		fmt.Fprintf(w, "  adds the Engine %s, image %s, port %d\n", e.Name, e.Image, e.Port)
 	}
+	for _, g := range p.Generators {
+		fmt.Fprintf(w, "  adds the Generator %s, run with `lane generate %s`\n", g, p.Name)
+	}
 	if len(p.Hooks) > 0 {
 		titles := make([]string, len(p.Hooks))
 		for i, h := range p.Hooks {
@@ -116,7 +120,7 @@ func printPlugin(w io.Writer, res api.AddPluginResponse) {
 		}
 		fmt.Fprintf(w, "  hooks %s, in Projects that use it\n", andList(titles))
 	}
-	if len(p.Effects) == 0 && (len(p.Recipes) > 0 || len(p.Integrations) > 0 || len(p.Commands) > 0) {
+	if len(p.Effects) == 0 && (len(p.Recipes) > 0 || len(p.Integrations) > 0 || len(p.Commands) > 0 || len(p.Generators) > 0) {
 		fmt.Fprintln(w, "  may only return config for the Projects it detects")
 	}
 	for _, e := range p.Effects {
@@ -161,6 +165,9 @@ func runPluginList(ctx context.Context, env Env, args []string) error {
 		for _, e := range p.Engines {
 			adds = append(adds, "Engine "+e.Name)
 		}
+		for _, g := range p.Generators {
+			adds = append(adds, "Generator "+g)
+		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", p.Name, p.Version, p.Source, strings.Join(adds, ", "))
 	}
 	return tw.Flush()
@@ -181,5 +188,5 @@ func openPlugins(env Env) (*plugin.Host, error) {
 	if err != nil {
 		return nil, err
 	}
-	return plugin.Open(plugin.Options{Dir: p.Plugins(), CacheDir: p.PluginCache()})
+	return plugin.Open(plugin.Options{Dir: p.Plugins(), CacheDir: p.PluginCache(), Builtin: builtin.Plugins()})
 }

@@ -1,4 +1,4 @@
-package harness
+package fileblock
 
 import (
 	"bytes"
@@ -40,6 +40,19 @@ func (o *object) set(key string, v any) {
 
 // parseObject decodes data, which must hold one JSON object.
 func parseObject(data []byte) (*object, error) {
+	v, err := parseValue(data)
+	if err != nil {
+		return nil, err
+	}
+	o, ok := v.(*object)
+	if !ok {
+		return nil, errors.New("the top level is not an object")
+	}
+	return o, nil
+}
+
+// parseValue decodes data, which must hold one JSON value.
+func parseValue(data []byte) (any, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
 	v, err := decodeValue(dec)
@@ -47,13 +60,9 @@ func parseObject(data []byte) (*object, error) {
 		return nil, err
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return nil, errors.New("unexpected data after the top-level object")
+		return nil, errors.New("unexpected data after the top-level value")
 	}
-	o, ok := v.(*object)
-	if !ok {
-		return nil, errors.New("the top level is not an object")
-	}
-	return o, nil
+	return v, nil
 }
 
 func decodeValue(dec *json.Decoder) (any, error) {
@@ -146,7 +155,7 @@ func encodeValue(b *bytes.Buffer, v any, indent, prefix string) {
 	case nil:
 		b.WriteString("null")
 	default:
-		panic(fmt.Sprintf("harness: can't encode %T", v))
+		panic(fmt.Sprintf("fileblock: can't encode %T", v))
 	}
 }
 
