@@ -48,8 +48,11 @@ type Request struct {
 	// Integration's name as the manifest declares it.
 	Name string `json:"name"`
 	// Dir is the Project's directory as the module sees it: mounted
-	// read-only, and the module's working directory.
+	// read-only, and the module's working directory. For a CallCommand it
+	// is the Worktree the command was run in.
 	Dir string `json:"dir"`
+	// Args are a CallCommand's arguments, after the command's name.
+	Args []string `json:"args,omitempty"`
 }
 
 // Response is what a Plugin's module writes on stdout.
@@ -61,6 +64,8 @@ type Response struct {
 	*RecipeResult
 	// IntegrationResult answers a CallIntegration.
 	*IntegrationResult
+	// CommandResult answers a CallCommand.
+	*CommandResult
 }
 
 // MarshalJSON writes the Error alone, or the one result that is set. (Two
@@ -76,6 +81,8 @@ func (r Response) MarshalJSON() ([]byte, error) {
 		return json.Marshal(r.RecipeResult)
 	case r.IntegrationResult != nil:
 		return json.Marshal(r.IntegrationResult)
+	case r.CommandResult != nil:
+		return json.Marshal(r.CommandResult)
 	}
 	return []byte("{}"), nil
 }
@@ -178,6 +185,7 @@ type Integration func(Project) (IntegrationResult, error)
 type Plugin struct {
 	Recipes      map[string]Recipe
 	Integrations map[string]Integration
+	Commands     map[string]Command
 }
 
 // Run answers the request on stdin and exits: it is a Plugin module's whole
@@ -230,6 +238,16 @@ func handle(p Plugin, req Request) (Response, error) {
 			return Response{}, err
 		}
 		return Response{IntegrationResult: &res}, nil
+	case CallCommand:
+		command, ok := p.Commands[req.Name]
+		if !ok {
+			return Response{}, fmt.Errorf("this Plugin has no command %q", req.Name)
+		}
+		effects, err := command(project, req.Args)
+		if err != nil {
+			return Response{}, err
+		}
+		return Response{CommandResult: &CommandResult{Effects: effects}}, nil
 	}
 	return Response{}, errors.New("this Plugin doesn't answer " + req.Call + " calls")
 }

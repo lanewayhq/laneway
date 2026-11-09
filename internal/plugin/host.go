@@ -280,6 +280,12 @@ func (h *Host) ResolveDir(dir string, found ...runtimes.Runtime) (recipe.Resolve
 // Recipe (Plugin procfile)".
 func (h *Host) call(p Plugin, what string, req request, dir string, res any) error {
 	out, err := h.runtime.call(p, req, dir)
+	return decode(what, out, err, res)
+}
+
+// decode reads a module's response out (or the error err running it) into
+// res. what names the call, as for Host.call.
+func decode(what string, out []byte, err error, res any) error {
 	if err != nil {
 		return fmt.Errorf("%s: %w", what, err)
 	}

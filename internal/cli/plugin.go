@@ -54,18 +54,20 @@ func runPluginAdd(ctx context.Context, env Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	req := api.AddPluginRequest{Source: src}
+	req := api.AddPluginRequest{Source: src, Preview: true}
+	preview, err := c.AddPlugin(ctx, req)
+	if err != nil {
+		return err
+	}
+	if err := checkPluginName(preview.Plugin); err != nil {
+		return err
+	}
+	req.Preview = false
 	if !*yes {
-		req.Preview = true
-		preview, err := c.AddPlugin(ctx, req)
-		if err != nil {
-			return err
-		}
 		printPlugin(env.Stdout, preview)
 		if !confirm(env, "Add it? [y/N] ") {
 			return errors.New("nothing was added; run `lane plugin add --yes <dir>` to add a Plugin without asking")
 		}
-		req.Preview = false
 	}
 	res, err := c.AddPlugin(ctx, req)
 	if err != nil {
@@ -75,6 +77,15 @@ func runPluginAdd(ctx context.Context, env Env, args []string) error {
 		printPlugin(env.Stdout, res)
 	}
 	fmt.Fprintf(env.Stdout, "Added Plugin %s %s\n", res.Plugin.Name, res.Plugin.Version)
+	return nil
+}
+
+// checkPluginName refuses a Plugin whose commands couldn't be run, because
+// Laneway has a command of the Plugin's name.
+func checkPluginName(p api.Plugin) error {
+	if len(p.Commands) > 0 && laneCommand(p.Name) {
+		return fmt.Errorf("Plugin %s adds commands, run as `lane %s <command>`, but `lane %s` is Laneway's own command; rename the Plugin", p.Name, p.Name, p.Name)
+	}
 	return nil
 }
 
@@ -91,6 +102,9 @@ func printPlugin(w io.Writer, res api.AddPluginResponse) {
 	}
 	for _, in := range p.Integrations {
 		fmt.Fprintf(w, "  adds the Integration %s, for Projects where %s\n", in.Name, in.Detects)
+	}
+	for _, c := range p.Commands {
+		fmt.Fprintf(w, "  adds the command `lane %s %s`: %s\n", p.Name, c.Name, c.Summary)
 	}
 	if len(p.Effects) == 0 {
 		fmt.Fprintln(w, "  may only return config for the Projects it detects")
@@ -130,6 +144,9 @@ func runPluginList(ctx context.Context, env Env, args []string) error {
 		}
 		for _, in := range p.Integrations {
 			adds = append(adds, "Integration "+in.Name)
+		}
+		for _, c := range p.Commands {
+			adds = append(adds, "command "+c.Name)
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", p.Name, p.Version, p.Source, strings.Join(adds, ", "))
 	}
