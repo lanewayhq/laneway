@@ -63,11 +63,18 @@ type result struct {
 	reads map[string]fileState
 }
 
+// newCacheMu serialises making compilation caches: the first one sets a
+// package variable in wazero (its version, part of the cache's keys) without
+// a lock, and tests start several daemons in one process at once.
+var newCacheMu sync.Mutex
+
 func newRuntime(opts Options) (*runtime, error) {
 	ctx := context.Background()
 	cfg := wazero.NewRuntimeConfig().WithCloseOnContextDone(true)
 	if opts.CacheDir != "" {
+		newCacheMu.Lock()
 		cache, err := wazero.NewCompilationCacheWithDir(opts.CacheDir)
+		newCacheMu.Unlock()
 		if err != nil {
 			return nil, err
 		}
