@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/runtimes"
 )
@@ -65,6 +66,8 @@ type Plugin struct {
 	// SHA256 is its module's hash, hex-encoded, as it was when added: the
 	// installed Plugin is pinned to it. "" without a module.
 	SHA256 string
+	// Engines are the Engines it adds, read from its EngineFiles.
+	Engines []*engine.Manifest
 }
 
 // installed is what installedFile records.
@@ -133,19 +136,30 @@ func loadInstalled(dir string) (Plugin, error) {
 	if err := json.Unmarshal(data, &in); err != nil {
 		return Plugin{}, fmt.Errorf("%s: %w", filepath.Join(dir, installedFile), err)
 	}
-	return Plugin{Manifest: m, Dir: dir, Source: in.Source, SHA256: in.SHA256}, nil
+	engines, err := readEngines(os.DirFS(dir), dir, m)
+	if err != nil {
+		return Plugin{}, err
+	}
+	return Plugin{Manifest: m, Dir: dir, Source: in.Source, SHA256: in.SHA256, Engines: engines}, nil
 }
 
 // Inspect reads the Plugin in the directory src without adding it, and
-// checks that it can be added: that its manifest is valid and its Recipes
-// and Integrations don't take names Laneway's or another installed Plugin's
-// have.
+// checks that it can be added: that its manifest is valid and its Recipes,
+// Integrations and Engines don't take names Laneway's or another installed
+// Plugin's have.
 func (h *Host) Inspect(src string) (Plugin, error) {
 	m, err := LoadManifest(src)
 	if err != nil {
 		return Plugin{}, err
 	}
-	p := Plugin{Manifest: m, Dir: src, Source: src}
+	engines, err := readEngines(os.DirFS(src), src, m)
+	if err != nil {
+		return Plugin{}, err
+	}
+	p := Plugin{Manifest: m, Dir: src, Source: src, Engines: engines}
+	if err := h.checkEngineNames(p); err != nil {
+		return Plugin{}, err
+	}
 	if m.needsModule() {
 		data, err := os.ReadFile(filepath.Join(src, filepath.FromSlash(m.module())))
 		if err != nil {
@@ -196,7 +210,7 @@ func (h *Host) Add(src string) (added Plugin, replaced *Plugin, err error) {
 		return Plugin{}, nil, err
 	}
 	defer os.RemoveAll(tmp)
-	files := []string{ManifestFile}
+	files := append([]string{ManifestFile}, p.EngineFiles...)
 	if p.needsModule() {
 		files = append(files, p.module())
 	}
@@ -270,6 +284,7 @@ func (h *Host) ResolveDir(dir string, found ...runtimes.Runtime) (recipe.Resolve
 		Dir:          dir,
 		Layers:       layers,
 		Recipes:      h.Recipes(),
+		Engines:      h.Engines(),
 		Integrations: h.Integrations(),
 		Runtimes:     found,
 	})

@@ -11,7 +11,6 @@ import (
 	"github.com/lanewayhq/laneway/internal/config"
 	"github.com/lanewayhq/laneway/internal/detect"
 	"github.com/lanewayhq/laneway/internal/dotenv"
-	"github.com/lanewayhq/laneway/internal/engine"
 )
 
 // Laravel is the Laravel Recipe: a Project with an artisan file. Its
@@ -128,7 +127,7 @@ func laravelDatabase(l *config.Layer, dir string, env laravelEnv) {
 	}
 	l.Env["DB_CONNECTION"] = connection
 	l.Env["DB_DATABASE"] = "{db}"
-	if _, inService := engine.Lookup(dbEngine); !inService {
+	if dbEngine == "sqlite" {
 		// A file in each Worktree.
 		l.Database = &config.DatabaseLayer{Engine: ptr(dbEngine), Path: ptr(sqlitePath(dir, env))}
 		return
@@ -184,12 +183,18 @@ func (e laravelEnv) setting(key, def string) string {
 
 func ptr[T any](v T) *T { return &v }
 
-// defaultVersion is the default version of the Engine called name, one
-// Laneway has built in.
+// serviceVersions are the versions of the Services the built-in Recipes add:
+// the default versions of the Engines of Laneway's built-in Plugins, so each
+// gets its Engine's standard port. A Recipe returns its layer without seeing
+// which Engines are installed, as a Plugin's Recipe does.
+var serviceVersions = map[string]string{"redis": "7", "mailpit": "v1"}
+
+// defaultVersion is the version of the Service of the Engine called name a
+// built-in Recipe adds.
 func defaultVersion(name string) string {
-	e, ok := engine.Lookup(name)
+	v, ok := serviceVersions[name]
 	if !ok {
-		panic("no Engine " + name)
+		panic("no Service version for the Engine " + name)
 	}
-	return e.DefaultVersion
+	return v
 }

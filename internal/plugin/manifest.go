@@ -50,6 +50,9 @@ type Manifest struct {
 	Integrations []IntegrationDecl `json:"integrations,omitempty"`
 	// Commands are the commands it adds, run as `lane <plugin> <command>`.
 	Commands []CommandDecl `json:"commands,omitempty"`
+	// EngineFiles are the Engines it adds: Engine manifests (TOML, read by
+	// engine.Parse), relative to its directory. An Engine needs no module.
+	EngineFiles []string `json:"engines,omitempty"`
 	// Hooks are the lifecycle events it hooks, from Events. Its module
 	// answers a hook call for each with effects.
 	Hooks []string `json:"hooks,omitempty"`
@@ -165,8 +168,11 @@ func (m Manifest) validate() error {
 	if m.Module != "" && (path.IsAbs(m.Module) || !fs.ValidPath(m.Module)) {
 		return fmt.Errorf("module %q must be a path inside the Plugin's directory, such as %q", m.Module, DefaultModule)
 	}
-	if len(m.Recipes) == 0 && len(m.Integrations) == 0 && len(m.Commands) == 0 && len(m.Hooks) == 0 {
-		return errors.New("the Plugin adds nothing; declare what it adds, such as a Recipe under recipes, an Integration under integrations, a command under commands or the events it hooks under hooks")
+	if len(m.Recipes) == 0 && len(m.Integrations) == 0 && len(m.Commands) == 0 && len(m.EngineFiles) == 0 && len(m.Hooks) == 0 {
+		return errors.New("the Plugin adds nothing; declare what it adds, such as a Recipe under recipes, an Integration under integrations, an Engine under engines, a command under commands or the events it hooks under hooks")
+	}
+	if err := m.validateEngineFiles(); err != nil {
+		return err
 	}
 	seen := map[string]bool{}
 	for i, r := range m.Recipes {

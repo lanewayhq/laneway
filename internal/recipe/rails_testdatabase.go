@@ -1,7 +1,5 @@
 package recipe
 
-import "github.com/lanewayhq/laneway/internal/engine"
-
 var _ TestEnvRecipe = Rails{}
 
 // TestEnv is .env.test: dotenv-rails, the usual way a Rails app reads .env,
@@ -26,8 +24,7 @@ func (Rails) AutoTestDatabase(dir string) bool {
 	if !ok {
 		return false
 	}
-	_, inService := engine.Lookup(dbEngine)
-	return inService
+	return dbEngine != "sqlite"
 }
 
 var _ TestDatabaseWarner = Rails{}

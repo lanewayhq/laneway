@@ -54,7 +54,7 @@ func (d *Daemon) envVars(p registry.Project, w worktreeRef, db recipe.Database) 
 		// can append a path: "{url}/shop".
 		"url": strings.TrimSuffix(domainURL(primary), "/"),
 	}
-	if name, ok := worktreeDatabase(p, w, db); ok {
+	if name, ok := d.worktreeDatabase(p, w, db); ok {
 		vars["db"] = name
 	}
 	return vars
@@ -95,7 +95,7 @@ func (d *Daemon) envPatchVars(p registry.Project, w worktreeRef, cfg recipe.Reso
 	services := d.serviceVars(cfg.Services)
 	maps.Copy(vars, services)
 	maps.Copy(vars, databaseVars(cfg, services))
-	if name, ok := worktreeTestDatabase(p, w, cfg); ok {
+	if name, ok := d.worktreeTestDatabase(p, w, cfg); ok {
 		vars["test_db"] = name
 	}
 	return vars
@@ -116,7 +116,7 @@ func (d *Daemon) planTestEnvPatch(p registry.Project, w worktreeRef) (plan envpa
 	if err != nil || len(templates) == 0 {
 		return envpatch.Plan{}, "", err
 	}
-	testDB, ok := worktreeTestDatabase(p, w, cfg)
+	testDB, ok := d.worktreeTestDatabase(p, w, cfg)
 	if !ok {
 		return envpatch.Plan{}, "", nil
 	}

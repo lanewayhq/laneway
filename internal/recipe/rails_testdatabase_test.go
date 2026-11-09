@@ -35,7 +35,7 @@ func railsProject(t *testing.T, files map[string]string) string {
 
 func mustResolveDir(t *testing.T, dir string) recipe.Resolved {
 	t.Helper()
-	res, err := recipe.ResolveDir(dir)
+	res, err := resolveBuiltin(dir)
 	if err != nil {
 		t.Fatal(err)
 	}

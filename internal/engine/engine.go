@@ -4,15 +4,14 @@
 // the container and its readiness probes; package database runs the
 // database commands inside it.
 //
-// Redis, Mailpit, Postgres and MySQL are manifests built into Laneway
-// (builtin/*.toml). Parse reads any manifest the same way, so Engines from
-// Plugins can come in through it.
+// Every Engine comes from a Plugin (package plugin), which lists Engine
+// manifests that Parse reads. Redis, Mailpit, Postgres and MySQL come from
+// Plugins built into Laneway. Set is the Engines Laneway can run.
 package engine
 
 import (
 	"bytes"
 	"cmp"
-	"embed"
 	"fmt"
 	"hash/fnv"
 	"maps"
@@ -370,33 +369,14 @@ func checkPlaceholders(key string, args []string, allowed []string) error {
 	return nil
 }
 
-//go:embed builtin/*.toml
-var builtinFiles embed.FS
-
-// builtin are the Engines built into Laneway, in the order Names lists them.
-var builtin = func() []*Manifest {
-	var all []*Manifest
-	for _, name := range []string{"redis", "mailpit", "postgres", "mysql"} {
-		file := "builtin/" + name + ".toml"
-		data, err := builtinFiles.ReadFile(file)
-		if err != nil {
-			panic(err)
-		}
-		m, err := Parse(file, data)
-		if err != nil {
-			panic(err)
-		}
-		all = append(all, m)
-	}
-	return all
-}()
-
-// All are the Engines Laneway can run.
-func All() []*Manifest { return slices.Clone(builtin) }
+// Set is the Engines Laneway can run, in the order Names lists them: the
+// built-in Plugins' and the installed Plugins' (see plugin.Host.Engines).
+// Each has its own name.
+type Set []*Manifest
 
 // Lookup returns the Engine called name.
-func Lookup(name string) (*Manifest, bool) {
-	for _, m := range builtin {
+func (s Set) Lookup(name string) (*Manifest, bool) {
+	for _, m := range s {
 		if m.Name == name {
 			return m, true
 		}
@@ -405,18 +385,18 @@ func Lookup(name string) (*Manifest, bool) {
 }
 
 // Names lists the Engines' names, for messages.
-func Names() []string {
+func (s Set) Names() []string {
 	var names []string
-	for _, m := range builtin {
+	for _, m := range s {
 		names = append(names, m.Name)
 	}
 	return names
 }
 
-// AllVariables are every Engine's Variables.
-func AllVariables() []string {
+// Variables are every Engine's Variables.
+func (s Set) Variables() []string {
 	var vars []string
-	for _, m := range builtin {
+	for _, m := range s {
 		vars = append(vars, m.Variables()...)
 	}
 	return vars
