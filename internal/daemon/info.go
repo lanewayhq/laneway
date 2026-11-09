@@ -5,7 +5,6 @@ import (
 	"context"
 
 	"github.com/lanewayhq/laneway/internal/api"
-	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/service"
 	"github.com/lanewayhq/laneway/internal/supervisor"
@@ -100,7 +99,7 @@ func processInfo(declared []recipe.Process, runs []supervisor.Status, primaryDom
 func (d *Daemon) infoServices(services []recipe.Service) []api.InfoService {
 	out := []api.InfoService{}
 	for _, s := range services {
-		e, ok := engine.Lookup(s.Engine)
+		e, ok := d.plugins.Engines().Lookup(s.Engine)
 		if !ok {
 			continue
 		}

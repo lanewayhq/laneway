@@ -448,6 +448,8 @@ type Plugin struct {
 	SHA256 string `json:"sha256,omitempty"`
 	// Recipes are the Recipes it adds.
 	Recipes []PluginRecipe `json:"recipes"`
+	// Engines are the Engines it adds.
+	Engines []PluginEngine `json:"engines"`
 	// Effects are the kinds of effect it may return, each with what it
 	// lets the Plugin do; empty if it only returns config.
 	Effects []PluginEffect `json:"effects"`
@@ -461,6 +463,16 @@ type PluginRecipe struct {
 	// Detects describes the Projects its detection rule matches, such as
 	// "Procfile exists".
 	Detects string `json:"detects"`
+}
+
+// PluginEngine is an Engine a Plugin adds: what Services of it run.
+type PluginEngine struct {
+	Name string `json:"name"`
+	// Image is the image repository its Services' containers run.
+	Image string `json:"image"`
+	// Port is its standard port, which a Service at its default version
+	// listens on.
+	Port int `json:"port"`
 }
 
 // PluginEffect is a kind of effect a Plugin may return.

@@ -28,7 +28,7 @@ func (r ruleRecipe) Defaults(string) (config.Layer, error) {
 // "" if it didn't detect the Project).
 func detectRecipe(t *testing.T, files map[string]string, rule detect.Rule) (name, matched string) {
 	t.Helper()
-	res, err := recipe.Resolve(recipe.Input{Dir: project(t, files), Recipes: []recipe.Recipe{ruleRecipe{"stack", rule}}})
+	res, err := recipe.Resolve(recipe.Input{Engines: builtinEngines(), Dir: project(t, files), Recipes: []recipe.Recipe{ruleRecipe{"stack", rule}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestARailsAppDeclaringOnlyRailtiesIsARailsProject(t *testing.T) {
 		"config/application.rb": "module Shop\n  class Application < Rails::Application\n  end\nend\n",
 		"Gemfile":               "gem \"railties\"\ngem \"activerecord\"\n",
 	})
-	res, err := recipe.ResolveDir(dir)
+	res, err := resolveBuiltin(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestEachIntegrationNamesTheRuleTheProjectMatched(t *testing.T) {
 	dir := project(t, map[string]string{
 		"package.json": `{"dependencies": {"tailwindcss": "^4"}, "devDependencies": {"vite": "^8.0.0"}}`,
 	})
-	res, err := recipe.Resolve(recipe.Input{Dir: dir, Integrations: []recipe.Integration{
+	res, err := recipe.Resolve(recipe.Input{Engines: builtinEngines(), Dir: dir, Integrations: []recipe.Integration{
 		ruleIntegration{"vite", detect.Rule{Any: []detect.Rule{{Package: "laravel-vite-plugin"}, {Package: "vite"}}}},
 		ruleIntegration{"tailwind", detect.Rule{Package: "tailwindcss"}},
 		ruleIntegration{"webpack", detect.Rule{Package: "webpack"}},

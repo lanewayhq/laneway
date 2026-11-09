@@ -36,12 +36,12 @@ const (
 // the main Worktree's) and its Test Database. cfg is the config they come
 // from. None unless the database is in a Service whose Engine can drop
 // databases (database.Dropper): a SQLite file goes with its Worktree.
-func worktreeOrphans(p registry.Project, w worktreeRef, cfg recipe.Resolved, since time.Time) []registry.Orphan {
+func (d *Daemon) worktreeOrphans(p registry.Project, w worktreeRef, cfg recipe.Resolved, since time.Time) []registry.Orphan {
 	svc, ok := cfg.DatabaseService()
 	if !ok {
 		return nil
 	}
-	e, ok := databaseEngine(cfg.Database, database.Server{}).(database.Dropper)
+	e, ok := d.databaseEngine(cfg.Database, database.Server{}).(database.Dropper)
 	if !ok {
 		return nil
 	}
@@ -52,7 +52,7 @@ func worktreeOrphans(p registry.Project, w worktreeRef, cfg recipe.Resolved, sin
 		o.Database, o.Kind = own, orphanDatabase
 		out = append(out, o)
 	}
-	if test, ok := worktreeTestDatabase(p, w, cfg); ok {
+	if test, ok := d.worktreeTestDatabase(p, w, cfg); ok {
 		o.Database, o.Kind = test, orphanTestDatabase
 		out = append(out, o)
 	}
@@ -68,7 +68,7 @@ func (d *Daemon) orphanWorktree(p registry.Project, w worktreeRef) {
 		d.log.Error("finding the databases of a removed Worktree", "project", p.Name, "worktree", w.name, "err", err)
 		return
 	}
-	d.addOrphans(worktreeOrphans(p, w, cfg, d.cfg.Clock.Now()))
+	d.addOrphans(d.worktreeOrphans(p, w, cfg, d.cfg.Clock.Now()))
 }
 
 // reclaimOrphans takes back the databases of the Worktree w that are
@@ -81,7 +81,7 @@ func (d *Daemon) reclaimOrphans(p registry.Project, w worktreeRef) {
 	if err != nil {
 		return
 	}
-	mine := worktreeOrphans(p, w, cfg, time.Time{})
+	mine := d.worktreeOrphans(p, w, cfg, time.Time{})
 	if len(mine) == 0 {
 		return
 	}
@@ -313,7 +313,7 @@ func (d *Daemon) dropper(ctx context.Context, svc recipe.Service) (e database.Dr
 	if err != nil {
 		return nil, nil, err
 	}
-	e, ok := databaseEngine(recipe.Database{Engine: svc.Engine}, server).(database.Dropper)
+	e, ok := d.databaseEngine(recipe.Database{Engine: svc.Engine}, server).(database.Dropper)
 	if !ok {
 		release()
 		return nil, nil, fmt.Errorf("Laneway can't drop %s databases", svc.Engine)
@@ -383,7 +383,7 @@ func (d *Daemon) leftoverCopies(ctx context.Context) ([]registry.Orphan, []error
 		if !ok {
 			continue
 		}
-		e, ok := databaseEngine(cfg.Database, database.Server{}).(database.TestEngine)
+		e, ok := d.databaseEngine(cfg.Database, database.Server{}).(database.TestEngine)
 		if !ok {
 			continue
 		}

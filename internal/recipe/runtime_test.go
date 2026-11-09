@@ -41,7 +41,7 @@ var (
 // resolveWith resolves the Project in dir checking the Runtimes found.
 func resolveWith(t *testing.T, dir string, found ...runtimes.Runtime) recipe.Resolved {
 	t.Helper()
-	res, err := recipe.Resolve(recipe.Input{Dir: dir, Runtimes: found})
+	res, err := recipe.Resolve(recipe.Input{Engines: builtinEngines(), Dir: dir, Runtimes: found})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestRuntimesAProjectDoesNotUseAreNotChecked(t *testing.T) {
 func TestWithoutResolvedRuntimesNothingIsChecked(t *testing.T) {
 	dir := project(t, map[string]string{"composer.json": `{"require": {"php": "^8.3"}}`})
 
-	res, err := recipe.Resolve(recipe.Input{Dir: dir})
+	res, err := recipe.Resolve(recipe.Input{Engines: builtinEngines(), Dir: dir})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -46,6 +46,9 @@ type Manifest struct {
 	Module string `json:"module,omitempty"`
 	// Recipes are the Recipes it adds, in the order they detect Projects.
 	Recipes []RecipeDecl `json:"recipes,omitempty"`
+	// EngineFiles are the Engines it adds: Engine manifests (TOML, read by
+	// engine.Parse), relative to its directory. An Engine needs no module.
+	EngineFiles []string `json:"engines,omitempty"`
 	// Capabilities are what it may do beyond returning config.
 	Capabilities Capabilities `json:"capabilities,omitzero"`
 }
@@ -158,8 +161,11 @@ func (m Manifest) validate() error {
 	if m.Module != "" && (path.IsAbs(m.Module) || !fs.ValidPath(m.Module)) {
 		return fmt.Errorf("module %q must be a path inside the Plugin's directory, such as %q", m.Module, DefaultModule)
 	}
-	if len(m.Recipes) == 0 {
-		return errors.New("the Plugin adds nothing; declare what it adds, such as a Recipe under recipes")
+	if len(m.Recipes) == 0 && len(m.EngineFiles) == 0 {
+		return errors.New("the Plugin adds nothing; declare what it adds, such as a Recipe under recipes or an Engine under engines")
+	}
+	if err := m.validateEngineFiles(); err != nil {
+		return err
 	}
 	seen := map[string]bool{}
 	for i, r := range m.Recipes {

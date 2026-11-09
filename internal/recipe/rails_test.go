@@ -13,7 +13,7 @@ import (
 // Builtin Recipes.
 func resolveRails(t *testing.T, name string) recipe.Resolved {
 	t.Helper()
-	res, err := recipe.ResolveDir(filepath.Join("testdata", name))
+	res, err := resolveBuiltin(filepath.Join("testdata", name))
 	if err != nil {
 		t.Fatalf("resolving %s: %v", name, err)
 	}
@@ -120,7 +120,7 @@ func TestALaravelProjectIsNotRailsAndARubyProjectWithoutRailsIsNeither(t *testin
 		t.Errorf("laravel-pgsql: Recipe = %q, want laravel", res.Recipe)
 	}
 	dir := project(t, map[string]string{"Gemfile": "source \"https://rubygems.org\"\ngem \"sinatra\"\n# gem \"rails\"\n", "config.ru": "run App\n"})
-	res, err := recipe.ResolveDir(dir)
+	res, err := resolveBuiltin(dir)
 	if err != nil {
 		t.Fatal(err)
 	}

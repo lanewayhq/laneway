@@ -89,7 +89,10 @@ func printPlugin(w io.Writer, res api.AddPluginResponse) {
 	for _, r := range p.Recipes {
 		fmt.Fprintf(w, "  adds the Recipe %s, for Projects where %s\n", r.Name, r.Detects)
 	}
-	if len(p.Effects) == 0 {
+	for _, e := range p.Engines {
+		fmt.Fprintf(w, "  adds the Engine %s, image %s, port %d\n", e.Name, e.Image, e.Port)
+	}
+	if len(p.Effects) == 0 && len(p.Recipes) > 0 {
 		fmt.Fprintln(w, "  may only return config for the Projects it detects")
 	}
 	for _, e := range p.Effects {
@@ -124,6 +127,9 @@ func runPluginList(ctx context.Context, env Env, args []string) error {
 		var adds []string
 		for _, r := range p.Recipes {
 			adds = append(adds, "Recipe "+r.Name)
+		}
+		for _, e := range p.Engines {
+			adds = append(adds, "Engine "+e.Name)
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", p.Name, p.Version, p.Source, strings.Join(adds, ", "))
 	}
