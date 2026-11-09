@@ -44,8 +44,9 @@ func (k Known) Lookup(name string) (*Manifest, error) {
 // Engine Laneway can fetch is installed: that Engine isn't. It is nil if
 // the template uses no variable of one. Every Engine gives
 // {<engine>_host}, {<engine>_port} and {<engine>_password}, but only one
-// with users gives {<engine>_username}, and only one with Service Domains
-// {<engine>_endpoint}, which Laneway can't tell before fetching it.
+// with users gives {<engine>_username}, only one with Service Domains
+// {<engine>_endpoint}, and only one with Bucket commands {<engine>_bucket},
+// which Laneway can't tell before fetching it.
 func (k Known) TemplateError(uses func(variable string) bool) error {
 	for _, name := range k.Fetchable {
 		if !k.CanFetch(name) {
@@ -54,7 +55,7 @@ func (k Known) TemplateError(uses func(variable string) bool) error {
 		if slices.ContainsFunc((&Manifest{Name: name}).Variables(), uses) {
 			return NotInstalled(name)
 		}
-		for _, v := range []string{name + "_username", name + "_endpoint"} {
+		for _, v := range []string{name + "_username", name + "_endpoint", name + "_bucket"} {
 			if uses(v) {
 				return fmt.Errorf("the %s Engine isn't installed, so Laneway can't tell whether it has {%s}; "+
 					"run `lane doctor` to fetch it from the Catalog", name, v)

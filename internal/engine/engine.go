@@ -72,6 +72,9 @@ type Manifest struct {
 	// Database is how Laneway makes the Engine's databases; nil if a
 	// Project can't have its database in it.
 	Database *Databases `toml:"database" json:"database,omitempty"`
+	// Bucket is how Laneway makes the Engine's Buckets; nil if a Worktree
+	// can't have a Bucket in it.
+	Bucket *Buckets `toml:"bucket" json:"bucket,omitempty"`
 	// Domains are the Service Domains Laneway serves the Engine's ports at
 	// (see ServiceDomain); the first one's URL is {<engine>_endpoint}.
 	Domains []ServiceDomain `toml:"domains" json:"domains,omitempty"`
@@ -204,7 +207,8 @@ func (m *Manifest) ContainerCmd(version string) []string {
 // Worktree using it: {<engine>_host}, {<engine>_port}, {<engine>_username}
 // (only for Engines with users), {<engine>_password} and
 // {<engine>_endpoint} (only for Engines with Service Domains; see
-// Endpoint).
+// Endpoint) and {<engine>_bucket} (only for Engines with Bucket commands;
+// see BucketVariable).
 func (m *Manifest) Variables() []string {
 	vars := []string{m.Name + "_host", m.Name + "_port"}
 	if m.User != "" {
@@ -213,6 +217,9 @@ func (m *Manifest) Variables() []string {
 	vars = append(vars, m.Name+"_password")
 	if len(m.Domains) > 0 {
 		vars = append(vars, m.endpointVariable())
+	}
+	if v := m.BucketVariable(); v != "" {
+		vars = append(vars, v)
 	}
 	return vars
 }
@@ -322,6 +329,9 @@ func (m *Manifest) check() error {
 	if err := m.checkDomains(); err != nil {
 		return err
 	}
+	if err := m.checkBuckets(); err != nil {
+		return err
+	}
 	if db := m.Database; db != nil {
 		if db.MaxName < 1 {
 			return fmt.Errorf("database.max_name must be the longest a database name may be")
@@ -398,11 +408,11 @@ type Set []*Manifest
 
 // Assumed stands for an Engine known by its name alone, such as a Catalog
 // Engine not fetched yet: config naming it, and anything config may ask of
-// an Engine (users, databases, an endpoint), resolves as if it were
-// installed. It can't be run.
+// an Engine (users, databases, an endpoint, Buckets), resolves as if it
+// were installed. It can't be run.
 func Assumed(name string) *Manifest {
 	return &Manifest{Name: name, DefaultVersion: "latest", User: "assumed", Database: &Databases{},
-		Domains: []ServiceDomain{{Label: "assumed"}}}
+		Domains: []ServiceDomain{{Label: "assumed"}}, Bucket: &Buckets{}}
 }
 
 // Lookup returns the Engine called name.
