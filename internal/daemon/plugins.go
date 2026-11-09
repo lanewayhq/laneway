@@ -1,7 +1,7 @@
 package daemon
 
 import (
-	"path/filepath"
+	"context"
 	"slices"
 
 	"github.com/lanewayhq/laneway/internal/api"
@@ -17,14 +17,17 @@ func (d *Daemon) listPlugins() api.PluginList {
 	return list
 }
 
-// addPlugin adds the Plugin in the directory req.Source, or with req.Preview
-// only reads and checks it, so the developer can see what it may do first.
-// Projects' config is read anew every time it's needed, so the Plugin's
-// Recipes detect Projects from the next read on.
-func (d *Daemon) addPlugin(req api.AddPluginRequest) (api.AddPluginResponse, error) {
-	if !filepath.IsAbs(req.Source) {
-		return api.AddPluginResponse{}, &api.Error{Code: api.CodeBadRequest, Message: "source must be an absolute path"}
+// addPlugin adds the Plugin in the directory or GitHub repository
+// req.Source (see pluginSource), or with req.Preview only reads and checks
+// it, so the developer can see what it may do first. Projects' config is
+// read anew every time it's needed, so the Plugin's Recipes detect Projects
+// from the next read on.
+func (d *Daemon) addPlugin(ctx context.Context, req api.AddPluginRequest) (api.AddPluginResponse, error) {
+	src, source, done, err := d.pluginSource(ctx, req.Source)
+	if err != nil {
+		return api.AddPluginResponse{}, err
 	}
+	defer done()
 	var res api.AddPluginResponse
 	replaced := func(name string) {
 		for _, p := range d.plugins.List() {
@@ -35,15 +38,16 @@ func (d *Daemon) addPlugin(req api.AddPluginRequest) (api.AddPluginResponse, err
 		}
 	}
 	if req.Preview {
-		p, err := d.plugins.Inspect(req.Source)
+		p, err := d.plugins.Inspect(src)
 		if err != nil {
 			return api.AddPluginResponse{}, &api.Error{Code: api.CodeInvalidPlugin, Message: err.Error()}
 		}
+		p.Source = source
 		res.Plugin = apiPlugin(p)
 		replaced(p.Name)
 		return res, nil
 	}
-	p, old, err := d.plugins.Add(req.Source)
+	p, old, err := d.plugins.AddFrom(src, source)
 	if err != nil {
 		return api.AddPluginResponse{}, &api.Error{Code: api.CodeInvalidPlugin, Message: err.Error()}
 	}

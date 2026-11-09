@@ -541,7 +541,9 @@ type PluginList struct {
 // AddPluginRequest is the body of POST /v1/plugins: add the Plugin in a
 // directory.
 type AddPluginRequest struct {
-	// Source is the Plugin's directory, an absolute path.
+	// Source is the Plugin's directory, an absolute path, or its GitHub
+	// repository, as github.com/<owner>/<repo>[@<tag>], whose release is
+	// downloaded.
 	Source string `json:"source"`
 	// Preview only reads and checks the Plugin, adding nothing, so the
 	// developer can confirm what it may do first.
@@ -554,6 +556,25 @@ type AddPluginResponse struct {
 	// Replaces is the installed Plugin of the same name it replaced (or
 	// would replace), if any.
 	Replaces *Plugin `json:"replaces,omitempty"`
+}
+
+// UpdatePluginRequest is the body of POST /v1/plugins/{plugin}/update:
+// install what the installed Plugin's source has now, such as its GitHub
+// repository's latest release.
+type UpdatePluginRequest struct {
+	// Preview only reads and checks what's there, changing nothing, so the
+	// developer can confirm it first.
+	Preview bool `json:"preview,omitempty"`
+}
+
+// UpdatePluginResponse is the Plugin as updated (or, previewing, as it would
+// be), and as it was.
+type UpdatePluginResponse struct {
+	Plugin Plugin `json:"plugin"`
+	Was    Plugin `json:"was"`
+	// UpToDate is true when the source has the version and hash already
+	// installed, so nothing changes.
+	UpToDate bool `json:"upToDate,omitempty"`
 }
 
 // PluginCommandRequest is the body of POST

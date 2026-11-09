@@ -11,18 +11,20 @@ import (
 
 	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/builtin"
+	"github.com/lanewayhq/laneway/internal/github"
 	"github.com/lanewayhq/laneway/internal/paths"
 	"github.com/lanewayhq/laneway/internal/plugin"
 )
 
 // pluginCommands are the `lane plugin <name>` subcommands.
 var pluginCommands = map[string]func(ctx context.Context, env Env, args []string) error{
-	"add":  runPluginAdd,
-	"list": runPluginList,
-	"test": runPluginTest,
+	"add":    runPluginAdd,
+	"list":   runPluginList,
+	"test":   runPluginTest,
+	"update": runPluginUpdate,
 }
 
-const pluginUsage = "use `lane plugin add <dir>`, `lane plugin list` or `lane plugin test [--update]`"
+const pluginUsage = "use `lane plugin add <dir|github.com/<owner>/<repo>>`, `lane plugin list`, `lane plugin update [name]` or `lane plugin test [--update]`"
 
 func runPlugin(ctx context.Context, env Env, args []string) error {
 	if len(args) == 0 {
@@ -36,20 +38,20 @@ func runPlugin(ctx context.Context, env Env, args []string) error {
 }
 
 func runPluginAdd(ctx context.Context, env Env, args []string) error {
-	fs := newFlags(env, "plugin add <dir>")
+	fs := newFlags(env, "plugin add <dir|github.com/<owner>/<repo>[@<tag>]>")
 	yes := fs.Bool("yes", false, "add the Plugin without asking to confirm what it may do")
 	// The directory may come before or after the flags.
 	if err := fs.Parse(args); err != nil {
 		return parseFlags(fs, args)
 	}
 	if fs.NArg() == 0 {
-		return usageError{"missing the Plugin's directory, such as `lane plugin add ./my-plugin`"}
+		return usageError{"missing the Plugin's directory or GitHub repository, such as `lane plugin add ./my-plugin` or `lane plugin add github.com/<owner>/<repo>`"}
 	}
 	src := fs.Arg(0)
 	if err := parseFlags(fs, fs.Args()[1:]); err != nil {
 		return err
 	}
-	if !filepath.IsAbs(src) {
+	if !filepath.IsAbs(src) && !github.IsSource(src) {
 		src = filepath.Join(env.Dir, src)
 	}
 	c, err := apiClient(env)
@@ -79,7 +81,16 @@ func runPluginAdd(ctx context.Context, env Env, args []string) error {
 		printPlugin(env.Stdout, res)
 	}
 	fmt.Fprintf(env.Stdout, "Added Plugin %s %s\n", res.Plugin.Name, res.Plugin.Version)
+	printPinned(env.Stdout, res.Plugin)
 	return nil
+}
+
+// printPinned says what hash an added Plugin is pinned to: a later change to
+// its source isn't picked up until `lane plugin update`.
+func printPinned(w io.Writer, p api.Plugin) {
+	if p.SHA256 != "" {
+		fmt.Fprintf(w, "It is pinned to SHA-256 %s until `lane plugin update %s`\n", p.SHA256, p.Name)
+	}
 }
 
 // checkPluginName refuses a Plugin whose commands couldn't be run, because
