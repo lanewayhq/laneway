@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/detect"
+	"github.com/lanewayhq/laneway/internal/dotenv"
 	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/runtimes"
 )
@@ -344,9 +346,41 @@ func TestADatabaseDriverComposerRequiresIsWarnedAboutOnce(t *testing.T) {
 	assertRuntimeWarning(t, res, runtimes.PHP, []string{"ext-pdo_mysql", "composer.json"}, []string{"pdo_mysql"})
 }
 
-// Each database Engine needs its PDO driver, and only a PHP Project is
+// envStack is a test Recipe, detected by composer.json, that sets the
+// database engine from .env's DB_CONNECTION, as the Laravel Recipe does.
+type envStack struct{}
+
+func (envStack) Name() string { return "env-stack" }
+
+func (envStack) Detection() detect.Rule { return detect.Rule{File: "composer.json"} }
+
+func (envStack) Defaults(dir string) (recipe.Result, error) {
+	env, err := os.ReadFile(filepath.Join(dir, ".env"))
+	if err != nil {
+		return recipe.Result{}, err
+	}
+	engine, _ := dotenv.Parse(env).Get("DB_CONNECTION")
+	return layered(config.ParseLayer("the env-stack Recipe", []byte("[database]\nengine = \""+engine+"\"\n")))
+}
+
+func TestAPHPWithoutTheDriverForTheDatabaseARecipeSetsIsARuntimeWarning(t *testing.T) {
+	dir := project(t, map[string]string{
+		"composer.json": `{"require": {"php": "^8.2"}}`,
+		".env":          "DB_CONNECTION=mysql\n",
+	})
+
+	res, err := recipe.Resolve(recipe.Input{Engines: firstPartyEngines(), Dir: dir, Recipes: []recipe.Recipe{envStack{}},
+		Runtimes: []runtimes.Runtime{php("8.5.0", "core", "pdo"), noNode}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertRuntimeWarning(t, res, runtimes.PHP, []string{"pdo_mysql", "mysql", "PHP 8.5.0"}, []string{"pdo_mysql"})
+}
+
+// Each database engine needs its PDO extension, and only a PHP Project is
 // checked for it.
-func TestEachDatabaseEngineNeedsItsPHPDriver(t *testing.T) {
+func TestEachDatabaseEngineNeedsItsPDOExtension(t *testing.T) {
 	tests := []struct {
 		engine, driver string
 	}{
