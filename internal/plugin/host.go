@@ -138,7 +138,8 @@ func loadInstalled(dir string) (Plugin, error) {
 
 // Inspect reads the Plugin in the directory src without adding it, and
 // checks that it can be added: that its manifest is valid and its Recipes
-// don't take names Laneway's or another installed Plugin's Recipes have.
+// and Integrations don't take names Laneway's or another installed Plugin's
+// have.
 func (h *Host) Inspect(src string) (Plugin, error) {
 	m, err := LoadManifest(src)
 	if err != nil {
@@ -171,6 +172,9 @@ func (h *Host) Inspect(src string) (Plugin, error) {
 		if who, ok := taken[r.Name]; ok {
 			return Plugin{}, fmt.Errorf("Plugin %s adds Recipe %s, but %s already has a Recipe of that name", p.Name, r.Name, who)
 		}
+	}
+	if err := h.integrationsTaken(p); err != nil {
+		return Plugin{}, err
 	}
 	return p, nil
 }
@@ -255,8 +259,8 @@ func (h *Host) Recipes() []recipe.Recipe {
 	return append(recipes, recipe.Builtin...)
 }
 
-// ResolveDir is recipe.ResolveDir with the installed Plugins' Recipes as
-// well as Laneway's own (see Recipes).
+// ResolveDir is recipe.ResolveDir with the installed Plugins' Recipes and
+// Integrations as well as Laneway's own (see Recipes and Integrations).
 func (h *Host) ResolveDir(dir string, found ...runtimes.Runtime) (recipe.Resolved, error) {
 	layers, err := config.LoadLayers(dir)
 	if err != nil {
@@ -266,7 +270,7 @@ func (h *Host) ResolveDir(dir string, found ...runtimes.Runtime) (recipe.Resolve
 		Dir:          dir,
 		Layers:       layers,
 		Recipes:      h.Recipes(),
-		Integrations: recipe.BuiltinIntegrations,
+		Integrations: h.Integrations(),
 		Runtimes:     found,
 	})
 }

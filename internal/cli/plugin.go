@@ -89,6 +89,9 @@ func printPlugin(w io.Writer, res api.AddPluginResponse) {
 	for _, r := range p.Recipes {
 		fmt.Fprintf(w, "  adds the Recipe %s, for Projects where %s\n", r.Name, r.Detects)
 	}
+	for _, in := range p.Integrations {
+		fmt.Fprintf(w, "  adds the Integration %s, for Projects where %s\n", in.Name, in.Detects)
+	}
 	if len(p.Hooks) > 0 {
 		titles := make([]string, len(p.Hooks))
 		for i, h := range p.Hooks {
@@ -131,6 +134,9 @@ func runPluginList(ctx context.Context, env Env, args []string) error {
 		var adds []string
 		for _, r := range p.Recipes {
 			adds = append(adds, "Recipe "+r.Name)
+		}
+		for _, in := range p.Integrations {
+			adds = append(adds, "Integration "+in.Name)
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", p.Name, p.Version, p.Source, strings.Join(adds, ", "))
 	}

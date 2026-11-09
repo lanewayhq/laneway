@@ -58,9 +58,12 @@ func (d *Daemon) addPlugin(req api.AddPluginRequest) (api.AddPluginResponse, err
 
 func apiPlugin(p plugin.Plugin) api.Plugin {
 	ap := api.Plugin{Name: p.Name, Version: p.Version, Source: p.Source, SHA256: p.SHA256,
-		Recipes: []api.PluginRecipe{}, Hooks: []string{}, Effects: []api.PluginEffect{}, HTTPHosts: []string{}}
+		Recipes: []api.PluginRecipe{}, Integrations: []api.PluginIntegration{}, Hooks: []string{}, Effects: []api.PluginEffect{}, HTTPHosts: []string{}}
 	for _, r := range p.Recipes {
 		ap.Recipes = append(ap.Recipes, api.PluginRecipe{Name: r.Name, Detects: r.Detect.String()})
+	}
+	for _, in := range p.Integrations {
+		ap.Integrations = append(ap.Integrations, api.PluginIntegration{Name: in.Name, Detects: in.Detect.String()})
 	}
 	for _, e := range plugin.Events {
 		if slices.Contains(p.Hooks, e.Name) {

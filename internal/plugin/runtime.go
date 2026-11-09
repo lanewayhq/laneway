@@ -40,8 +40,9 @@ type request struct {
 
 // Calls a module answers.
 const (
-	callRecipe = "recipe"
-	callHook   = "hook"
+	callRecipe      = "recipe"
+	callIntegration = "integration"
+	callHook        = "hook"
 )
 
 // runtime runs Plugins' modules. Compiling a module takes about a second, and
