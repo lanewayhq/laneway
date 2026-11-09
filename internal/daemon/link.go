@@ -36,6 +36,12 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 	if err != nil {
 		return api.LinkResponse{}, err
 	}
+	if len(catalogRes.fetched) > 0 {
+		// Once Linking is done, since other Linked Projects may have been
+		// waiting for them, such as when the daemon couldn't fetch them when
+		// it started, and so may this one, if it was Linked already.
+		defer d.background(d.pluginsFetched)
+	}
 	for _, p := range catalogRes.fetched {
 		res.Fetched = append(res.Fetched, apiPlugin(p))
 	}

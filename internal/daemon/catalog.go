@@ -36,7 +36,12 @@ func (d *Daemon) fetchCatalogPlugins(ctx context.Context, dir, again string) (ca
 	d.catalogMu.Lock()
 	defer d.catalogMu.Unlock()
 	cat, loadErr := d.loadCatalog(ctx)
-	return d.fetchCatalogPluginsFrom(ctx, cat, loadErr, dir, again)
+	res, err := d.fetchCatalogPluginsFrom(ctx, cat, loadErr, dir, again)
+	if err == nil && res.unchecked == nil {
+		// What the daemon couldn't fetch when it started is fetched.
+		d.setUnfetched(dir, "")
+	}
+	return res, err
 }
 
 // againLink is what a command fetching a Project's Catalog Plugins says to

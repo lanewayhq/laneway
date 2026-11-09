@@ -132,10 +132,13 @@ func (d *Daemon) setupEnv(ctx context.Context, p registry.Project, w worktreeRef
 	return env
 }
 
-// setupOf is the API view of the setup state of the Worktree at dir.
+// setupOf is the API view of the setup state of the Worktree at dir. Its
+// warnings include the Catalog Plugins Laneway couldn't fetch for its
+// Project when it started, which may be why its setup failed.
 func (d *Daemon) setupOf(dir string) *api.Setup {
 	st := d.preparer.Status(dir)
-	return &api.Setup{State: string(st.State), Step: st.Step, Error: st.Error, Output: st.Output, Warnings: st.Warnings}
+	return &api.Setup{State: string(st.State), Step: st.Step, Error: st.Error, Output: st.Output,
+		Warnings: append(d.unfetchedWarnings(dir), st.Warnings...)}
 }
 
 // worktreeReady finds the Worktree containing req.Dir (discovering it at once

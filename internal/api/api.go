@@ -50,6 +50,11 @@ type Project struct {
 	Path string `json:"path"`
 	// Worktrees are the Project's Worktrees, the main one first.
 	Worktrees []Worktree `json:"worktrees"`
+	// Warnings are problems with the whole Project, such as Catalog
+	// Plugins it needs that Laneway couldn't fetch when it started. Each of
+	// its Worktrees' setup warnings has them too. Only GET /v1/projects and
+	// GET /v1/events fill them in.
+	Warnings []string `json:"warnings,omitempty"`
 	// PluginItems are what Plugins the Project uses show on it; only
 	// GET /v1/projects and GET /v1/events fill them in.
 	PluginItems

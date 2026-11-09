@@ -148,6 +148,11 @@ type Daemon struct {
 	// checked is the Catalog last loaded, for Plugin updates, see
 	// updates.go. Guarded by catalogMu.
 	checked checkedCatalog
+	// unfetched is why Laneway couldn't fetch the Catalog Plugins each
+	// Linked Project needs when it started, by Project path, until a later
+	// fetch for it succeeds (see startfetch.go).
+	unfetchedMu sync.Mutex
+	unfetched   map[string]string
 	// handChecked is what the sources of Plugins added by hand had when
 	// last checked for updates, by Plugin name (see pinned.go).
 	handMu      sync.Mutex
