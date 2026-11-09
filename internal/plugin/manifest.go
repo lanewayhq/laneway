@@ -53,6 +53,9 @@ type Manifest struct {
 	// EngineFiles are the Engines it adds: Engine manifests (TOML, read by
 	// engine.Parse), relative to its directory. An Engine needs no module.
 	EngineFiles []string `json:"engines,omitempty"`
+	// Generators are the Generators it adds, run in this order by
+	// `lane generate <plugin>`.
+	Generators []GeneratorDecl `json:"generators,omitempty"`
 	// Capabilities are what it may do beyond returning config.
 	Capabilities Capabilities `json:"capabilities,omitzero"`
 }
@@ -165,8 +168,8 @@ func (m Manifest) validate() error {
 	if m.Module != "" && (path.IsAbs(m.Module) || !fs.ValidPath(m.Module)) {
 		return fmt.Errorf("module %q must be a path inside the Plugin's directory, such as %q", m.Module, DefaultModule)
 	}
-	if len(m.Recipes) == 0 && len(m.Integrations) == 0 && len(m.Commands) == 0 && len(m.EngineFiles) == 0 {
-		return errors.New("the Plugin adds nothing; declare what it adds, such as a Recipe under recipes, an Integration under integrations, an Engine under engines or a command under commands")
+	if len(m.Recipes) == 0 && len(m.Integrations) == 0 && len(m.Commands) == 0 && len(m.EngineFiles) == 0 && len(m.Generators) == 0 {
+		return errors.New("the Plugin adds nothing; declare what it adds, such as a Recipe under recipes, an Integration under integrations, an Engine under engines, a command under commands or a Generator under generators")
 	}
 	if err := m.validateEngineFiles(); err != nil {
 		return err
@@ -183,6 +186,9 @@ func (m Manifest) validate() error {
 		if err := r.Detect.Validate(); err != nil {
 			return fmt.Errorf("recipes[%d] (%s): %w", i, r.Name, err)
 		}
+	}
+	if err := m.validateGenerators(); err != nil {
+		return err
 	}
 	if err := validateIntegrations(m.Integrations); err != nil {
 		return err
@@ -211,5 +217,5 @@ func (m Manifest) module() string {
 
 // needsModule reports whether the Plugin has calls to answer.
 func (m Manifest) needsModule() bool {
-	return len(m.Recipes) > 0 || len(m.Integrations) > 0 || len(m.Commands) > 0
+	return len(m.Recipes) > 0 || len(m.Integrations) > 0 || len(m.Commands) > 0 || len(m.Generators) > 0
 }

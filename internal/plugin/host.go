@@ -52,6 +52,8 @@ type Options struct {
 	Log *slog.Logger
 	// Timeout is how long one call may take; DefaultTimeout if 0.
 	Timeout time.Duration
+	// Builtin are the Plugins built into Laneway.
+	Builtin []Builtin
 }
 
 // Plugin is a Plugin: its manifest, and where it came from.
@@ -68,6 +70,9 @@ type Plugin struct {
 	SHA256 string
 	// Engines are the Engines it adds, read from its EngineFiles.
 	Engines []*engine.Manifest
+
+	// serve answers a built-in Plugin's calls (see Builtin).
+	serve func([]byte) ([]byte, error)
 }
 
 // installed is what installedFile records.
@@ -82,8 +87,9 @@ type Host struct {
 	opts    Options
 	runtime *runtime
 
-	mu      sync.Mutex
-	plugins map[string]Plugin // by name
+	mu       sync.Mutex
+	plugins  map[string]Plugin // by name
+	builtins map[string]Plugin // by name
 }
 
 // Open loads the Plugins installed in opts.Dir. A Plugin that can't be
@@ -94,11 +100,15 @@ func Open(opts Options) (*Host, error) {
 		opts.Log = slog.New(slog.DiscardHandler)
 	}
 	opts.Timeout = cmp.Or(opts.Timeout, DefaultTimeout)
+	builtins, err := loadBuiltins(opts.Builtin)
+	if err != nil {
+		return nil, err
+	}
 	rt, err := newRuntime(opts)
 	if err != nil {
 		return nil, err
 	}
-	h := &Host{opts: opts, runtime: rt, plugins: map[string]Plugin{}}
+	h := &Host{opts: opts, runtime: rt, plugins: map[string]Plugin{}, builtins: builtins}
 	entries, err := os.ReadDir(opts.Dir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		rt.close()
@@ -159,6 +169,9 @@ func (h *Host) Inspect(src string) (Plugin, error) {
 	p := Plugin{Manifest: m, Dir: src, Source: src, Engines: engines}
 	if err := h.checkEngineNames(p); err != nil {
 		return Plugin{}, err
+	}
+	if _, ok := h.builtins[p.Name]; ok {
+		return Plugin{}, fmt.Errorf("Laneway has a built-in Plugin named %s; give the Plugin another name", p.Name)
 	}
 	if m.needsModule() {
 		data, err := os.ReadFile(filepath.Join(src, filepath.FromSlash(m.module())))
@@ -294,7 +307,7 @@ func (h *Host) ResolveDir(dir string, found ...runtimes.Runtime) (recipe.Resolve
 // response into res. what names the call in errors, such as "the procfile
 // Recipe (Plugin procfile)".
 func (h *Host) call(p Plugin, what string, req request, dir string, res any) error {
-	out, err := h.runtime.call(p, req, dir)
+	out, err := h.run(p, req, dir)
 	return decode(what, out, err, res)
 }
 

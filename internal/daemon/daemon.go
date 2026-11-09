@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lanewayhq/laneway/internal/builtin"
 	"github.com/lanewayhq/laneway/internal/clock"
 	"github.com/lanewayhq/laneway/internal/container"
 	"github.com/lanewayhq/laneway/internal/dashboard"
@@ -202,6 +203,7 @@ func Start(cfg Config) (*Daemon, error) {
 		CacheDir: cmp.Or(cfg.PluginCacheDir, cfg.Paths.PluginCache()),
 		Log:      log,
 		Timeout:  cfg.PluginTimeout,
+		Builtin:  builtin.Plugins(),
 	})
 	if err != nil {
 		ln.Close()

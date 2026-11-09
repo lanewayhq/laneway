@@ -57,7 +57,7 @@ func (d *Daemon) addPlugin(req api.AddPluginRequest) (api.AddPluginResponse, err
 
 func apiPlugin(p plugin.Plugin) api.Plugin {
 	ap := api.Plugin{Name: p.Name, Version: p.Version, Source: p.Source, SHA256: p.SHA256,
-		Recipes: []api.PluginRecipe{}, Integrations: []api.PluginIntegration{}, Commands: []api.PluginCommand{}, Engines: []api.PluginEngine{}, Effects: []api.PluginEffect{}, HTTPHosts: []string{}}
+		Recipes: []api.PluginRecipe{}, Integrations: []api.PluginIntegration{}, Commands: []api.PluginCommand{}, Engines: []api.PluginEngine{}, Generators: []string{}, Effects: []api.PluginEffect{}, HTTPHosts: []string{}}
 	for _, r := range p.Recipes {
 		ap.Recipes = append(ap.Recipes, api.PluginRecipe{Name: r.Name, Detects: r.Detect.String()})
 	}
@@ -69,6 +69,9 @@ func apiPlugin(p plugin.Plugin) api.Plugin {
 	}
 	for _, e := range p.Engines {
 		ap.Engines = append(ap.Engines, api.PluginEngine{Name: e.Name, Image: e.Image, Port: e.Port})
+	}
+	for _, g := range p.Generators {
+		ap.Generators = append(ap.Generators, g.Name)
 	}
 	for _, kind := range p.Capabilities.Effects {
 		ap.Effects = append(ap.Effects, api.PluginEffect{Kind: kind, Description: plugin.EffectKinds[kind]})
