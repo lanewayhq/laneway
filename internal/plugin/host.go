@@ -158,28 +158,16 @@ func loadInstalled(dir string) (Plugin, error) {
 // Integrations and Engines don't take names Laneway's or another installed
 // Plugin's have.
 func (h *Host) Inspect(src string) (Plugin, error) {
-	m, err := LoadManifest(src)
+	p, err := readSource(src)
 	if err != nil {
 		return Plugin{}, err
 	}
-	engines, err := readEngines(os.DirFS(src), src, m)
-	if err != nil {
-		return Plugin{}, err
-	}
-	p := Plugin{Manifest: m, Dir: src, Source: src, Engines: engines}
+	m := p.Manifest
 	if err := h.checkEngineNames(p); err != nil {
 		return Plugin{}, err
 	}
 	if _, ok := h.builtins[p.Name]; ok {
 		return Plugin{}, fmt.Errorf("Laneway has a built-in Plugin named %s; give the Plugin another name", p.Name)
-	}
-	if m.needsModule() {
-		data, err := os.ReadFile(filepath.Join(src, filepath.FromSlash(m.module())))
-		if err != nil {
-			return Plugin{}, err
-		}
-		sum := sha256.Sum256(data)
-		p.SHA256 = hex.EncodeToString(sum[:])
 	}
 	taken := map[string]string{} // Recipe name → who has it
 	for _, r := range recipe.Builtin {
@@ -202,6 +190,26 @@ func (h *Host) Inspect(src string) (Plugin, error) {
 	}
 	if err := h.integrationsTaken(p); err != nil {
 		return Plugin{}, err
+	}
+	return p, nil
+}
+
+// readSource reads the Plugin in the directory src, as its author has it:
+// its manifest, Engines, and its module's hash.
+func readSource(src string) (Plugin, error) {
+	m, err := LoadManifest(src)
+	if err != nil {
+		return Plugin{}, err
+	}
+	engines, err := readEngines(os.DirFS(src), src, m)
+	if err != nil {
+		return Plugin{}, err
+	}
+	p := Plugin{Manifest: m, Dir: src, Source: src, Engines: engines}
+	if m.needsModule() {
+		if p.SHA256, err = fileSHA256(filepath.Join(src, filepath.FromSlash(m.module()))); err != nil {
+			return Plugin{}, err
+		}
 	}
 	return p, nil
 }
