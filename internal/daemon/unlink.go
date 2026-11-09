@@ -50,6 +50,7 @@ func (d *Daemon) unlink(ctx context.Context, dir string) (api.UnlinkResponse, er
 		d.preparer.Forget(w.dir)
 	}
 	d.addOrphans(orphans)
+	d.projectUnlinked(p)
 	for _, o := range orphans {
 		res.Orphans = append(res.Orphans, apiOrphan(o))
 	}

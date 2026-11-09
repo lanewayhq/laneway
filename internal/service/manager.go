@@ -101,6 +101,11 @@ type Options struct {
 	// the Service's error, such as "nginx (pid 4242)"; "" (or nil) if it
 	// can't tell.
 	PortHolders func(port int) string
+	// OnStarted and OnStopped, if set, are told every time a Service's
+	// container is started and ready, or stopped after running (by hand,
+	// Idle or Close). They are called while the Service can't start or
+	// stop, so they must return quickly and must not call the Manager.
+	OnStarted, OnStopped func(Status)
 }
 
 // Status is what a Service is doing.
@@ -505,15 +510,17 @@ func (s *managed) ensure(ctx context.Context) (string, error) {
 		err = s.waitReady(ctx, addr)
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if err != nil {
 		s.state, s.err = Stopped, err.Error()
+		s.mu.Unlock()
 		return "", fmt.Errorf("Service %s could not be started: %w", s.Name(), err)
 	}
 	s.state, s.addr, s.err = Running, addr, ""
 	s.activity.SetTimeout(s.m.idleTimeout())
 	s.activity.Touch()
+	s.mu.Unlock()
 	s.m.log.Info("Service started", "service", s.Name(), "container", s.spec.Name)
+	s.tell(s.m.opts.OnStarted)
 	return addr, nil
 }
 
@@ -644,12 +651,21 @@ func (s *managed) stop(ctx context.Context, state string) error {
 		return fmt.Errorf("stopping Service %s: %w", s.Name(), err)
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.state, s.addr = state, ""
+	s.mu.Unlock()
 	if wasUp {
 		s.m.log.Info("Service stopped", "service", s.Name(), "state", state)
+		s.tell(s.m.opts.OnStopped)
 	}
 	return nil
+}
+
+// tell calls f, Options.OnStarted or OnStopped, with the Service's status, if
+// it is set. The caller holds s.lifecycle.
+func (s *managed) tell(f func(Status)) {
+	if f != nil {
+		f(s.status())
+	}
 }
 
 func (s *managed) track(conn net.Conn) bool {

@@ -81,6 +81,7 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 	default:
 		d.serveProject(project)
 		d.syncWorktrees(ctx, project)
+		d.projectLinked(project)
 	}
 	res.Project = d.apiProject(project)
 	res.Worktree = api.Worktree{Name: checkout.Name, Path: checkout.Dir, Main: checkout.Main()}
