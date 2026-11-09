@@ -56,6 +56,8 @@ type Response struct {
 	Error string `json:"error,omitempty"`
 	// RecipeResult answers a CallRecipe.
 	*RecipeResult
+	// GeneratorResult answers a CallGenerator.
+	*GeneratorResult
 }
 
 // RecipeResult is what a Recipe returns for a Project it detected.
@@ -136,7 +138,8 @@ type Recipe func(Project) (RecipeResult, error)
 // Plugin is what a Plugin's module handles, by the names its manifest
 // declares.
 type Plugin struct {
-	Recipes map[string]Recipe
+	Recipes    map[string]Recipe
+	Generators map[string]Generator
 }
 
 // Run answers the request on stdin and exits: it is a Plugin module's whole
@@ -179,6 +182,16 @@ func handle(p Plugin, req Request) (Response, error) {
 			return Response{}, err
 		}
 		return Response{RecipeResult: &res}, nil
+	case CallGenerator:
+		generator, ok := p.Generators[req.Name]
+		if !ok {
+			return Response{}, fmt.Errorf("this Plugin has no Generator %q", req.Name)
+		}
+		res, err := generator(project)
+		if err != nil {
+			return Response{}, err
+		}
+		return Response{GeneratorResult: &res}, nil
 	}
 	return Response{}, errors.New("this Plugin doesn't answer " + req.Call + " calls")
 }
