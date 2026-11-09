@@ -138,7 +138,7 @@ func (d *Daemon) linkEnvPatch(ctx context.Context, p registry.Project, apply boo
 		if err != nil {
 			return nil, &api.Error{Code: api.CodeInvalidConfig, Message: fmt.Sprintf("the Env Patch for %s: %v", w.dir, err)}
 		}
-		// With Test Databases on, .env.testing too.
+		// With Test Databases on, the env file the tests read too.
 		testPlan, _, err := d.planTestEnvPatch(p, w)
 		if err != nil {
 			return nil, &api.Error{Code: api.CodeInvalidConfig, Message: fmt.Sprintf("the Env Patch for %s: %v", w.dir, err)}
