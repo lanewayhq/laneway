@@ -1,6 +1,6 @@
-// The Orphans panel: databases of removed Worktrees and Unlinked Projects,
-// with the Worktree they belonged to, when they were orphaned and when the
-// daemon drops them (24 hours later). It re-renders on every `orphans`
+// The Orphans panel: databases and Buckets of removed Worktrees and
+// Unlinked Projects, with the Worktree they belonged to, when they were
+// orphaned and when the daemon drops them (24 hours later). It re-renders on every `orphans`
 // event (and each minute, for the relative times).
 //
 // Dropping now matches `lane gc`: "Drop all now" previews (POST /v1/gc
@@ -8,7 +8,7 @@
 // sends exactly the previewed list; "Drop" on a row sends just that one.
 // It also adds "Unlink" to each Project's main Worktree in the Projects
 // panel (DELETE /v1/projects), since Unlinking is what makes a Project's
-// databases Orphans. Every one of these asks first.
+// databases and Buckets Orphans. Every one of these asks first.
 import { h } from "../dom.js";
 import { absolute, relative } from "../time.js";
 
@@ -25,7 +25,7 @@ export default {
     const render = (list) => {
       last = list;
       const note = h("p", { class: "note" },
-        "Databases of removed Worktrees and Unlinked Projects. Laneway drops each 24 hours after it was orphaned; ",
+        "Databases and Buckets of removed Worktrees and Unlinked Projects. Laneway drops each 24 hours after it was orphaned; ",
         "linking the Worktree again before then keeps it.");
       const header = h("div", { class: "panel-header" }, note,
         h("span", { class: "status" }, message),
@@ -35,7 +35,7 @@ export default {
         return;
       }
       el.replaceChildren(header, h("table", {},
-        h("thead", {}, h("tr", {}, ...["Database", "Service", "Kind", "Worktree", "Orphaned", "Dropped", ""].map((c) => h("th", {}, c)))),
+        h("thead", {}, h("tr", {}, ...["Name", "Service", "Kind", "Worktree", "Orphaned", "Dropped", ""].map((c) => h("th", {}, c)))),
         h("tbody", {}, ...list.orphans.map(row))));
     };
 
@@ -96,19 +96,19 @@ async function dropAll(dash) {
   }
   const n = preview.orphans.length;
   const ok = await dash.confirm({
-    title: `Drop ${n === 1 ? "this database" : `these ${n} databases`} now?`,
+    title: `Drop ${n === 1 ? "this Orphan" : `these ${n} Orphans`} now?`,
     body: [
       h("ul", { class: "drops" }, ...preview.orphans.map((o) => h("li", {},
         h("code", {}, o.database), ` in ${o.service}: ${o.since ? `${o.kind} of ${describe(o)}` : "leftover parallel test copy"}`))),
       n === 1 ? "Its data can't be brought back." : "Their data can't be brought back.",
     ],
-    action: n === 1 ? "Drop it" : `Drop ${n} databases`,
+    action: n === 1 ? "Drop it" : `Drop ${n} Orphans`,
   });
   if (!ok) {
     return "";
   }
   const dropped = await gc(dash, preview.orphans);
-  return `Dropped ${dropped} database${dropped === 1 ? "" : "s"}.`;
+  return `Dropped ${dropped} Orphan${dropped === 1 ? "" : "s"}.`;
 }
 
 // gc drops exactly orphans, reports any that couldn't be and returns how
@@ -127,7 +127,7 @@ async function unlink(dash, p) {
     title: `Unlink ${p.name}?`,
     body: [
       `Laneway stops its Worktrees and forgets its Domains (${p.worktrees.map((w) => w.domain).filter(Boolean).join(", ")}).`,
-      "Its databases become Orphans and are dropped in 24 hours unless you link it again. Files, including .env, are left alone.",
+      "Its databases and Buckets become Orphans and are dropped in 24 hours unless you link it again. Files, including .env, are left alone.",
     ],
     action: "Unlink",
   });

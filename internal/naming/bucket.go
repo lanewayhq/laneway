@@ -45,6 +45,29 @@ func BucketName(project, worktree, suffix string) string {
 	return name
 }
 
+// BucketOf reports whether name is one of the Buckets the naming rule
+// gives the Worktree worktree (its label; "" for the main Worktree) of the
+// Project project: its private Bucket or one the Project declares,
+// whatever its suffix (BucketName). Its Project's part of a name ends at
+// the first --, so another Worktree's Buckets are never its own. Neither are
+// another Project's, unless that Project is named like this one's Bucket
+// with a suffix (shop-public and shop's Bucket public): the caller tells
+// those apart by what Worktrees exist. A name cut short with a hash is only
+// known when the suffix it was made with is written as it is in the name.
+func BucketOf(name, project, worktree string) bool {
+	head, _, _ := strings.Cut(name, "--")
+	p := bucketPart(project)
+	var suffix string
+	switch {
+	case head == p:
+	case strings.HasPrefix(head, p+"-"):
+		suffix = head[len(p)+1:]
+	default:
+		return false
+	}
+	return BucketName(project, worktree, suffix) == name
+}
+
 // bucketPart is name as the part of a Bucket name before the first --:
 // normalized with - (see normalize), each run of - then made one.
 func bucketPart(name string) string {
