@@ -134,6 +134,7 @@ func New() *Fake {
 	f.Serve("docker.io/library/postgres", Postgres)
 	f.AnswerCommands("docker.io/library/postgres", PostgresCommands)
 	f.Serve("docker.io/library/mysql", MySQL)
+	f.AnswerCommands("docker.io/library/mysql", MySQLCommands)
 	return f
 }
 

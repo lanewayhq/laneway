@@ -93,6 +93,37 @@ func TestLinkingCreatesTheProjectsEmptyMySQLDatabase(t *testing.T) {
 	}
 }
 
+func TestMySQLDatabasesAreMadeByMysqlAndMysqldumpInsideTheServiceContainer(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	repo := mysqlProject(t, "my-client", "")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	myExec(t, dialMySQL(t, d, 3306, "my_client"), "CREATE TABLE notes (body text)")
+	wt := repo.AddWorktree("feature")
+	d.MustRunCLI(wt.Dir, "worktree", "ready")
+
+	// Created with mysql, then copied with mysqldump: no connection of
+	// Laneway's own to the Service.
+	var mysql, mysqldump int
+	for _, call := range d.Engine.Calls() {
+		if strings.HasPrefix(call, "exec laneway-mysql-8.4 ") {
+			if strings.Contains(call, "mysqldump") {
+				mysqldump++
+			} else if strings.Contains(call, " mysql ") {
+				mysql++
+			}
+		}
+	}
+	if mysql == 0 || mysqldump != 1 {
+		t.Fatalf("mysql ran %d times and mysqldump %d in the MySQL Service's container, want mysql to make the database and mysqldump to copy it once: %v",
+			mysql, mysqldump, d.Engine.Calls())
+	}
+	if got := myColumn(t, dialMySQL(t, d, 3306, "my_client__feature"), "SHOW TABLES"); !slices.Equal(got, []string{"notes"}) {
+		t.Fatalf("the Worktree's database has tables %q, want the main Worktree's", got)
+	}
+}
+
 func TestANewWorktreeGetsACopyOfTheMainWorktreesMySQLDatabaseByDefault(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
