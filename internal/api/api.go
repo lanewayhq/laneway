@@ -201,6 +201,13 @@ type LinkResponse struct {
 	// EnvPatch lists the env files that were (or, with Preview, would be)
 	// changed, one per Worktree whose Env Patch wasn't already in place.
 	EnvPatch []EnvFilePatch `json:"envPatch,omitempty"`
+	// Fetched are the Plugins fetched from the Catalog and installed
+	// because the Project needs them (even when previewing, since the Env
+	// Patch can't be worked out without them).
+	Fetched []Plugin `json:"fetched,omitempty"`
+	// Warnings are problems that didn't stop Linking, such as a Catalog
+	// Laneway refused.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // EnvFilePatch is how the Env Patch changes one Worktree's env file. Only the
@@ -345,6 +352,10 @@ const (
 	// CodePluginInUse: a Plugin can't be removed while Linked Projects use
 	// it; the message lists them.
 	CodePluginInUse = "plugin_in_use"
+
+	// CodePluginsUnavailable: Linking needs Catalog Plugins that couldn't
+	// be fetched, such as when offline; the message names them.
+	CodePluginsUnavailable = "plugins_unavailable"
 )
 
 // Service is a shared Service, such as redis:7, and how to connect to it.

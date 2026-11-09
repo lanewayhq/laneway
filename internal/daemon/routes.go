@@ -238,6 +238,8 @@ var statusFor = map[string]int{
 	api.CodeUnknownPlugin:  http.StatusNotFound,
 	api.CodeUnknownCommand: http.StatusNotFound,
 	api.CodePluginInUse:    http.StatusConflict,
+
+	api.CodePluginsUnavailable: http.StatusBadGateway,
 }
 
 // writeError sends err to the client. An *api.Error is passed through as is;
