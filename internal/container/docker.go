@@ -221,6 +221,7 @@ func (e *Docker) Start(ctx context.Context, spec Spec) (string, error) {
 	if err != nil && !isStatus(err, http.StatusNotFound) {
 		return "", err
 	}
+	pulled := false
 	if exists && createdFrom(c) != spec.Image {
 		// Created from another image: pull the new one first, so the
 		// Service is never without a container for long, then remove the
@@ -228,6 +229,7 @@ func (e *Docker) Start(ctx context.Context, spec Spec) (string, error) {
 		if err := e.Pull(ctx, spec.Image); err != nil {
 			return "", err
 		}
+		pulled = true
 		err := e.do(ctx, http.MethodDelete, "/containers/"+url.PathEscape(spec.Name), url.Values{"force": {"1"}}, nil, nil)
 		if err != nil && !isStatus(err, http.StatusNotFound) {
 			return "", fmt.Errorf("removing container %s to create it from %s: %w", spec.Name, spec.Image, err)
@@ -235,8 +237,10 @@ func (e *Docker) Start(ctx context.Context, spec Spec) (string, error) {
 		exists = false
 	}
 	if !exists {
-		if err := e.Pull(ctx, spec.Image); err != nil {
-			return "", err
+		if !pulled {
+			if err := e.Pull(ctx, spec.Image); err != nil {
+				return "", err
+			}
 		}
 		if err := e.create(ctx, spec); err != nil && !isStatus(err, http.StatusConflict) {
 			return "", fmt.Errorf("creating container %s: %w", spec.Name, err)
