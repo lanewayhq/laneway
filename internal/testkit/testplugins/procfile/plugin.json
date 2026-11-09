@@ -1,0 +1,6 @@
+{
+  "name": "procfile",
+  "version": "0.1.0",
+  "api_version": 1,
+  "recipes": [{"name": "procfile", "detect": {"file": "Procfile"}}]
+}

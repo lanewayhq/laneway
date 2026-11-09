@@ -647,7 +647,7 @@ func (d *Daemon) routesProcess(s *served, process string) bool {
 		default:
 		}
 	}
-	cfg, err := recipe.ResolveDir(s.dir)
+	cfg, err := d.plugins.ResolveDir(s.dir)
 	if err != nil {
 		return false
 	}

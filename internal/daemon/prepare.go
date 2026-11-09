@@ -38,7 +38,7 @@ import (
 // the first step, and so is one the daemon stopped in the middle of.
 func (d *Daemon) setupPlan(p registry.Project, w worktreeRef) prepare.Plan {
 	return func(ctx context.Context) ([]prepare.Step, error) {
-		cfg, err := recipe.ResolveDir(w.dir)
+		cfg, err := d.plugins.ResolveDir(w.dir)
 		if err != nil {
 			return nil, err
 		}
@@ -91,7 +91,7 @@ func (d *Daemon) teardown(p registry.Project, w worktreeRef) {
 	d.preparer.Forget(w.dir)
 	d.preparer.Go(fmt.Sprintf("on_remove for Worktree %q of Project %q", w.name, p.Name),
 		func(ctx context.Context) ([]prepare.Step, error) {
-			cfg, err := recipe.ResolveDir(p.Path)
+			cfg, err := d.plugins.ResolveDir(p.Path)
 			if err != nil || len(cfg.OnRemove) == 0 {
 				return nil, err
 			}

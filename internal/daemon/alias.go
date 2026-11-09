@@ -9,7 +9,6 @@ import (
 
 	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/naming"
-	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/registry"
 )
 
@@ -106,8 +105,8 @@ func (d *Daemon) aliasTarget(host string) (string, bool) {
 // reservedLabels are the names a linked Worktree's label or an Alias must
 // not take: the main Worktree's HTTP Processes other than the Primary
 // Process, which are served at <process>.<project>.localhost.
-func reservedLabels(p registry.Project) []string {
-	cfg, err := recipe.ResolveDir(p.Path)
+func (d *Daemon) reservedLabels(p registry.Project) []string {
+	cfg, err := d.plugins.ResolveDir(p.Path)
 	if err != nil {
 		return nil
 	}
@@ -159,7 +158,7 @@ func (d *Daemon) addAlias(ctx context.Context, dir, name string) (api.AliasRespo
 	var existed bool
 	moved, err := d.changeAliases(p, w, func() error {
 		existed = slices.Contains(d.registry.Aliases(p.Path), alias)
-		if slices.Contains(reservedLabels(p), name) {
+		if slices.Contains(d.reservedLabels(p), name) {
 			return &api.Error{
 				Code: api.CodeAliasTaken,
 				Message: fmt.Sprintf("%s can't be an Alias: it is where the main Worktree's %q Process is served; "+

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/api"
-	"github.com/lanewayhq/laneway/internal/recipe"
 )
 
 // eventsInterval is how often GET /v1/events looks for changes. It is
@@ -23,7 +22,7 @@ func (d *Daemon) projectList() api.ProjectList {
 		ap := d.apiProject(p)
 		for i, w := range ap.Worktrees {
 			w = d.withState(w)
-			w.Declared = declaredProcesses(w.Path)
+			w.Declared = d.declaredProcesses(w.Path)
 			ap.Worktrees[i] = w
 		}
 		list.Projects = append(list.Projects, ap)
@@ -33,8 +32,8 @@ func (d *Daemon) projectList() api.ProjectList {
 
 // declaredProcesses are the Processes the config of the Worktree at dir
 // declares; nil if it can't be read.
-func declaredProcesses(dir string) []api.DeclaredProcess {
-	cfg, err := recipe.ResolveDir(dir)
+func (d *Daemon) declaredProcesses(dir string) []api.DeclaredProcess {
+	cfg, err := d.plugins.ResolveDir(dir)
 	if err != nil {
 		return nil
 	}

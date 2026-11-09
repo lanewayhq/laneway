@@ -207,6 +207,23 @@ func (c *Client) GC(ctx context.Context, req api.GCRequest) (api.GCResponse, err
 	return res, err
 }
 
+// Plugins lists the installed Plugins.
+func (c *Client) Plugins(ctx context.Context) ([]api.Plugin, error) {
+	var list api.PluginList
+	if err := c.do(ctx, http.MethodGet, "/v1/plugins", nil, &list); err != nil {
+		return nil, err
+	}
+	return list.Plugins, nil
+}
+
+// AddPlugin adds the Plugin in the directory req.Source (with req.Preview,
+// only reads and checks it).
+func (c *Client) AddPlugin(ctx context.Context, req api.AddPluginRequest) (api.AddPluginResponse, error) {
+	var res api.AddPluginResponse
+	err := c.do(ctx, http.MethodPost, "/v1/plugins", req, &res)
+	return res, err
+}
+
 // do sends one request and decodes the response into out.
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
 	resp, err := c.send(ctx, method, path, body)

@@ -24,6 +24,7 @@ import (
 	"github.com/lanewayhq/laneway/internal/dashboard"
 	"github.com/lanewayhq/laneway/internal/paths"
 	"github.com/lanewayhq/laneway/internal/platform"
+	"github.com/lanewayhq/laneway/internal/plugin"
 	"github.com/lanewayhq/laneway/internal/prepare"
 	"github.com/lanewayhq/laneway/internal/proxy"
 	"github.com/lanewayhq/laneway/internal/registry"
@@ -81,6 +82,9 @@ type Config struct {
 	// dashboard.DefaultDomain if empty. Tests running several daemons at
 	// once give each its own, since Caddy's certificate cache is shared.
 	DashboardDomain string
+	// PluginTimeout is how long one call to a Plugin's module may take;
+	// plugin.DefaultTimeout if 0.
+	PluginTimeout time.Duration
 }
 
 // DefaultServiceHosts are where Services listen: loopback only, IPv4 and
@@ -121,6 +125,7 @@ type Daemon struct {
 	syncMu  sync.Mutex // serialises Worktree syncs
 
 	preparer *prepare.Preparer // Preparing Worktrees, see prepare.go
+	plugins  *plugin.Host      // installed Plugins, see plugins.go
 	services *service.Manager  // shared Services, see services.go
 
 	orphanMu      sync.Mutex // serialises changes to Orphans, see orphans.go
@@ -187,6 +192,16 @@ func Start(cfg Config) (*Daemon, error) {
 		ln.Close()
 		return nil, err
 	}
+	plugins, err := plugin.Open(plugin.Options{
+		Dir:      cfg.Paths.Plugins(),
+		CacheDir: cfg.Paths.PluginCache(),
+		Log:      log,
+		Timeout:  cfg.PluginTimeout,
+	})
+	if err != nil {
+		ln.Close()
+		return nil, err
+	}
 	sup := supervisor.New(log, supervisor.Options{Clock: cfg.Clock, LogMaxBytes: cfg.LogFileMaxBytes})
 	d := &Daemon{
 		cfg:        cfg,
@@ -199,6 +214,7 @@ func Start(cfg Config) (*Daemon, error) {
 		done:       make(chan struct{}),
 	}
 	d.preparer = prov
+	d.plugins = plugins
 	d.services = service.New(service.Options{
 		Engine:      cfg.ContainerEngine,
 		Clock:       cfg.Clock,
@@ -325,6 +341,7 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 	d.supervisor.StopAll(ctx)
 	// Services last: Processes may be using them until they stop.
 	d.services.Close(ctx)
+	d.plugins.Close()
 	return err
 }
 

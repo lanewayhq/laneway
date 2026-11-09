@@ -63,7 +63,7 @@ func worktreeOrphans(p registry.Project, w worktreeRef, cfg recipe.Resolved, sin
 // into Orphans. Its checkout is gone, so they are worked out from the main
 // Worktree's config.
 func (d *Daemon) orphanWorktree(p registry.Project, w worktreeRef) {
-	cfg, err := recipe.ResolveDir(p.Path)
+	cfg, err := d.plugins.ResolveDir(p.Path)
 	if err != nil {
 		d.log.Error("finding the databases of a removed Worktree", "project", p.Name, "worktree", w.name, "err", err)
 		return
@@ -77,7 +77,7 @@ func (d *Daemon) orphanWorktree(p registry.Project, w worktreeRef) {
 // finds them and leaves them as they are. It runs whenever a Worktree is
 // served, before its setup begins.
 func (d *Daemon) reclaimOrphans(p registry.Project, w worktreeRef) {
-	cfg, err := recipe.ResolveDir(w.dir)
+	cfg, err := d.plugins.ResolveDir(w.dir)
 	if err != nil {
 		return
 	}
@@ -375,7 +375,7 @@ func (d *Daemon) leftoverCopies(ctx context.Context) ([]registry.Orphan, []error
 	}
 	var services []*inService
 	for _, p := range d.registry.Projects() {
-		cfg, err := recipe.ResolveDir(p.Path)
+		cfg, err := d.plugins.ResolveDir(p.Path)
 		if err != nil {
 			continue
 		}

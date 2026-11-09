@@ -12,7 +12,6 @@ import (
 
 	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/gitrepo"
-	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/registry"
 )
 
@@ -148,7 +147,7 @@ func (d *Daemon) handleLogs(w http.ResponseWriter, r *http.Request) {
 func (d *Daemon) processNames(group string) []string {
 	names := d.supervisor.OutputNames(group)
 	// A broken config still leaves the kept output readable.
-	if cfg, err := recipe.ResolveDir(group); err == nil {
+	if cfg, err := d.plugins.ResolveDir(group); err == nil {
 		for _, p := range cfg.Processes {
 			names = append(names, p.Name)
 		}

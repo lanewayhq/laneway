@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -135,4 +136,83 @@ func jsonKeys(file string, objects ...string) map[string]bool {
 		}
 	}
 	return keys
+}
+
+// Validate fails unless r and every rule in it sets exactly one field, with
+// All and Any not empty: a malformed rule would otherwise silently detect
+// nothing. Errors name the rule at fault by its path, such as
+// "detect.all[1]".
+func (r Rule) Validate() error {
+	return r.validate("detect")
+}
+
+func (r Rule) validate(path string) error {
+	var set []string
+	for _, f := range []struct {
+		name string
+		set  bool
+	}{
+		{"file", r.File != ""}, {"composer", r.Composer != ""}, {"gem", r.Gem != ""}, {"package", r.Package != ""},
+		{"all", r.All != nil}, {"any", r.Any != nil},
+	} {
+		if f.set {
+			set = append(set, f.name)
+		}
+	}
+	if len(set) != 1 {
+		what := "sets none of them"
+		if len(set) > 1 {
+			what = "sets " + strings.Join(set, " and ")
+		}
+		return fmt.Errorf("%s: a detection rule sets exactly one of file, composer, gem, package, all or any, but this one %s", path, what)
+	}
+	for _, list := range []struct {
+		name  string
+		rules []Rule
+	}{{"all", r.All}, {"any", r.Any}} {
+		if list.rules == nil {
+			continue
+		}
+		if len(list.rules) == 0 {
+			return fmt.Errorf("%s.%s is empty, so it would detect no Project; list at least one rule", path, list.name)
+		}
+		for i, rule := range list.rules {
+			if err := rule.validate(fmt.Sprintf("%s.%s[%d]", path, list.name, i)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// String describes r for people, the way Match describes what matched, such
+// as "artisan exists and composer.json requires laravel/framework".
+func (r Rule) String() string {
+	switch {
+	case r.File != "":
+		return r.File + " exists"
+	case r.Composer != "":
+		return "composer.json requires " + r.Composer
+	case r.Gem != "":
+		return "Gemfile declares " + r.Gem
+	case r.Package != "":
+		return "package.json depends on " + r.Package
+	case len(r.All) > 0:
+		return join(r.All, " and ")
+	case len(r.Any) > 0:
+		return join(r.Any, " or ")
+	}
+	return "nothing"
+}
+
+// join describes rules joined by sep, bracketing the ones made of several.
+func join(rules []Rule, sep string) string {
+	parts := make([]string, len(rules))
+	for i, rule := range rules {
+		parts[i] = rule.String()
+		if len(rule.All)+len(rule.Any) > 1 {
+			parts[i] = "(" + parts[i] + ")"
+		}
+	}
+	return strings.Join(parts, sep)
 }

@@ -1,6 +1,7 @@
 package testkit
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -26,16 +27,47 @@ func TestServer(t testing.TB) string {
 
 func build(t testing.TB, pkg, name string) string {
 	t.Helper()
-	out, err := exec.Command("go", "env", "GOMOD").Output()
-	if err != nil {
-		t.Fatalf("testkit: finding module root: %v", err)
-	}
-	root := filepath.Dir(strings.TrimSpace(string(out)))
 	bin := filepath.Join(t.TempDir(), name)
 	cmd := exec.Command("go", "build", "-o", bin, pkg)
-	cmd.Dir = root
+	cmd.Dir = moduleRoot(t)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("testkit: building %s: %v\n%s", pkg, err, out)
 	}
 	return bin
+}
+
+// moduleRoot is the directory of Laneway's go.mod.
+func moduleRoot(t testing.TB) string {
+	t.Helper()
+	out, err := exec.Command("go", "env", "GOMOD").Output()
+	if err != nil {
+		t.Fatalf("testkit: finding module root: %v", err)
+	}
+	return filepath.Dir(strings.TrimSpace(string(out)))
+}
+
+// Plugin builds the test Plugin internal/testkit/testplugins/<name> and
+// returns a directory holding it as its author would hand it over: its
+// manifest (plugin.json) and its module (plugin.wasm), compiled for wasip1.
+func Plugin(t testing.TB, name string) string {
+	t.Helper()
+	src := filepath.Join(moduleRoot(t), "internal", "testkit", "testplugins", name)
+	dir := filepath.Join(t.TempDir(), name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("testkit: %v", err)
+	}
+	manifest, err := os.ReadFile(filepath.Join(src, "plugin.json"))
+	if err != nil {
+		t.Fatalf("testkit: test Plugin %s: %v", name, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "plugin.json"), manifest, 0o644); err != nil {
+		t.Fatalf("testkit: %v", err)
+	}
+	cmd := exec.Command("go", "build", "-o", filepath.Join(dir, "plugin.wasm"), "./internal/testkit/testplugins/"+name)
+	cmd.Dir = moduleRoot(t)
+	cmd.Env = append(os.Environ(), "GOOS=wasip1", "GOARCH=wasm")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("testkit: building test Plugin %s: %v\n%s", name, err, out)
+	}
+	return dir
 }

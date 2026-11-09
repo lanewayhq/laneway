@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/lanewayhq/laneway/internal/gitrepo"
-	"github.com/lanewayhq/laneway/internal/recipe"
 )
 
 // runWorktreeAdd creates a git worktree under the Project's worktree root
@@ -42,7 +41,12 @@ func runWorktreeAdd(ctx context.Context, env Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	cfg, err := recipe.ResolveDir(checkout.MainDir)
+	plugins, err := openPlugins(env)
+	if err != nil {
+		return err
+	}
+	defer plugins.Close()
+	cfg, err := plugins.ResolveDir(checkout.MainDir)
 	if err != nil {
 		return err
 	}
