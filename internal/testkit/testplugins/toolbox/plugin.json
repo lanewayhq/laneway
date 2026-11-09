@@ -1,0 +1,29 @@
+{
+  "name": "toolbox",
+  "version": "0.1.0",
+  "api_version": 1,
+  "integrations": [{"name": "toolbox", "detect": {"file": "toolbox.json"}}],
+  "engines": ["box.toml"],
+  "commands": [
+    {"name": "hello", "summary": "Say hello to each argument, from the Worktree"},
+    {"name": "fail", "summary": "Fail without effects"}
+  ],
+  "capabilities": {"effects": ["exec"]},
+  "dashboard": {
+    "links": [
+      {"scope": "project", "label": "Docs for {project}", "url": "https://docs.example.test/{project}"},
+      {"scope": "worktree", "label": "Admin", "url": "https://{domain}/admin"},
+      {"scope": "service", "label": "Console", "url": "https://console.{dashboard_domain}/{engine}/{version}"}
+    ],
+    "badges": [
+      {"scope": "project", "text": "toolbox"},
+      {"scope": "worktree", "text": "boxed {worktree}", "title": "toolbox is on in {domain}"},
+      {"scope": "service", "text": "box on {port}"}
+    ],
+    "actions": [
+      {"scope": "project", "label": "Say hello", "command": "hello", "args": ["{project}"]},
+      {"scope": "worktree", "label": "Greet", "command": "hello", "args": ["{worktree}"]},
+      {"scope": "worktree", "label": "Break", "command": "fail"}
+    ]
+  }
+}

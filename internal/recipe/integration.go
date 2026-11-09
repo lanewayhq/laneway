@@ -25,9 +25,6 @@ type Integration interface {
 	Defaults(dir string) (config.Layer, error)
 }
 
-// BuiltinIntegrations are the Integrations Laneway ships.
-var BuiltinIntegrations = []Integration{Vite{}}
-
 // detectIntegrations are the layers of the Integrations that detect the
 // Project in dir, sorted by name so that they apply in a stable order, with
 // their names and, by name, the rule the Project matched.

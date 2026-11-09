@@ -1,4 +1,4 @@
-package recipe_test
+package builtin_test
 
 import (
 	"os"
