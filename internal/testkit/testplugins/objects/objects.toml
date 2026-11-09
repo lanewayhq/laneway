@@ -1,0 +1,62 @@
+# objects: a test object storage Engine whose Worktrees get Buckets, from a
+# manifest-only Plugin. Its Bucket commands are the RustFS Engine's scripts
+# (spike lanewayhq/plugins#13): one signed curl request each against the
+# server in the container. Tests make the fake container engine run its
+# image with containertest.ObjectStore and answer the scripts with
+# containertest.ObjectStoreCommands.
+name = "objects"
+default_version = "1"
+image = "example.test/objects"
+port = 7490
+data_dir = "/data"
+user = "laneway"
+
+[env]
+OBJECTS_ACCESS_KEY = "{user}"
+OBJECTS_SECRET_KEY = "{password}"
+
+[[ready]]
+kind = "http"
+path = "/health/ready"
+
+[bucket]
+# Prints {bucket} if it exists and isn't an unfinished copy, nothing if it
+# doesn't; fails on any other answer.
+exists = ["sh", "-c", '''
+set -eu
+b=$1
+sig() { curl -sS --aws-sigv4 aws:amz:us-east-1:s3 --user "$OBJECTS_ACCESS_KEY:$OBJECTS_SECRET_KEY" "$@"; }
+code=$(sig -o /dev/null -w '%{{http_code}}' -I "http://127.0.0.1:7490/$b")
+case $code in
+200) ;;
+404) exit 0 ;;
+*) echo "HEAD /$b answered HTTP $code" >&2; exit 1 ;;
+esac
+tags=$(sig -w '%{{http_code}}' "http://127.0.0.1:7490/$b?tagging")
+case $tags in
+*'<Key>laneway-clone</Key>'*) exit 0 ;;
+*200 | *404) echo "$b" ;;
+*) echo "GET /$b?tagging: $tags" >&2; exit 1 ;;
+esac
+''', "sh", "{bucket}"]
+create = ["sh", "-c", '''
+set -eu
+b=$1
+s3() { curl -sS --fail-with-body -o /dev/stderr --aws-sigv4 aws:amz:us-east-1:s3 --user "$OBJECTS_ACCESS_KEY:$OBJECTS_SECRET_KEY" "$@"; }
+s3 -X DELETE -H 'x-rustfs-force-delete: true' "http://127.0.0.1:7490/$b" 2>/dev/null || :
+s3 -X PUT "http://127.0.0.1:7490/$b"
+''', "sh", "{bucket}"]
+drop = ["sh", "-c", '''
+set -eu
+b=$1
+out=$(curl -sS -w '%{{http_code}}' -X DELETE -H 'x-rustfs-force-delete: true' --aws-sigv4 aws:amz:us-east-1:s3 --user "$OBJECTS_ACCESS_KEY:$OBJECTS_SECRET_KEY" "http://127.0.0.1:7490/$b")
+case $out in
+204 | *404) ;;
+*) echo "DELETE /$b: $out" >&2; exit 1 ;;
+esac
+''', "sh", "{bucket}"]
+list = ["sh", "-c", '''
+set -eu
+xml=$(curl -sS --fail-with-body --aws-sigv4 aws:amz:us-east-1:s3 --user "$OBJECTS_ACCESS_KEY:$OBJECTS_SECRET_KEY" http://127.0.0.1:7490/) || { echo "$xml" >&2; exit 1; }
+printf '%s' "$xml" | grep -o '<Name>[^<]*</Name>' | sed 's/<[^>]*>//g' || :
+''']

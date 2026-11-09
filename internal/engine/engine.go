@@ -1,8 +1,8 @@
 // Package engine is Laneway's Engines as data (spec #48, ADR-0007): an
 // Engine manifest says everything Laneway needs to run a Service of it and
-// make its databases, with no code of the Engine's own. Package service runs
-// the container and its readiness probes; package database runs the
-// database commands inside it.
+// make its databases and Buckets, with no code of the Engine's own. Package
+// service runs the container and its readiness probes; packages database
+// and bucket run the database and Bucket commands inside it.
 //
 // Every Engine comes from a Plugin (package plugin), which lists Engine
 // manifests that Parse reads. Even Redis, Mailpit, Postgres and MySQL come
@@ -36,7 +36,8 @@ const Password = "laneway"
 // commands may hold placeholders, which Laneway replaces: {user} (User),
 // {password} (Password), and {version} (the Service's version) in what
 // configures the container; {db}, {from} and {to} in the database commands
-// (see Databases). {{ and }} stand for { and }.
+// (see Databases); {bucket} in the Bucket commands (see Buckets). {{ and }}
+// stand for { and }.
 type Manifest struct {
 	// Name is how config and the CLI name it, such as "redis". The Env
 	// Patch's Service variables start with it ({redis_port}).
