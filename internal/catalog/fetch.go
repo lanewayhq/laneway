@@ -22,17 +22,22 @@ import (
 )
 
 // DefaultURL is where Laneway fetches the Catalog from: the latest release of
-// lanewayhq/plugins.
+// lanewayhq/plugins, where its Catalog workflow publishes each signed
+// Catalog (see that repository's docs/releasing.md).
 //
-// PLACEHOLDER (#71): lanewayhq/plugins and its Catalog don't exist yet; this
-// is where they are planned to be published.
+// PLACEHOLDER (#71): no signed Catalog is published there yet, so this
+// answers 404 until a maintainer signs and publishes the first one.
 const DefaultURL = "https://github.com/lanewayhq/plugins/releases/latest/download/catalog.json"
 
-// placeholderKey is the base64 Ed25519 public key built into Laneway.
+// placeholderKey is the base64 Ed25519 public key built into Laneway: the
+// public half of the Catalog's signing key, as lanewayhq/plugins'
+// keys/catalog.pub has it.
 //
 // PLACEHOLDER (#71): this is NOT the Catalog's real key, and nobody holds
-// its private key, so until #71 replaces it with the real one (generated and
-// kept offline by a maintainer) Laneway refuses every Catalog it fetches.
+// its private key, so Laneway refuses every Catalog it fetches until a
+// maintainer generates the real key offline (lanewayhq/plugins'
+// keys/README.md) and replaces this one line with its public half. Then
+// refresh the Catalog snapshot (snapshot.go), which must be signed with it.
 const placeholderKey = "TEFORVdBWS1QTEFDRUhPTERFUi1LRVktU0VFLSM3MSE="
 
 // DefaultKey is the key the Catalog must be signed with: the one built into
@@ -58,12 +63,18 @@ const (
 	releaseTimeout = 2 * time.Minute
 )
 
-// Location is where the Catalog is fetched from and the key it must be
-// signed with. The zero Location is Laneway's own (DefaultURL, DefaultKey);
-// tests serve their own Catalog signed with a test key.
+// Location is where the Catalog is fetched from, the key it must be signed
+// with, and the snapshot of it to fall back on. The zero Location is
+// Laneway's own (DefaultURL, DefaultKey, and the snapshot built into
+// Laneway); tests serve their own Catalog signed with a test key.
 type Location struct {
 	URL string
 	Key ed25519.PublicKey
+	// Snapshot is a copy of the Catalog, and SnapshotSig its signature,
+	// read when neither the Catalog nor a copy kept from an earlier fetch
+	// can be (see snapshot.go). Without a URL, it is the one built into
+	// Laneway, if there is one yet.
+	Snapshot, SnapshotSig []byte
 }
 
 // Source fetches the Catalog and its Plugins' releases. It keeps the last
@@ -76,14 +87,18 @@ type Source struct {
 }
 
 // cacheFile is the copy of the last Catalog verified, and its signature
-// beside it (SignatureSuffix), in a Source's directory.
-const cacheFile = "catalog.json"
+// beside it (SignatureSuffix), in a Source's directory: named like the
+// snapshot, which gensnapshot.go makes from such a copy.
+const cacheFile = SnapshotFile
 
 // NewSource returns a Source for loc that keeps its copy of the Catalog in
 // dir.
 func NewSource(loc Location, dir string) *Source {
 	if loc.URL == "" {
 		loc.URL = DefaultURL
+		if loc.Snapshot == nil {
+			loc.Snapshot, loc.SnapshotSig = builtInSnapshot()
+		}
 	}
 	if loc.Key == nil {
 		loc.Key = DefaultKey
@@ -96,8 +111,9 @@ func (s *Source) URL() string { return s.loc.URL }
 
 // Load fetches the Catalog and checks its signature, keeping a copy. When it
 // can't (Laneway is offline, or the Catalog is refused), it returns the copy
-// kept last time, if there is one, along with the error saying why it
-// couldn't. cat is nil only when there's neither.
+// kept last time, or else the Location's snapshot, if there is one, along
+// with the error saying why it couldn't. cat is nil only when there's none
+// of them.
 func (s *Source) Load(ctx context.Context) (cat *Catalog, err error) {
 	cat, data, sig, err := s.fetch(ctx)
 	if err == nil {
@@ -109,6 +125,11 @@ func (s *Source) Load(ctx context.Context) (cat *Catalog, err error) {
 	err = fmt.Errorf("the Catalog at %s: %w", s.loc.URL, err)
 	if kept, kerr := s.kept(); kerr == nil {
 		return kept, err
+	}
+	if s.loc.Snapshot != nil {
+		if snap, serr := Verify(s.loc.Snapshot, s.loc.SnapshotSig, s.loc.Key); serr == nil {
+			return snap, err
+		}
 	}
 	return nil, err
 }

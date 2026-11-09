@@ -301,3 +301,23 @@ func TestARecipeServiceWhoseEngineIsntInstalledOrInTheCatalogIsNamedAsUnknown(t 
 	}
 	assertContains(t, res.Stderr, `the laravel Recipe (Plugin laravel): services.mailpit: Laneway has no Service "mailpit"`)
 }
+
+func TestLinkingOfflineOnAFreshInstallFailsNamingThePluginsTheCatalogSnapshotInLanewaySaysItNeeds(t *testing.T) {
+	t.Parallel()
+	cat := testkit.NewCatalog(t)
+	cat.PublishFirstParty()
+	d := testkit.StartDaemon(t, cat.SnapshotOption()) // never fetched the Catalog
+	cat.Offline()
+	repo := laravelRepo(t, "lara-offline")
+
+	res := d.RunCLI(repo.Dir, "link", "--yes")
+
+	if res.ExitCode == 0 {
+		t.Fatalf("Linking offline on a fresh install exited 0:\n%s", res.Output())
+	}
+	assertContains(t, res.Stderr, "this Project needs Plugins from the Catalog that Laneway couldn't fetch: laravel")
+	assertContains(t, res.Stderr, "run `lane link` again")
+	if out := d.MustRunCLI(d.Home, "status").Output(); strings.Contains(out, "lara-offline") {
+		t.Fatalf("the Project was Linked anyway:\n%s", out)
+	}
+}

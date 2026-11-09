@@ -197,19 +197,12 @@ func (c *Catalog) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	data, err := json.MarshalIndent(catalog.Catalog{Format: catalog.Format, Plugins: c.plugins}, "", "  ")
-	if err != nil {
-		panic(err)
-	}
-	key := c.key
-	if c.forged {
-		_, key, _ = ed25519.GenerateKey(nil)
-	}
+	data, sig := c.signedLocked()
 	switch {
 	case r.URL.Path == "/catalog.json":
 		w.Write(data)
 	case r.URL.Path == "/catalog.json"+catalog.SignatureSuffix:
-		w.Write(catalog.Sign(data, key))
+		w.Write(sig)
 	case strings.HasPrefix(r.URL.Path, "/releases/") && c.archives[r.URL.Path] != nil:
 		archive := c.archives[r.URL.Path]
 		if c.tampered[r.URL.Path] {
@@ -219,4 +212,34 @@ func (c *Catalog) serve(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// SnapshotOption is Option, with the Catalog as it is now also built into
+// Laneway as its snapshot (see catalog.Location.Snapshot), as a release of
+// Laneway carries one, for a daemon that has never fetched the Catalog.
+func (c *Catalog) SnapshotOption() Option {
+	data, sig := c.signed()
+	return func(cfg *daemon.Config) {
+		cfg.Catalog = catalog.Location{URL: c.URL(), Key: c.Key(), Snapshot: data, SnapshotSig: sig}
+	}
+}
+
+// signed is the Catalog as it is served now, and its signature.
+func (c *Catalog) signed() (data, sig []byte) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.signedLocked()
+}
+
+// signedLocked is signed, with c.mu held.
+func (c *Catalog) signedLocked() (data, sig []byte) {
+	data, err := json.MarshalIndent(catalog.Catalog{Format: catalog.Format, Plugins: c.plugins}, "", "  ")
+	if err != nil {
+		panic(err)
+	}
+	key := c.key
+	if c.forged {
+		_, key, _ = ed25519.GenerateKey(nil)
+	}
+	return data, catalog.Sign(data, key)
 }
