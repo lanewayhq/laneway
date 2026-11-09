@@ -108,3 +108,9 @@ func (p Paths) Plugins() string {
 func (p Paths) PluginCache() string {
 	return filepath.Join(p.CacheDir, "plugins")
 }
+
+// Catalog is the directory the last Catalog Laneway verified is kept in,
+// so it still knows what Projects need when it can't reach the Catalog.
+func (p Paths) Catalog() string {
+	return filepath.Join(p.StateDir, "catalog")
+}

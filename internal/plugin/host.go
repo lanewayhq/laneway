@@ -35,6 +35,9 @@ import (
 // DefaultTimeout is how long one call to a Plugin's module may take.
 const DefaultTimeout = 10 * time.Second
 
+// CatalogSource is the Source of a Plugin fetched from the Catalog.
+const CatalogSource = "Catalog"
+
 // installedFile records, in an installed Plugin's directory, where it was
 // added from and its module's hash.
 const installedFile = "installed.json"
@@ -231,15 +234,23 @@ func readSource(src string) (Plugin, error) {
 // same name is replaced. It returns the Plugin added and the one it
 // replaced, if any. See AddGlobal for a machine-wide Plugin.
 func (h *Host) Add(src string) (added Plugin, replaced *Plugin, err error) {
-	return h.add(src, false)
+	return h.add(src, src, false)
 }
 
-func (h *Host) add(src string, global bool) (added Plugin, replaced *Plugin, err error) {
+// AddFrom is Add for a Plugin unpacked into src from somewhere else, such as
+// the Catalog (CatalogSource), which it records as where it came from.
+func (h *Host) AddFrom(src, source string) (added Plugin, replaced *Plugin, err error) {
+	return h.add(src, source, false)
+}
+
+// add installs the Plugin in src, recording source as where it came from
+// and whether it is machine-wide (see AddGlobal).
+func (h *Host) add(src, source string, global bool) (added Plugin, replaced *Plugin, err error) {
 	p, err := h.Inspect(src)
 	if err != nil {
 		return Plugin{}, nil, err
 	}
-	p.Global = global
+	p.Source, p.Global = source, global
 	if err := os.MkdirAll(h.opts.Dir, 0o755); err != nil {
 		return Plugin{}, nil, err
 	}

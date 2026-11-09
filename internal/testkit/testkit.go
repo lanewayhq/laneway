@@ -3,7 +3,7 @@
 // and observe only what is visible from outside the daemon.
 //
 // The daemon runs in-process so tests can swap the few things the spec allows
-// (the clock and the container engine) through Options.
+// (the clock, the container engine and the Catalog) through Options.
 package testkit
 
 import (
@@ -129,6 +129,7 @@ func (d *Daemon) Start() {
 		Env:             []string{"HOME=" + d.Home, "PATH=" + d.Path},
 		ContainerEngine: d.Engine, ServiceHosts: []string{d.serviceHost}, Platform: d.Platform,
 		PluginCacheDir: pluginCacheDir}
+	WithCatalog(emptyCatalog().URL(), emptyCatalog().Key())(&cfg)
 	for _, opt := range d.opts {
 		opt(&cfg)
 	}

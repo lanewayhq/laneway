@@ -17,7 +17,7 @@ import (
 
 // AddGlobal is Add for a machine-wide Plugin.
 func (h *Host) AddGlobal(src string) (added Plugin, replaced *Plugin, err error) {
-	return h.add(src, true)
+	return h.add(src, src, true)
 }
 
 // turnedOn are the Plugins the global config and the Project's config files
