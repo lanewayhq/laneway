@@ -124,7 +124,8 @@ type fakeContainer struct {
 	conns  *connSet
 }
 
-// New returns a Fake that can run Redis, Mailpit, Postgres and MySQL images.
+// New returns a Fake that can run Redis, Mailpit, Postgres, MySQL and RustFS
+// images.
 func New() *Fake {
 	f := &Fake{servers: map[string]Server{}, extra: map[string]map[int]Server{},
 		commands: map[string]Command{}, containers: map[string]*fakeContainer{}}
@@ -135,6 +136,9 @@ func New() *Fake {
 	f.AnswerCommands("docker.io/library/postgres", PostgresCommands)
 	f.Serve("docker.io/library/mysql", MySQL)
 	f.AnswerCommands("docker.io/library/mysql", MySQLCommands)
+	f.Serve("docker.io/rustfs/rustfs", ObjectStore)
+	f.ServePort("docker.io/rustfs/rustfs", 9001, RustFSConsole)
+	f.AnswerCommands("docker.io/rustfs/rustfs", ObjectStoreCommands)
 	return f
 }
 

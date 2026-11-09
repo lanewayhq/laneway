@@ -44,6 +44,28 @@ func ObjectStore(ln net.Listener, spec container.Spec, data *Volume) {
 	http.Serve(ln, http.HandlerFunc(store.serveHTTP))
 }
 
+// RustFSConsole is a Server for RustFS's console (its web_port): a page at
+// /rustfs/console/ listing the Buckets in the container's Volume, and, like
+// RustFS, 403 with S3's AccessDenied anywhere else.
+func RustFSConsole(ln net.Listener, spec container.Spec, data *Volume) {
+	store := objectStoreOf(data)
+	http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/rustfs/console/") {
+			writeS3Error(w, http.StatusForbidden, "AccessDenied", "Access Denied.")
+			return
+		}
+		store.mu.Lock()
+		names := slices.Sorted(maps.Keys(store.buckets))
+		store.mu.Unlock()
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, "<!doctype html><title>RustFS</title><h1>RustFS</h1><ul>")
+		for _, name := range names {
+			fmt.Fprintf(w, "<li>%s</li>", name)
+		}
+		fmt.Fprintln(w, "</ul>")
+	}))
+}
+
 // objectStore is the fake object storage server's data: its Buckets, by
 // name. It is shared by the container's Server and its commands.
 type objectStore struct {
