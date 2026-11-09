@@ -1,0 +1,58 @@
+name: CI
+
+# Every pull request and push to main: formatting, vet and the fast test
+# suite (Seam 1: a real daemon in-process, with a fake container engine).
+# Nightly, and on demand: the slow tier against real Docker and Podman.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          test -z "$unformatted" || { echo "$unformatted"; echo 'run gofmt -w on the files above'; exit 1; }
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test -count=1 ./...
+
+  real-containers:
+    name: real containers
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # The slow tier skips an engine that doesn't answer, so make sure both
+      # do rather than let a missing one pass silently.
+      - name: Start rootless Podman's API socket
+        run: |
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          mkdir -p "$XDG_RUNTIME_DIR/podman"
+          podman system service --time=0 "unix://$XDG_RUNTIME_DIR/podman/podman.sock" &
+          for i in $(seq 1 30); do [ -S "$XDG_RUNTIME_DIR/podman/podman.sock" ] && break; sleep 1; done
+          curl -sf --unix-socket "$XDG_RUNTIME_DIR/podman/podman.sock" http://d/_ping
+          docker info --format 'Docker {{.ServerVersion}}'
+          echo "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR" >> "$GITHUB_ENV"
+      - name: Slow tier (Postgres, MySQL, Redis, Mailpit on Docker and Podman)
+        env:
+          LANEWAY_SLOW: '1'
+        run: go test -count=1 -v -run RealContainerEngine ./e2e
