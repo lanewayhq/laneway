@@ -71,7 +71,7 @@ var commands = map[string]command{
 	"gc":       {"Drop Orphans (databases and Buckets of removed Worktrees) now", runGC},
 	"generate": {"Merge a Plugin's Generator config into the current Worktree's files (generate <plugin>)", runGenerate},
 	"harness":  {"Add Laneway config for a Harness (add <claude|t3>), like generate", runHarness},
-	"info":     {"Show the current Worktree's URL, Processes, databases and Services (--json for scripts)", runInfo},
+	"info":     {"Show the current Worktree's URL, Processes, databases, Buckets and Services (--json for scripts)", runInfo},
 	"init":     {"Write the resolved config to laneway.toml", runInit},
 	"install":  {"Set up Laneway on this machine (service, ports 80/443, CA trust)", runInstall},
 	"link":     {"Link the current git repository as a Project", runLink},
