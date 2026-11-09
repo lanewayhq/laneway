@@ -11,7 +11,6 @@ import (
 
 	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/catalog"
-	"github.com/lanewayhq/laneway/internal/config"
 	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/plugin"
 	"github.com/lanewayhq/laneway/internal/recipe"
@@ -208,27 +207,25 @@ func (d *Daemon) withRelease(ctx context.Context, name string, r catalog.Release
 // were installed; if it doesn't resolve for another reason, none are
 // needed, and Linking reports that reason.
 func (f *catalogFetch) enginePlugins(dir string) []string {
-	installed := f.d.plugins.Engines()
-	engines := slices.Clone(installed)
+	engines := f.d.plugins.Engines()
+	var assumed engine.Set
 	by := map[string]string{} // Engine name → Plugin
 	for _, name := range f.names() {
 		for _, e := range f.latest[name].Engines {
 			if _, ok := engines.Lookup(e); ok {
 				continue
 			}
+			if _, ok := assumed.Lookup(e); ok {
+				continue
+			}
 			by[e] = name
-			engines = append(engines, placeholderEngine(e))
+			assumed = append(assumed, placeholderEngine(e))
 		}
 	}
 	if len(by) == 0 {
 		return nil
 	}
-	layers, err := config.LoadLayers(dir)
-	if err != nil {
-		return nil
-	}
-	res, err := recipe.Resolve(recipe.Input{Dir: dir, Layers: layers, Recipes: f.d.plugins.Recipes(),
-		Integrations: f.d.plugins.Integrations(), Engines: engines})
+	res, err := f.d.plugins.ResolveDirAssuming(dir, assumed)
 	if err != nil {
 		return nil
 	}

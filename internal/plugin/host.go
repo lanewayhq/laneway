@@ -360,6 +360,17 @@ func (h *Host) Recipes() []recipe.Recipe {
 // config only through it. The Plugins the config turns on (see turnedOn)
 // are in Resolved.Plugins.
 func (h *Host) ResolveDir(dir string, found ...runtimes.Runtime) (recipe.Resolved, error) {
+	return h.resolveDir(dir, nil, found)
+}
+
+// ResolveDirAssuming is ResolveDir as if the Engines assumed were installed
+// too, such as the Catalog's not fetched yet, to find which of them the
+// Project's config names.
+func (h *Host) ResolveDirAssuming(dir string, assumed []*engine.Manifest) (recipe.Resolved, error) {
+	return h.resolveDir(dir, assumed, nil)
+}
+
+func (h *Host) resolveDir(dir string, assumed []*engine.Manifest, found []runtimes.Runtime) (recipe.Resolved, error) {
 	layers, err := config.LoadLayers(dir)
 	if err != nil {
 		return recipe.Resolved{}, err
@@ -372,7 +383,7 @@ func (h *Host) ResolveDir(dir string, found ...runtimes.Runtime) (recipe.Resolve
 		Dir:          dir,
 		Layers:       layers,
 		Recipes:      h.Recipes(),
-		Engines:      h.Engines(),
+		Engines:      append(h.Engines(), assumed...),
 		Integrations: h.Integrations(),
 		Runtimes:     found,
 	})
