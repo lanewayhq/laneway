@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lanewayhq/laneway/internal/config"
 	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/runtimes"
 )
@@ -301,6 +302,72 @@ func TestTheGemfilesRubyFollowsRubyGemsSyntax(t *testing.T) {
 			res := resolveWith(t, project(t, files), noPHP, noNode, ruby(tt.version))
 			if got := len(res.RuntimeWarnings) == 0; got != tt.satisfied {
 				t.Errorf("Ruby %s satisfies ruby %s: got %v, want %v (warnings %+v)", tt.version, tt.ruby, got, tt.satisfied, res.RuntimeWarnings)
+			}
+		})
+	}
+}
+
+// resolveWithDatabase resolves the Project in dir, whose laneway.toml uses
+// the database engine, checking the Runtimes found.
+func resolveWithDatabase(t *testing.T, dir, engine string, found ...runtimes.Runtime) recipe.Resolved {
+	t.Helper()
+	toml := "[database]\nengine = \"" + engine + "\"\n"
+	if engine == "sqlite" {
+		toml += "path = \"database/database.sqlite\"\n"
+	}
+	layer, err := config.ParseLayer("laneway.toml", []byte(toml))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := recipe.Resolve(recipe.Input{Engines: firstPartyEngines(), Dir: dir, Layers: []config.Layer{layer}, Runtimes: found})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res
+}
+
+func TestAPHPWithoutTheDriverForTheProjectsDatabaseIsARuntimeWarning(t *testing.T) {
+	dir := project(t, map[string]string{"composer.json": `{"require": {"php": "^8.2", "laravel/framework": "^12.0"}}`})
+
+	res := resolveWithDatabase(t, dir, "mysql", php("8.5.0", "core", "pdo", "pdo_sqlite"), noNode)
+
+	assertRuntimeWarning(t, res, runtimes.PHP,
+		[]string{"pdo_mysql", "mysql", "PHP 8.5.0", "/opt/php/bin/php"},
+		[]string{"pdo_mysql"})
+}
+
+func TestADatabaseDriverComposerRequiresIsWarnedAboutOnce(t *testing.T) {
+	dir := project(t, map[string]string{"composer.json": `{"require": {"php": "^8.2", "ext-pdo_mysql": "*"}}`})
+
+	res := resolveWithDatabase(t, dir, "mysql", php("8.5.0", "core", "pdo"), noNode)
+
+	assertRuntimeWarning(t, res, runtimes.PHP, []string{"ext-pdo_mysql", "composer.json"}, []string{"pdo_mysql"})
+}
+
+// Each database Engine needs its PDO driver, and only a PHP Project is
+// checked for it.
+func TestEachDatabaseEngineNeedsItsPHPDriver(t *testing.T) {
+	tests := []struct {
+		engine, driver string
+	}{
+		{"mysql", "pdo_mysql"},
+		{"postgres", "pdo_pgsql"},
+		{"sqlite", "pdo_sqlite"},
+	}
+	composer := map[string]string{"composer.json": `{"require": {"php": "^8.2"}}`}
+	for _, tt := range tests {
+		t.Run(tt.engine, func(t *testing.T) {
+			without := resolveWithDatabase(t, project(t, composer), tt.engine, php("8.4.1", "core", "pdo"), noNode)
+			assertRuntimeWarning(t, without, runtimes.PHP, []string{tt.driver, tt.engine}, nil)
+
+			with := resolveWithDatabase(t, project(t, composer), tt.engine, php("8.4.1", "core", "pdo", tt.driver), noNode)
+			if len(with.RuntimeWarnings) != 0 {
+				t.Errorf("with %s loaded: RuntimeWarnings = %+v, want none", tt.driver, with.RuntimeWarnings)
+			}
+
+			notPHP := resolveWithDatabase(t, project(t, nil), tt.engine, php("8.4.1", "core"), noNode)
+			if len(notPHP.RuntimeWarnings) != 0 {
+				t.Errorf("without composer.json: RuntimeWarnings = %+v, want none", notPHP.RuntimeWarnings)
 			}
 		})
 	}

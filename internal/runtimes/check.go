@@ -25,8 +25,10 @@ type packageJSON struct {
 // Check compares the Runtimes found for the Project in dir with what its
 // files declare: composer.json `require.php` and `ext-*` for PHP,
 // package.json `engines.node` for Node, and the Gemfile's `ruby` for Ruby.
-// It only reads files.
-func Check(dir string, found []Runtime) []Warning {
+// For a PHP Project, it also checks PHP loads the driver for database, the
+// Engine of the Project's database (such as pdo_mysql for mysql); "" for
+// none. It only reads files.
+func Check(dir string, found []Runtime, database string) []Warning {
 	var warnings []Warning
 	byName := map[string]Runtime{}
 	for _, r := range found {
@@ -34,7 +36,7 @@ func Check(dir string, found []Runtime) []Warning {
 	}
 	var composer composerJSON
 	if ok, w := readManifest(dir, "composer.json", &composer); ok {
-		warnings = append(warnings, checkPHP(byName[PHP], composer)...)
+		warnings = append(warnings, checkPHP(byName[PHP], composer, database)...)
 	} else if w != nil {
 		warnings = append(warnings, *w)
 	}
@@ -73,7 +75,7 @@ func runtimeOf(manifest string) string {
 	return PHP
 }
 
-func checkPHP(php Runtime, composer composerJSON) []Warning {
+func checkPHP(php Runtime, composer composerJSON, database string) []Warning {
 	constraint := composer.Require["php"]
 	if php.Version == "" && php.Path != "" {
 		return []Warning{{Runtime: PHP, Message: fmt.Sprintf("can't run PHP at %s: %s", php.Path, php.Error)}}
@@ -113,7 +115,23 @@ func checkPHP(php Runtime, composer composerJSON) []Warning {
 				strings.Join(missing, ", ext-"), php.Version, php.Path, strings.Join(missing, ", ")),
 			Fix: fmt.Sprintf("install or enable the %s extension(s) for that PHP", strings.Join(missing, ", "))})
 	}
+	// The ext-* warning already names a driver composer.json requires.
+	if driver := databaseDrivers[database]; driver != "" && !loaded[driver] && !slices.Contains(missing, driver) {
+		warnings = append(warnings, Warning{Runtime: PHP,
+			Message: fmt.Sprintf("the Project's database is %s, but PHP %s (%s) doesn't load %s, the driver PHP needs for it",
+				database, php.Version, php.Path, driver),
+			Fix: fmt.Sprintf("install or enable the %s extension for that PHP", driver)})
+	}
 	return warnings
+}
+
+// databaseDrivers are the PHP extensions PHP needs to reach a database of
+// each Engine.
+var databaseDrivers = map[string]string{
+	"mysql":    "pdo_mysql",
+	"mariadb":  "pdo_mysql",
+	"postgres": "pdo_pgsql",
+	"sqlite":   "pdo_sqlite",
 }
 
 // extensionAliases are other names composer.json uses for an extension.

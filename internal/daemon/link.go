@@ -44,6 +44,7 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 	if err != nil {
 		return api.LinkResponse{}, &api.Error{Code: api.CodeInvalidConfig, Message: catalogRes.explain(err)}
 	}
+	res.Warnings = append(res.Warnings, d.runtimeWarnings(ctx, checkout.Dir)...)
 	name := req.Name
 	if name == "" {
 		name = cfg.Name

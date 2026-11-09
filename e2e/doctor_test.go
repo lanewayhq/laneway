@@ -189,3 +189,18 @@ func TestDoctorChecksEveryServicePortIsLaneways(t *testing.T) {
 	assertCheck(t, res.Stdout, "FAIL", "port 6379 (redis:7)", "in use by redis-server (pid 4545)")
 	assertCheck(t, res.Stdout, "ok", "port 1025 (mailpit:v1)", "bound by Laneway")
 }
+
+func TestDoctorWarnsWhenPHPLacksTheDriverForTheProjectsDatabase(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	php := testkit.StubPHP(t, d.Bin, "8.5.0", "Core", "PDO")
+	repo := gitfixture.New(t, "doctor-driver").
+		WriteFile("composer.json", `{"require": {"php": "^8.2"}}`).
+		WriteFile("laneway.toml", "[database]\nengine = \"sqlite\"\npath = \"database/database.sqlite\"\n").
+		Commit("a PHP Project on SQLite")
+
+	res := d.RunCLI(repo.Dir, "doctor")
+
+	assertCheck(t, res.Stdout, "warn", "php", "the Project's database is sqlite, but PHP 8.5.0 ("+php+") doesn't load pdo_sqlite")
+	assertContains(t, res.Stdout, "fix: install or enable the pdo_sqlite extension for that PHP")
+}

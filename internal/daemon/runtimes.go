@@ -41,6 +41,23 @@ func (d *Daemon) resolveWorktree(ctx context.Context, dir string) (worktreeConfi
 	return w, nil
 }
 
+// runtimeWarnings are the Runtime warnings a start of the Worktree in dir
+// would give, such as a PHP without the driver for the Project's database,
+// for Linking to show up front. A config that can't be resolved gives none:
+// Linking reports that itself.
+func (d *Daemon) runtimeWarnings(ctx context.Context, dir string) []string {
+	env := runtimes.Environ(ctx, dir, d.cfg.Env)
+	res, err := d.plugins.ResolveDir(dir, env.Find(ctx)...)
+	if err != nil {
+		return nil
+	}
+	var warnings []string
+	for _, warning := range append(env.Warnings, res.RuntimeWarnings...) {
+		warnings = append(warnings, "Runtime warning: "+warning.String())
+	}
+	return warnings
+}
+
 // apply gives specs the Worktree's environment, and writes the Runtime and
 // Test Database warnings into the Primary Process's output (the first Process's if there is
 // no Primary), so `lane logs` and the start error page show them.

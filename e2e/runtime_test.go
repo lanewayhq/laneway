@@ -87,3 +87,41 @@ func TestAWorktreeStartReportsAMissingRuntimeWithHowToInstallItWithMise(t *testi
 	assertContains(t, out, "`mise use php@8.4`")
 	assertContains(t, out, "Laneway never installs Runtimes")
 }
+
+// sqliteConfig is laneway.toml for a Project whose web Process runs command
+// and whose database is SQLite.
+func sqliteConfig(command string) string {
+	return processConfig(command) + "\n[database]\nengine = \"sqlite\"\npath = \"database/database.sqlite\"\n"
+}
+
+func TestLinkWarnsWhenPHPLacksTheDriverForTheProjectsDatabase(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	php := testkit.StubPHP(t, d.Bin, "8.5.0", "Core", "PDO", "pdo_mysql")
+	repo := gitfixture.New(t, "runtime-link-driver").
+		WriteFile("composer.json", `{"require": {"php": "^8.2"}}`).
+		WriteFile("laneway.toml", sqliteConfig("echo booted; exec sleep 600")).
+		Commit("a PHP Project on SQLite")
+
+	res := d.MustRunCLI(repo.Dir, "link", "--yes")
+
+	assertContains(t, res.Stderr, "lane link: warning: Runtime warning: the Project's database is sqlite, but PHP 8.5.0 ("+php+") doesn't load pdo_sqlite")
+	assertContains(t, res.Stderr, "install or enable the pdo_sqlite extension")
+}
+
+func TestAWorktreeStartWarnsWhenPHPLacksTheDriverForTheProjectsDatabase(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	testkit.StubPHP(t, d.Bin, "8.5.0", "Core", "PDO")
+	repo := gitfixture.New(t, "runtime-start-driver").
+		WriteFile("composer.json", `{"require": {"php": "^8.2"}}`).
+		WriteFile("laneway.toml", sqliteConfig("echo booted; exec sleep 600")).
+		Commit("a PHP Project on SQLite")
+
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	startByBrowsing(t, d, "runtime-start-driver.localhost")
+
+	out := waitForLogs(t, d, repo.Dir, []string{"logs", "web"}, "booted")
+	assertContains(t, out, "laneway: Runtime warning: the Project's database is sqlite, but PHP 8.5.0")
+	assertContains(t, out, "doesn't load pdo_sqlite")
+}
