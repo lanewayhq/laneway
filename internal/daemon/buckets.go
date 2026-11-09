@@ -90,7 +90,7 @@ func (d *Daemon) bucketSteps(p registry.Project, w worktreeRef, cfg recipe.Resol
 	}
 	var steps []prepare.Step
 	for _, b := range buckets {
-		steps = append(steps, prepare.Step{Name: "bucket " + b.Name, Run: func(ctx context.Context, out io.Writer) error {
+		steps = append(steps, prepare.Step{Name: bucketStepName(b, w), Run: func(ctx context.Context, out io.Writer) error {
 			var from bucket.Source
 			if !w.main {
 				var err error
@@ -200,6 +200,17 @@ func (d *Daemon) bucketSource(b worktreeBucket, cfg recipe.Resolved) (bucket.Sou
 	}
 	return bucket.Source{Main: b.Main, Limit: limit,
 		Setting: fmt.Sprintf("raise bucket_copy_limit (now %s) in %s", limit, where)}, nil
+}
+
+// bucketStepName is the name of the step making the Bucket b of the
+// Worktree w, which Preparing shows while it runs: in a Worktree other than
+// the main one, it names the Bucket b starts as a copy of, since copying
+// can take a while.
+func bucketStepName(b worktreeBucket, w worktreeRef) string {
+	if w.main {
+		return "bucket " + b.Name
+	}
+	return "bucket " + b.Name + ", copying " + b.Main
 }
 
 // bucketInfo is the API view of the Worktree w's Buckets.

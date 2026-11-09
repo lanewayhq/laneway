@@ -673,7 +673,7 @@ Each Bucket allows browser requests from its Worktree's Domain and Aliases, such
 
 ### 10.5 Buckets in new Worktrees
 
-A new Worktree's Buckets start as copies of the main Worktree's, so the records its cloned database copied still find their files. Preparing makes them after the Test Database and before `.env`, one step per Bucket, and the Worktree isn't Ready until they exist. While a copy runs, `lane info` and the Dashboard show Preparing at the step `bucket shop--feature-x`. If a step fails, `lane worktree ready` and the Domain show its output, which starts like this:
+A new Worktree's Buckets start as copies of the main Worktree's, so the records its cloned database copied still find their files. Preparing makes them after the Test Database and before `.env`, one step per Bucket, and the Worktree isn't Ready until they exist. While a copy runs, `lane info` and the Dashboard show Preparing at the step `bucket shop--feature-x, copying shop`. If a step fails, `lane worktree ready` and the Domain show its output, which starts like this:
 
 ```
 copying the main Worktree's Bucket shop (12.4 MB) to shop--feature-x
@@ -733,7 +733,7 @@ S3 clients outside the app, such as a GUI, can use `http://127.0.0.1:9000` with 
 | `Storage::disk('s3')`: `Class "League\Flysystem\AwsS3V3\PortableVisibilityConverter" not found` | The app doesn't require Flysystem's S3 adapter. `lane exec composer require league/flysystem-aws-s3-v3 "^3.0"` (§10.1). |
 | S3 calls fail with `NoSuchBucket` after declaring `rustfs` or a `[buckets.<name>]` | The Worktree was Ready before, so it got the new `.env` keys but not the Bucket. Run `lane unlink && lane link` (§10.1). |
 | S3 calls from PHP fail with `cURL error 60: SSL certificate problem` | PHP's curl doesn't trust Laneway's CA. Run `lane install` again so the CA is in the system store. If it still fails, point `curl.cainfo` and `openssl.cafile` at your distribution's CA bundle in the `php.ini` that `lane exec php --ini` names. |
-| `lane worktree ready` exits 1 at `bucket shop--feature-x` with "downloading rc" | Copying a Bucket the first time downloads RustFS's `rc` client (§10.5), and Laneway couldn't reach GitHub. Get online, then `lane worktree ready --retry`. |
+| `lane worktree ready` exits 1 at `bucket shop--feature-x, copying shop` with "downloading rc" | Copying a Bucket the first time downloads RustFS's `rc` client (§10.5), and Laneway couldn't reach GitHub. Get online, then `lane worktree ready --retry`. |
 | `Storage::put(…, 'public')` returns `true` locally, but `false` (or throws) on AWS | RustFS ignores per-object ACLs, while AWS buckets with ACLs disabled refuse them. Use a public Bucket for public files (§10.3). |
 
 ---
