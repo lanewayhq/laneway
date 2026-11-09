@@ -1,9 +1,11 @@
 package daemon
 
 import (
+	"context"
 	"slices"
 	"strings"
 
+	"github.com/lanewayhq/laneway/internal/catalog"
 	"github.com/lanewayhq/laneway/internal/prepare"
 	"github.com/lanewayhq/laneway/internal/registry"
 )
@@ -36,30 +38,41 @@ func (d *Daemon) fetchLinkedProjectsPlugins() {
 		d.catalogMu.Unlock()
 		fetched := false
 		for _, p := range projects {
-			// catalogMu is taken for each Project, not for them all, so
-			// `lane link` and `lane status` don't wait for every download.
-			d.catalogMu.Lock()
-			res, err := d.fetchCatalogPluginsFrom(ctx, cat, loadErr, p.Path, againStart)
-			d.catalogMu.Unlock()
 			if ctx.Err() != nil {
 				return
 			}
-			fetched = fetched || len(res.fetched) > 0
-			switch {
-			case err != nil:
-				d.setUnfetched(p.Path, err.Error())
-			case res.unchecked != nil:
-				// Without a Catalog, Laneway can't tell what the Project
-				// needs: it only warns if something seems missing.
-				if _, err := d.plugins.ResolveDir(p.Path); err != nil {
-					d.setUnfetched(p.Path, strings.Join(res.warnings, "\n"))
-				}
-			}
+			fetched = d.fetchOnStart(ctx, cat, loadErr, p) || fetched
 		}
 		if fetched {
 			d.pluginsFetched()
 		}
 	})
+}
+
+// fetchOnStart fetches the Catalog Plugins the Linked Project p needs from
+// cat (see fetchCatalogPluginsFrom), records what it couldn't fetch, and
+// reports whether it fetched any. It takes catalogMu for the Project alone,
+// so `lane link` and `lane status` don't wait for every Project's
+// downloads, and records the outcome before releasing it, so it can't undo
+// what a fetch right after, such as `lane doctor`'s, records.
+func (d *Daemon) fetchOnStart(ctx context.Context, cat *catalog.Catalog, loadErr error, p registry.Project) bool {
+	d.catalogMu.Lock()
+	defer d.catalogMu.Unlock()
+	res, err := d.fetchCatalogPluginsFrom(ctx, cat, loadErr, p.Path, againStart)
+	if ctx.Err() != nil {
+		return false
+	}
+	switch {
+	case err != nil:
+		d.setUnfetched(p.Path, err.Error())
+	case res.unchecked != nil:
+		// Without a Catalog, Laneway can't tell what the Project
+		// needs: it only warns if something seems missing.
+		if _, err := d.plugins.ResolveDir(p.Path); err != nil {
+			d.setUnfetched(p.Path, strings.Join(res.warnings, "\n"))
+		}
+	}
+	return len(res.fetched) > 0
 }
 
 // setUnfetched records why Laneway couldn't fetch the Catalog Plugins the
