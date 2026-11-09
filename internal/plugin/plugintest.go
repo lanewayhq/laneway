@@ -81,6 +81,8 @@ type layerOutput struct {
 	Layer                json.RawMessage `json:"layer,omitempty"`
 	TestDatabase         bool            `json:"test_database,omitempty"`
 	TestDatabaseWarnings []string        `json:"test_database_warnings,omitempty"`
+	// TestEnv is the env file a Recipe says its Project's tests read.
+	TestEnv *testEnv `json:"test_env,omitempty"`
 	// Warnings are those the module returned, then Laneway's about the
 	// layer, such as a key it doesn't know.
 	Warnings []string `json:"warnings,omitempty"`
@@ -155,6 +157,8 @@ func (h *Host) caseOutput(p Plugin, dir string) (caseOutput, error) {
 		return out, fmt.Errorf("it has no fixture Project (%s/) and no sample events (%s/*.json); add one or the other", caseDir, caseEvents)
 	}
 	if hasProject {
+		// The Plugin isn't installed, so its own Engines join Laneway's.
+		engines := append(slices.Clip(p.Engines), h.Engines()...)
 		for _, decl := range p.Recipes {
 			matched, ok := decl.Detect.Match(project)
 			if !ok {
@@ -164,8 +168,8 @@ func (h *Host) caseOutput(p Plugin, dir string) (caseOutput, error) {
 			var res recipeResponse
 			err := h.call(p, r.source(), request{Call: callRecipe, Name: decl.Name}, project, &res)
 			o := layerOutput{Detected: matched, Layer: res.Layer, TestDatabase: res.TestDatabase,
-				TestDatabaseWarnings: res.TestDatabaseWarnings, Warnings: res.Warnings}
-			o.check(r.source(), err, h.Engines())
+				TestDatabaseWarnings: res.TestDatabaseWarnings, TestEnv: res.TestEnv, Warnings: res.Warnings}
+			o.check(r.source(), engines, err)
 			out.Recipes = setOutput(out.Recipes, decl.Name, o)
 		}
 		for _, decl := range p.Integrations {
@@ -177,7 +181,7 @@ func (h *Host) caseOutput(p Plugin, dir string) (caseOutput, error) {
 			var res integrationResponse
 			err := h.call(p, in.source(), request{Call: callIntegration, Name: decl.Name}, project, &res)
 			o := layerOutput{Detected: matched, Layer: res.Layer, Warnings: res.Warnings}
-			o.check(in.source(), err, h.Engines())
+			o.check(in.source(), engines, err)
 			out.Integrations = setOutput(out.Integrations, decl.Name, o)
 		}
 		for _, g := range p.Generators {
@@ -208,7 +212,7 @@ func (h *Host) caseOutput(p Plugin, dir string) (caseOutput, error) {
 
 // check records err, or, for a layer the module returned, what Laneway
 // would say about it: why it would refuse it, and its warnings.
-func (o *layerOutput) check(source string, err error, engines engine.Set) {
+func (o *layerOutput) check(source string, engines engine.Set, err error) {
 	if err != nil {
 		*o = layerOutput{Detected: o.Detected, Error: err.Error()}
 		return
