@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/plugin"
+	"github.com/lanewayhq/laneway/internal/recipe"
 )
 
 // eventsInterval is how often GET /v1/events looks for changes. It is
@@ -22,7 +24,13 @@ func (d *Daemon) projectList() api.ProjectList {
 		ap := d.apiProject(p)
 		for i, w := range ap.Worktrees {
 			w = d.withState(w)
-			w.Declared = d.declaredProcesses(w.Path)
+			if cfg, err := d.plugins.ResolveDir(w.Path); err == nil {
+				w.Declared = declaredProcesses(cfg)
+				w.PluginItems = d.worktreeItems(plugin.ScopeWorktree, ap.Name, w, cfg)
+				if w.Main {
+					ap.PluginItems = d.worktreeItems(plugin.ScopeProject, ap.Name, w, cfg)
+				}
+			}
 			ap.Worktrees[i] = w
 		}
 		list.Projects = append(list.Projects, ap)
@@ -30,13 +38,9 @@ func (d *Daemon) projectList() api.ProjectList {
 	return list
 }
 
-// declaredProcesses are the Processes the config of the Worktree at dir
-// declares; nil if it can't be read.
-func (d *Daemon) declaredProcesses(dir string) []api.DeclaredProcess {
-	cfg, err := d.plugins.ResolveDir(dir)
-	if err != nil {
-		return nil
-	}
+// declaredProcesses are the Processes a Worktree whose resolved config is
+// cfg declares.
+func declaredProcesses(cfg recipe.Resolved) []api.DeclaredProcess {
 	var procs []api.DeclaredProcess
 	for _, p := range cfg.Processes {
 		procs = append(procs, api.DeclaredProcess{
