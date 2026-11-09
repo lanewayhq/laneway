@@ -12,6 +12,13 @@
 // Project's files with relative paths. What the module writes to stderr goes
 // to Laneway's logs.
 //
+// `lane plugin test`, run in the Plugin's directory, runs the Plugin against
+// the test cases under testdata/<case>/: a fixture Project in project/ and
+// sample events for its hooks in events/<name>.json. It compares the layers
+// and effects the Plugin returns with the case's golden.json and shows each
+// difference as a diff; `lane plugin test --update` rewrites the golden
+// files. It needs no daemon.
+//
 // The SDK starts in Laneway's repository and moves to lanewayhq/plugins with
 // the first-party Plugins.
 package sdk
@@ -51,6 +58,15 @@ type Request struct {
 	// read-only, and the module's working directory. For a CallCommand it
 	// is the Worktree the command was run in.
 	Dir string `json:"dir"`
+	// HostDir is the Project's directory on the developer's machine, which
+	// the module can't open: it is how absolute paths Laneway wrote into
+	// the Project's files, such as a SQLite file in .env, are read.
+	HostDir string `json:"host_dir,omitempty"`
+	// MainDir is the main Worktree's directory as the module sees it,
+	// mounted read-only, when the Project's directory is another Worktree,
+	// whose uncommitted files (such as .env.testing) setup copies from it;
+	// "" otherwise.
+	MainDir string `json:"main_dir,omitempty"`
 	// Args are a CallCommand's arguments, after the command's name.
 	Args []string `json:"args,omitempty"`
 	// Event describes the event a CallHook is about.
@@ -108,9 +124,23 @@ type RecipeResult struct {
 	// TestDatabaseWarnings are reasons the Project's tests may bypass their
 	// Test Database, each naming the file at fault.
 	TestDatabaseWarnings []string `json:"test_database_warnings,omitempty"`
+	// TestEnv is the env file the Project's tests read, which Laneway
+	// points at the Test Database; nil for .env.testing, replacing .env.
+	TestEnv *TestEnv `json:"test_env,omitempty"`
 	// Warnings are problems worth telling the developer about that don't
 	// stop the Project running, each naming the file at fault.
 	Warnings []string `json:"warnings,omitempty"`
+}
+
+// TestEnv is the env file a Project's tests read their settings from.
+type TestEnv struct {
+	// File is its name in the Worktree, such as ".env.test".
+	File string `json:"file"`
+	// Layered means the tests read File over .env, so a File holding only
+	// what Laneway sets is complete and Laneway may create it. Otherwise
+	// File replaces .env for the tests, and Laneway only patches one the
+	// Worktree has, or a copy of the main Worktree's.
+	Layered bool `json:"layered,omitempty"`
 }
 
 // IntegrationResult is what an Integration returns for a Project it
@@ -128,7 +158,8 @@ type IntegrationResult struct {
 }
 
 // Layer is a config layer, keyed like laneway.toml. Empty fields aren't set,
-// so the Project's laneway.toml (or Laneway's defaults) decide them.
+// so the Project's laneway.toml (or Laneway's defaults) decide them. A
+// Service's version may be "", for its Engine's default version.
 type Layer struct {
 	Name         string             `json:"name,omitempty"`
 	Processes    map[string]Process `json:"processes,omitempty"`
@@ -169,6 +200,12 @@ type Database struct {
 type Project struct {
 	// Dir is its directory, read-only.
 	Dir string
+	// HostDir is its directory on the developer's machine (see
+	// Request.HostDir); see Rel.
+	HostDir string
+	// MainDir is the main Worktree's directory, read-only, when Dir is
+	// another Worktree; "" otherwise.
+	MainDir string
 }
 
 // ReadFile reads the Project's file name, relative to its directory.
@@ -229,7 +266,7 @@ func handle(p Plugin, req Request) (Response, error) {
 	if req.APIVersion != APIVersion {
 		return Response{}, fmt.Errorf("this Plugin speaks Plugin API version %d, but Laneway sent version %d", APIVersion, req.APIVersion)
 	}
-	project := Project{Dir: req.Dir}
+	project := Project{Dir: req.Dir, HostDir: req.HostDir, MainDir: req.MainDir}
 	switch req.Call {
 	case CallRecipe:
 		recipe, ok := p.Recipes[req.Name]

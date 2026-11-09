@@ -1,0 +1,8 @@
+{
+  "name": "rails",
+  "version": "0.1.0",
+  "api_version": 1,
+  "recipes": [
+    {"name": "rails", "detect": {"all": [{"file": "config/application.rb"}, {"any": [{"gem": "rails"}, {"gem": "railties"}]}]}}
+  ]
+}

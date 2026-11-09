@@ -1,0 +1,6 @@
+{
+  "name": "laravel",
+  "version": "0.1.0",
+  "api_version": 1,
+  "recipes": [{"name": "laravel", "detect": {"file": "artisan"}}]
+}

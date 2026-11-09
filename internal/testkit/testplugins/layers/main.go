@@ -1,7 +1,8 @@
 // Command layers is a test Plugin whose Recipe and Integrations return the
 // layer the Project spells out for them: the layered Recipe the layer in
-// layered.json, and each Integration the layer in <name>.json, so that tests
-// choose what each one sets. Its manifest declares the assets and queue
+// layered.json (and the rest of its answer, such as its Test Database
+// decision, in answer.json if the Project has one), and each Integration the
+// layer in <name>.json, so that tests choose what each one sets. Its manifest declares the assets and queue
 // Integrations; tests may rewrite it to declare any of the names below.
 package main
 
@@ -22,6 +23,15 @@ func main() {
 	sdk.Run(sdk.Plugin{
 		Recipes: map[string]sdk.Recipe{"layered": func(p sdk.Project) (sdk.RecipeResult, error) {
 			var res sdk.RecipeResult
+			if p.Exists("answer.json") {
+				data, err := p.ReadFile("answer.json")
+				if err != nil {
+					return res, err
+				}
+				if err := json.Unmarshal(data, &res); err != nil {
+					return res, err
+				}
+			}
 			return res, read(p, "layered.json", &res.Layer)
 		}},
 		Integrations: integrations,

@@ -70,7 +70,7 @@ var commands = map[string]command{
 	"install":  {"Set up Laneway on this machine (service, ports 80/443, CA trust)", runInstall},
 	"link":     {"Link the current git repository as a Project", runLink},
 	"logs":     {"Show (or follow with -f) Process output", runLogs},
-	"plugin":   {"Add, list and remove Plugins (add <dir> [--yes], list, remove <name>)", runPlugin},
+	"plugin":   {"Add, list, remove and test Plugins (add <dir> [--yes], list, remove <name>, test [--update])", runPlugin},
 	"open":     {"Open the current Worktree's Domain in the browser", runOpen},
 	"restart":  {"Restart the current Worktree's Processes (or one Process)", control("restart")},
 	"services": {"List shared Services, or start/stop them (services [ls|up|down] [name])", runServices},
