@@ -130,10 +130,16 @@ func (d *Daemon) Start() {
 		Env:             []string{"HOME=" + d.Home, "PATH=" + d.Path},
 		ContainerEngine: d.Engine, ServiceHosts: []string{d.serviceHost}, Platform: d.Platform,
 		PluginCacheDir: pluginCacheDir}
-	WithCatalog(emptyCatalog().URL(), emptyCatalog().Key())(&cfg)
 	emptyGitHub().Option()(&cfg)
 	for _, opt := range d.opts {
 		opt(&cfg)
+	}
+	if cfg.Catalog.URL == "" {
+		cat, err := firstPartyCatalog()
+		if err != nil {
+			d.t.Fatalf("testkit: the first-party Catalog: %v", err)
+		}
+		cat.Option()(&cfg)
 	}
 	running, err := daemon.Start(cfg)
 	if err != nil {

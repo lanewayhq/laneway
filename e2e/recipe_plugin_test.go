@@ -60,17 +60,3 @@ func TestARecipePluginsTestDatabaseWarningsAreShownByDoctor(t *testing.T) {
 
 	assertContains(t, res.Output(), "spec/db.rb hard-codes the database")
 }
-
-func TestAPluginNamedLikeOneBuiltIntoLanewayIsRefused(t *testing.T) {
-	t.Parallel()
-	d := testkit.StartDaemon(t)
-	plugin := withManifest(t, testkit.Plugin(t, "procfile"), `{"name": "rails", "version": "0.1.0", "api_version": 1,
-  "recipes": [{"name": "procfile", "detect": {"file": "Procfile"}}]}`)
-
-	res := d.RunCLI(d.Home, "plugin", "add", "--yes", plugin)
-
-	if res.ExitCode == 0 {
-		t.Fatalf("adding a second rails Plugin exited 0:\n%s", res.Output())
-	}
-	assertContains(t, res.Stderr, "Laneway has a built-in Plugin named rails; give the Plugin another name")
-}

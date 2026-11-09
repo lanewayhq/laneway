@@ -20,7 +20,8 @@ import (
 
 // WithCatalog makes the daemon fetch the Catalog from url and accept it only
 // if it is signed with key: the spec's third swappable thing in Seam 1. A
-// test daemon without it uses an empty Catalog of its own (see Catalog).
+// test daemon without it fetches from a Catalog listing the first-party
+// Plugins (see firstPartyCatalog).
 func WithCatalog(url string, key ed25519.PublicKey) Option {
 	return func(cfg *daemon.Config) { cfg.Catalog = catalog.Location{URL: url, Key: key} }
 }
@@ -60,9 +61,44 @@ func newCatalog(t testing.TB) *Catalog {
 	return c
 }
 
-// emptyCatalog is what test daemons use unless given a Catalog: an empty one,
-// so they never reach the real Catalog.
-var emptyCatalog = sync.OnceValue(func() *Catalog { return newCatalog(nil) })
+// firstPartyCatalog is what test daemons use unless given a Catalog: one
+// listing every first-party Plugin, as lanewayhq's does, so a test daemon
+// fetches them as a fresh install does and never reaches the real Catalog.
+// Tests that change what it serves make their own (NewCatalog).
+var firstPartyCatalog = sync.OnceValues(func() (*Catalog, error) {
+	src, err := firstPartySource()
+	if err != nil {
+		return nil, err
+	}
+	names, err := firstPartyNames(src.dir)
+	if err != nil {
+		return nil, err
+	}
+	c := newCatalog(nil)
+	for _, name := range names {
+		if err := c.publishFirstParty(name); err != nil {
+			return nil, fmt.Errorf("first-party Plugin %s: %w", name, err)
+		}
+	}
+	return c, nil
+})
+
+// publishFirstParty adds the first-party Plugin name to the Catalog.
+func (c *Catalog) publishFirstParty(name string) error {
+	files, err := firstPartyFiles(name)
+	if err != nil {
+		return err
+	}
+	dir, err := os.MkdirTemp("", "laneway-first-party-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+	if err := writeFiles(dir, files); err != nil {
+		return err
+	}
+	return c.publish(dir)
+}
 
 // URL is where the Catalog is served.
 func (c *Catalog) URL() string { return c.server.URL + "/catalog.json" }
@@ -78,6 +114,12 @@ func (c *Catalog) Option() Option { return WithCatalog(c.URL(), c.Key()) }
 // Engines are what its manifest declares.
 func (c *Catalog) Publish(dir string) {
 	c.t.Helper()
+	if err := c.publish(dir); err != nil {
+		c.t.Fatalf("testkit: publishing %s: %v", dir, err)
+	}
+}
+
+func (c *Catalog) publish(dir string) error {
 	var m struct {
 		Name         string             `json:"name"`
 		Version      string             `json:"version"`
@@ -88,14 +130,14 @@ func (c *Catalog) Publish(dir string) {
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "plugin.json"))
 	if err != nil {
-		c.t.Fatalf("testkit: publishing %s: %v", dir, err)
+		return err
 	}
 	if err := json.Unmarshal(data, &m); err != nil {
-		c.t.Fatalf("testkit: publishing %s: %v", dir, err)
+		return err
 	}
 	archive, err := catalog.Pack(dir)
 	if err != nil {
-		c.t.Fatalf("testkit: publishing %s: %v", dir, err)
+		return err
 	}
 	r := catalog.Release{Version: m.Version, APIVersion: m.APIVersion, SHA256: catalog.SHA256(archive),
 		URL: fmt.Sprintf("releases/%s-%s.tar.gz", m.Name, m.Version), Recipes: m.Recipes, Integrations: m.Integrations}
@@ -104,7 +146,7 @@ func (c *Catalog) Publish(dir string) {
 			Name string `toml:"name"`
 		}
 		if _, err := toml.DecodeFile(filepath.Join(dir, f), &e); err != nil {
-			c.t.Fatalf("testkit: publishing %s: %v", dir, err)
+			return err
 		}
 		r.Engines = append(r.Engines, e.Name)
 	}
@@ -118,6 +160,7 @@ func (c *Catalog) Publish(dir string) {
 		i = len(c.plugins) - 1
 	}
 	c.plugins[i].Releases = append(c.plugins[i].Releases, r)
+	return nil
 }
 
 // Offline makes the Catalog and its releases unreachable, as if the daemon

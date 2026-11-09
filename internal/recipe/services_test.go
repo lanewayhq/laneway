@@ -24,7 +24,7 @@ func (servicesStack) Defaults(dir string) (recipe.Result, error) {
 }
 
 func TestServicesMergeByEngineLaterLayersPinningTheVersion(t *testing.T) {
-	recipeOnly, err := recipe.Resolve(recipe.Input{Engines: builtinEngines(), Dir: filepath.Join("testdata", "services-layers"), Recipes: []recipe.Recipe{servicesStack{}}})
+	recipeOnly, err := recipe.Resolve(recipe.Input{Engines: firstPartyEngines(), Dir: filepath.Join("testdata", "services-layers"), Recipes: []recipe.Recipe{servicesStack{}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestServicesConfigWrittenAsALayerResolvesToItself(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading back:\n%s\n%v", buf.String(), err)
 	}
-	again, err := recipe.Resolve(recipe.Input{Engines: builtinEngines(), Dir: filepath.Join("testdata", "services-layers"),
+	again, err := recipe.Resolve(recipe.Input{Engines: firstPartyEngines(), Dir: filepath.Join("testdata", "services-layers"),
 		Layers: []config.Layer{written}, Recipes: []recipe.Recipe{servicesStack{}}})
 	if err != nil {
 		t.Fatal(err)
@@ -67,7 +67,7 @@ func TestServicesConfigWrittenAsALayerResolvesToItself(t *testing.T) {
 
 func TestInvalidServicesConfigNamesTheFileAndTheKey(t *testing.T) {
 	for _, tc := range []struct{ toml, want string }{
-		{"[services]\nmemcached = \"1.6\"", `services.memcached: Laneway has no Service "memcached"; the Services are redis`},
+		{"[services]\nmemcached = \"1.6\"", `services.memcached: Laneway has no Service "memcached"; the Services are mailpit, mysql, postgres, redis`},
 		{"[services]\nredis = \"\"", `services.redis must be a version, such as "7" or "7.2", not ""`},
 		{"[services]\nredis = \"7 latest\"", `services.redis must be a version`},
 		{"[services]\nredis = 7", "services.redis"},
@@ -77,7 +77,7 @@ func TestInvalidServicesConfigNamesTheFileAndTheKey(t *testing.T) {
 		// are known, when the layer is resolved.
 		l, err := config.ParseLayer("/code/shop/laneway.toml", []byte(tc.toml))
 		if err == nil {
-			_, err = recipe.Resolve(recipe.Input{Engines: builtinEngines(), Dir: t.TempDir(), Layers: []config.Layer{l}})
+			_, err = recipe.Resolve(recipe.Input{Engines: firstPartyEngines(), Dir: t.TempDir(), Layers: []config.Layer{l}})
 		}
 		if err == nil || !strings.Contains(err.Error(), "/code/shop/laneway.toml") || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: err = %v, want one naming the file and %q", tc.toml, err, tc.want)

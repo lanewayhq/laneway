@@ -1,21 +1,19 @@
 package plugin
 
 import (
-	"embed"
 	"fmt"
 	"io/fs"
 	"path"
 	"path/filepath"
 	"slices"
-	"sync"
 
 	"github.com/lanewayhq/laneway/internal/engine"
 )
 
 // Engines from Plugins (spec #48): a Plugin's manifest lists Engine
-// manifests, which need no module. Redis, Mailpit, Postgres and MySQL come
-// from Plugins built into Laneway (builtin/), read the same way as installed
-// ones.
+// manifests, which need no module. Even Redis, Mailpit, Postgres and MySQL
+// come from Plugins, fetched from the Catalog when a Project's config names
+// them.
 
 // validateEngineFiles checks the manifest's engines are paths inside the
 // Plugin's directory, each listed once.
@@ -55,46 +53,11 @@ func readEngines(fsys fs.FS, dir string, m Manifest) ([]*engine.Manifest, error)
 	return engines, nil
 }
 
-//go:embed builtin
-var builtinFiles embed.FS
-
-// builtinOrder is the built-in Plugins, in the order their Engines are
-// listed.
-var builtinOrder = []string{"redis", "mailpit", "postgres", "mysql"}
-
-// builtin are the Plugins built into Laneway. They aren't installed, so
-// Host.List doesn't list them, and an installed Plugin can't take their
-// names or their Engines' names.
-var builtin = sync.OnceValue(func() []Plugin {
-	var plugins []Plugin
-	for _, name := range builtinOrder {
-		dir := path.Join("builtin", name)
-		fsys, err := fs.Sub(builtinFiles, dir)
-		if err != nil {
-			panic(err)
-		}
-		data, err := fs.ReadFile(fsys, ManifestFile)
-		if err != nil {
-			panic(err)
-		}
-		m, err := parseManifest(data)
-		if err != nil {
-			panic(fmt.Sprintf("%s: %v", dir, err))
-		}
-		engines, err := readEngines(fsys, dir, m)
-		if err != nil {
-			panic(err)
-		}
-		plugins = append(plugins, Plugin{Manifest: m, Dir: dir, Source: BuiltinSource, Engines: engines})
-	}
-	return plugins
-})
-
-// Engines are every Engine Laneway can run: the built-in Plugins' (Redis,
-// Mailpit, Postgres, MySQL), then the installed Plugins', by Plugin name.
+// Engines are every Engine Laneway can run: the installed Plugins', by
+// Plugin name.
 func (h *Host) Engines() engine.Set {
 	var set engine.Set
-	for _, p := range append(builtin(), h.List()...) {
+	for _, p := range h.List() {
 		set = append(set, p.Engines...)
 	}
 	return set
@@ -103,10 +66,10 @@ func (h *Host) Engines() engine.Set {
 // EnginesLinkedAt are the Engines with a web UI (engine.Manifest.WebPort)
 // added by Plugins that link their Services to url, a Dashboard link's URL
 // as the manifest writes it, such as "https://mail.{dashboard_domain}/":
-// those whose web UI Laneway serves there. Built-in Plugins' come first.
+// those whose web UI Laneway serves there.
 func (h *Host) EnginesLinkedAt(url string) []*engine.Manifest {
 	var engines []*engine.Manifest
-	for _, p := range append(builtin(), h.List()...) {
+	for _, p := range h.List() {
 		if !slices.ContainsFunc(p.Dashboard.Links, func(l LinkDecl) bool { return l.Scope == ScopeService && l.URL == url }) {
 			continue
 		}
@@ -119,19 +82,10 @@ func (h *Host) EnginesLinkedAt(url string) []*engine.Manifest {
 	return engines
 }
 
-// checkEngineNames reports an Engine p adds that takes the name of a
-// built-in Engine or of another installed Plugin's, and p taking the name of
-// a built-in Plugin.
+// checkEngineNames reports an Engine p adds that takes the name of another
+// installed Plugin's.
 func (h *Host) checkEngineNames(p Plugin) error {
 	taken := map[string]string{} // Engine name → who has it
-	for _, b := range builtin() {
-		if b.Name == p.Name {
-			return fmt.Errorf("Plugin %s has the name of a Plugin built into Laneway; rename it", p.Name)
-		}
-		for _, e := range b.Engines {
-			taken[e.Name] = "Laneway"
-		}
-	}
 	for _, other := range h.List() {
 		if other.Name == p.Name {
 			continue // adding p replaces it

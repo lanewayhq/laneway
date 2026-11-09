@@ -21,6 +21,8 @@ type pluginRecipe struct {
 	host   *Host
 	plugin Plugin
 	decl   RecipeDecl
+	// engines are the Engines its layer's Services may name.
+	engines engine.Set
 }
 
 // recipeResponse is a module's answer to a Recipe call (see
@@ -55,7 +57,7 @@ func (r pluginRecipe) Defaults(dir string) (recipe.Result, error) {
 	if err := r.host.call(r.plugin, r.source(), request{Call: callRecipe, Name: r.decl.Name}, dir, &res); err != nil {
 		return recipe.Result{}, err
 	}
-	l, err := parseLayer(r.source(), res.Layer, r.host.Engines())
+	l, err := parseLayer(r.source(), res.Layer, r.engines)
 	if err != nil {
 		return recipe.Result{}, err
 	}

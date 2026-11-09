@@ -55,8 +55,6 @@ type Options struct {
 	Log *slog.Logger
 	// Timeout is how long one call may take; DefaultTimeout if 0.
 	Timeout time.Duration
-	// Builtin are the Plugins built into Laneway.
-	Builtin []Builtin
 	// GlobalConfig is the global config file, whose plugins turn on
 	// machine-wide Plugins in every Project; "" for none.
 	GlobalConfig string
@@ -72,8 +70,7 @@ type Plugin struct {
 	// `lane plugin add`.
 	Source string
 	// SHA256 is its module's hash, hex-encoded, as it was when added: the
-	// installed Plugin is pinned to it. For a Plugin built into Laneway,
-	// it is its Builtin.ModuleID. "" without a module.
+	// installed Plugin is pinned to it. "" without a module.
 	SHA256 string
 	// Engines are the Engines it adds, read from its EngineFiles.
 	Engines []*engine.Manifest
@@ -85,9 +82,6 @@ type Plugin struct {
 	// files and module. Passing it to AddPreviewed installs the Plugin only
 	// if its source still has what was previewed. "" once installed.
 	Digest string
-
-	// readModule reads a built-in Plugin's module (see Builtin).
-	readModule func() ([]byte, error)
 }
 
 // installed is what installedFile records.
@@ -103,9 +97,8 @@ type Host struct {
 	opts    Options
 	runtime *runtime
 
-	mu       sync.Mutex
-	plugins  map[string]Plugin // by name
-	builtins map[string]Plugin // by name
+	mu      sync.Mutex
+	plugins map[string]Plugin // by name
 }
 
 // Open loads the Plugins installed in opts.Dir. A Plugin that can't be
@@ -116,15 +109,11 @@ func Open(opts Options) (*Host, error) {
 		opts.Log = slog.New(slog.DiscardHandler)
 	}
 	opts.Timeout = cmp.Or(opts.Timeout, DefaultTimeout)
-	builtins, err := loadBuiltins(opts.Builtin)
-	if err != nil {
-		return nil, err
-	}
 	rt, err := newRuntime(opts)
 	if err != nil {
 		return nil, err
 	}
-	h := &Host{opts: opts, runtime: rt, plugins: map[string]Plugin{}, builtins: builtins}
+	h := &Host{opts: opts, runtime: rt, plugins: map[string]Plugin{}}
 	entries, err := os.ReadDir(opts.Dir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		rt.close()
@@ -182,15 +171,7 @@ func (h *Host) Inspect(src string) (Plugin, error) {
 	if err := h.checkEngineNames(p); err != nil {
 		return Plugin{}, err
 	}
-	if _, ok := h.builtins[p.Name]; ok {
-		return Plugin{}, fmt.Errorf("Laneway has a built-in Plugin named %s; give the Plugin another name", p.Name)
-	}
 	taken := map[string]string{} // Recipe name → who has it
-	for _, b := range h.builtins {
-		for _, r := range b.Recipes {
-			taken[r.Name] = "Laneway"
-		}
-	}
 	h.mu.Lock()
 	for _, other := range h.plugins {
 		if other.Name == p.Name {
@@ -340,14 +321,18 @@ func (h *Host) List() []Plugin {
 }
 
 // Recipes are every Recipe that may detect a Project, in detection order:
-// the installed Plugins' first (by Plugin name, then in the order each
-// declares them), so a Plugin the developer added wins over what Laneway
-// ships, then those of the Plugins built into Laneway, likewise.
+// the installed Plugins', by Plugin name, then in the order each declares
+// them.
 func (h *Host) Recipes() []recipe.Recipe {
+	return h.recipes(h.Engines())
+}
+
+// recipes are Recipes, whose layers' Services may name engines.
+func (h *Host) recipes(engines engine.Set) []recipe.Recipe {
 	var recipes []recipe.Recipe
-	for _, p := range append(h.List(), h.builtinList()...) {
+	for _, p := range h.List() {
 		for _, r := range p.Recipes {
-			recipes = append(recipes, pluginRecipe{host: h, plugin: p, decl: r})
+			recipes = append(recipes, pluginRecipe{host: h, plugin: p, decl: r, engines: engines})
 		}
 	}
 	return recipes
@@ -355,7 +340,7 @@ func (h *Host) Recipes() []recipe.Recipe {
 
 // ResolveDir resolves the Project in dir from its laneway.toml and
 // laneway.local.toml with the installed Plugins' Recipes and Integrations
-// and those built into Laneway (see Recipes and Integrations), checking the
+// (see Recipes and Integrations), checking the
 // Runtimes found for dir if any are given. The daemon and the CLI read
 // config only through it. The Plugins the config turns on (see turnedOn)
 // are in Resolved.Plugins.
@@ -379,12 +364,13 @@ func (h *Host) resolveDir(dir string, assumed []*engine.Manifest, found []runtim
 	if err != nil {
 		return recipe.Resolved{}, err
 	}
+	engines := append(h.Engines(), assumed...)
 	res, err := recipe.Resolve(recipe.Input{
 		Dir:          dir,
 		Layers:       layers,
-		Recipes:      h.Recipes(),
-		Engines:      append(h.Engines(), assumed...),
-		Integrations: h.Integrations(),
+		Recipes:      h.recipes(engines),
+		Engines:      engines,
+		Integrations: h.integrations(engines),
 		Runtimes:     found,
 	})
 	res.Plugins = on

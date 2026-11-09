@@ -151,6 +151,26 @@ func TestLinkingAFreshLaravelAppSetsItUpAndServesItWithArtisanServe(t *testing.T
 	waitForLogs(t, d, repo.Dir, []string{"logs", "queue"}, "queue:work is working")
 }
 
+func TestLinkingALaravelAppOnAFreshInstallFetchesItsPluginsFromTheCatalog(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t) // nothing installed; its Catalog lists the first-party Plugins
+	laravelStubs(t, d)
+	repo := laravelRepo(t, "lara-fresh")
+
+	out := d.MustRunCLI(repo.Dir, "link", "--yes").Stdout
+
+	for _, name := range []string{"laravel", "mysql", "redis", "mailpit"} {
+		assertContains(t, out, "Fetched Plugin "+name+" ")
+	}
+	if got := installedPlugins(t, d); !slices.Equal(got, []string{"laravel", "mailpit", "mysql", "redis"}) {
+		t.Fatalf("installed Plugins = %v, want the Laravel Recipe's and the Engines its config names", got)
+	}
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	if web := d.GetServer("https://lara-fresh.localhost/"); !strings.Contains(web.Name, "artisan serve") {
+		t.Errorf("the Domain reached %q, want artisan serve", web.Name)
+	}
+}
+
 func TestALaravelWorktreeSharesTheAppKeyButHasItsOwnURLDatabaseAndPrefixes(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)

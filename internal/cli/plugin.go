@@ -10,7 +10,6 @@ import (
 	"text/tabwriter"
 
 	"github.com/lanewayhq/laneway/internal/api"
-	"github.com/lanewayhq/laneway/internal/builtin"
 	"github.com/lanewayhq/laneway/internal/github"
 	"github.com/lanewayhq/laneway/internal/paths"
 	"github.com/lanewayhq/laneway/internal/plugin"
@@ -224,5 +223,5 @@ func openPlugins(env Env) (*plugin.Host, error) {
 	if err != nil {
 		return nil, err
 	}
-	return plugin.Open(plugin.Options{Dir: p.Plugins(), CacheDir: p.PluginCache(), Builtin: builtin.Plugins(), GlobalConfig: p.GlobalConfig()})
+	return plugin.Open(plugin.Options{Dir: p.Plugins(), CacheDir: p.PluginCache(), GlobalConfig: p.GlobalConfig()})
 }

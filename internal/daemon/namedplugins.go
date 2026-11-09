@@ -20,7 +20,7 @@ type namedPlugin struct {
 }
 
 // missingNamedPlugins are the Plugins the config of the Project in dir names
-// that aren't installed or built into Laneway, in the order named. Config
+// that aren't installed, in the order named. Config
 // that can't be read names none here: resolving it says why.
 func (d *Daemon) missingNamedPlugins(dir string) []namedPlugin {
 	layers, err := config.LoadLayers(dir)

@@ -6,6 +6,7 @@ import (
 
 	"github.com/lanewayhq/laneway/internal/config"
 	"github.com/lanewayhq/laneway/internal/detect"
+	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/recipe"
 )
 
@@ -30,16 +31,11 @@ func validateIntegrations(integrations []IntegrationDecl) error {
 	return nil
 }
 
-// integrationsTaken fails when p adds an Integration of a name Laneway's or
-// another installed Plugin's Integrations have, since the Recipe Resolver
-// and `lane info` know Integrations by name.
+// integrationsTaken fails when p adds an Integration of a name another
+// installed Plugin's Integrations have, since the Recipe Resolver and `lane
+// info` know Integrations by name.
 func (h *Host) integrationsTaken(p Plugin) error {
 	taken := map[string]string{} // Integration name → who has it
-	for _, b := range h.builtins {
-		for _, in := range b.Integrations {
-			taken[in.Name] = "Laneway"
-		}
-	}
 	h.mu.Lock()
 	for _, other := range h.plugins {
 		if other.Name == p.Name {
@@ -59,13 +55,18 @@ func (h *Host) integrationsTaken(p Plugin) error {
 }
 
 // Integrations are every Integration that may detect a Project: the
-// installed Plugins' and those of the Plugins built into Laneway. The Recipe
-// Resolver applies the detected ones by name, whichever Plugin adds them.
+// installed Plugins'. The Recipe Resolver applies the detected ones by name,
+// whichever Plugin adds them.
 func (h *Host) Integrations() []recipe.Integration {
+	return h.integrations(h.Engines())
+}
+
+// integrations are Integrations, whose layers' Services may name engines.
+func (h *Host) integrations(engines engine.Set) []recipe.Integration {
 	var integrations []recipe.Integration
-	for _, p := range append(h.List(), h.builtinList()...) {
+	for _, p := range h.List() {
 		for _, in := range p.Integrations {
-			integrations = append(integrations, pluginIntegration{host: h, plugin: p, decl: in})
+			integrations = append(integrations, pluginIntegration{host: h, plugin: p, decl: in, engines: engines})
 		}
 	}
 	return integrations
@@ -78,6 +79,8 @@ type pluginIntegration struct {
 	host   *Host
 	plugin Plugin
 	decl   IntegrationDecl
+	// engines are the Engines its layer's Services may name.
+	engines engine.Set
 }
 
 // integrationResponse is a module's answer to an Integration call (see
@@ -102,7 +105,7 @@ func (in pluginIntegration) Defaults(dir string) (config.Layer, error) {
 	if err := in.host.call(in.plugin, in.source(), request{Call: callIntegration, Name: in.decl.Name}, dir, &res); err != nil {
 		return config.Layer{}, err
 	}
-	l, err := parseLayer(in.source(), res.Layer, in.host.Engines())
+	l, err := parseLayer(in.source(), res.Layer, in.engines)
 	if err != nil {
 		return config.Layer{}, err
 	}

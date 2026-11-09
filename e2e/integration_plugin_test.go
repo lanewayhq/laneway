@@ -174,25 +174,19 @@ func TestAPluginWithAMalformedIntegrationRuleIsRefusedNamingTheRule(t *testing.T
 	assertContains(t, res.Stderr, "integrations[0] (assets): detect.any")
 }
 
-func TestAPluginWhoseIntegrationHasTheNameOfLanewaysOrAnotherPluginsIsRefused(t *testing.T) {
+func TestAPluginWhoseIntegrationHasTheNameOfAnotherPluginsIsRefused(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
-	vite := withManifest(t, testkit.Plugin(t, "layers"), `{"name": "layers", "version": "0.1.0", "api_version": 1,
-  "integrations": [{"name": "vite", "detect": {"package": "vite"}}]}`)
 	d.MustRunCLI(d.Home, "plugin", "add", "--yes", assetsPlugin(t))
 	assets := withManifest(t, testkit.Plugin(t, "layers"), `{"name": "layers", "version": "0.1.0", "api_version": 1,
   "integrations": [{"name": "assets", "detect": {"file": "webpack.config.js"}}]}`)
 
-	for plugin, want := range map[string]string{
-		vite:   "Plugin layers adds Integration vite, but Laneway already has an Integration of that name",
-		assets: "Plugin layers adds Integration assets, but Plugin styles already has an Integration of that name",
-	} {
-		res := d.RunCLI(d.Home, "plugin", "add", "--yes", plugin)
-		if res.ExitCode == 0 {
-			t.Errorf("adding a Plugin whose Integration's name is taken exited 0:\n%s", res.Output())
-		}
-		assertContains(t, res.Stderr, want)
+	res := d.RunCLI(d.Home, "plugin", "add", "--yes", assets)
+
+	if res.ExitCode == 0 {
+		t.Errorf("adding a Plugin whose Integration's name is taken exited 0:\n%s", res.Output())
 	}
+	assertContains(t, res.Stderr, "Plugin layers adds Integration assets, but Plugin styles already has an Integration of that name")
 }
 
 func TestAnIntegrationPluginChoosingThePrimaryProcessFailsTheLinkNamingThePlugin(t *testing.T) {
