@@ -6,7 +6,7 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/caddyserver/caddy/v2 v2.11.7
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/lanewayhq/plugins v0.0.0-20261109071501-1bd5ae5b5019
+	github.com/lanewayhq/plugins v0.0.0-20261109103016-4b9c5312fbac
 	github.com/tetratelabs/wazero v1.12.0
 )
 
