@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/client"
 	"github.com/lanewayhq/laneway/internal/gitrepo"
 	"github.com/lanewayhq/laneway/internal/paths"
 	"github.com/lanewayhq/laneway/internal/platform"
@@ -150,20 +151,48 @@ func checkRuntimes(ctx context.Context, r *report, env Env) {
 
 // checkTestDatabase reports why the tests of the current Worktree's Project
 // may not use its Test Database, such as a phpunit.xml that hard-codes
-// DB_DATABASE. A config that can't be resolved isn't reported here: link
-// and starts report it.
+// DB_DATABASE, once the daemon, if running, has fetched the Catalog Plugins
+// the Project needs, such as its Recipe. A config that can't be resolved
+// isn't reported here: link and starts report it.
 func checkTestDatabase(ctx context.Context, r *report, env Env) {
+	dir := worktreeDir(ctx, env)
+	checkProjectPlugins(ctx, r, env, dir)
 	plugins, err := openPlugins(env)
 	if err != nil {
 		return
 	}
 	defer plugins.Close()
-	res, err := plugins.ResolveDir(worktreeDir(ctx, env))
+	res, err := plugins.ResolveDir(dir)
 	if err != nil {
 		return
 	}
 	for _, w := range res.TestDatabaseWarnings {
 		r.check(statusWarn, "Test Database", w, "")
+	}
+}
+
+// checkProjectPlugins has the daemon, if running, fetch the Catalog Plugins
+// the Project in dir needs, as Linking it would, and reports what it
+// fetched, or why it couldn't.
+func checkProjectPlugins(ctx context.Context, r *report, env Env, dir string) {
+	c, err := apiClient(env)
+	if err != nil {
+		return
+	}
+	res, err := c.FetchPlugins(ctx, api.FetchPluginsRequest{Dir: dir})
+	var apiErr *api.Error
+	switch {
+	case errors.Is(err, client.ErrDaemonNotRunning), errors.As(err, &apiErr) && apiErr.Code == api.CodeNotGitRepo:
+		return
+	case err != nil:
+		r.check(statusWarn, "Plugins", err.Error(), "once Laneway can reach the Catalog, run `lane doctor` again")
+		return
+	}
+	for _, w := range res.Warnings {
+		r.check(statusWarn, "Plugins", w, "")
+	}
+	for _, p := range res.Fetched {
+		r.check(statusOK, "Plugins", fmt.Sprintf("fetched %s %s from the Catalog for this Project", p.Name, p.Version), "")
 	}
 }
 
