@@ -32,8 +32,12 @@ _Avoid_: Provisioning, setting up, initialising
 A second database belonging to a Worktree, used only by its test suite, so test runs in different Worktrees never touch each other's data.
 _Avoid_: Testing DB, CI database
 
+**Bucket**:
+A Worktree's own space in an object storage Service, such as RustFS, so files one Worktree stores never show up in, or are deleted from, another's. A Worktree starts with a copy of the main Worktree's. It has one private Bucket in each object storage Service its Project uses, plus any more its Project declares, such as a public one anyone may read from.
+_Avoid_: Storage, disk, volume
+
 **Orphan**:
-A database (including a Test Database) left behind by a removed Worktree, kept for a grace period before it is dropped.
+A database (including a Test Database) or Bucket left behind by a removed Worktree, kept for a grace period before it is dropped.
 _Avoid_: Stale database, leftover
 
 **Domain**:
@@ -69,6 +73,10 @@ _Avoid_: Inactive, sleeping
 **Service**:
 Shared backing infrastructure, such as a database or cache, that many Projects use at the same time. Like lazy Processes, a Service starts on first use and stops when unused.
 _Avoid_: Container, dependency, add-on
+
+**Service Domain**:
+A Domain under the Dashboard's at which Laneway serves something a Service offers browsers, such as Mailpit's inbox or RustFS's S3 API. It serves the Service of its Engine's default version, starting it on the first request.
+_Avoid_: Service URL, mail domain, console domain
 
 **Engine**:
 A kind of Service, such as Postgres or Redis. A Service is an Engine at a version. Not the container engine (Podman or Docker) that runs Services' containers.
