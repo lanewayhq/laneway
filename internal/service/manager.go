@@ -157,6 +157,9 @@ type managed struct {
 	addr  string // the container's published address while Running
 	err   string
 	conns map[net.Conn]bool
+	// unserved is set once Unserve stops serving it: nothing may start
+	// its container again.
+	unserved bool
 }
 
 // Serve starts listening for the Service on its port, if it isn't served
@@ -200,7 +203,7 @@ func (m *Manager) Serve(svc Service) {
 // spec is the container that runs svc.
 func (m *Manager) spec(svc Service) container.Spec {
 	e := svc.Engine
-	name := m.opts.Prefix + "-" + e.Name + "-" + svc.Version
+	name := m.Volume(svc.Ref()) // the container is named like its volume
 	spec := container.Spec{
 		Name:         name,
 		Image:        e.Image + ":" + svc.Version,
@@ -476,8 +479,11 @@ func (s *managed) ensure(ctx context.Context) (string, error) {
 	s.lifecycle.Lock()
 	defer s.lifecycle.Unlock()
 	s.mu.Lock()
-	running, addr := s.state == Running, s.addr
+	running, addr, unserved := s.state == Running, s.addr, s.unserved
 	s.mu.Unlock()
+	if unserved {
+		return "", fmt.Errorf("Service %s is no longer served", s.Name())
+	}
 	if running {
 		// Check with the engine rather than trusting the address: the
 		// container may have been stopped or restarted behind Laneway's
@@ -655,7 +661,7 @@ func (s *managed) stop(ctx context.Context, state string) error {
 func (s *managed) track(conn net.Conn) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.m.ctx.Err() != nil {
+	if s.m.ctx.Err() != nil || s.unserved {
 		return false
 	}
 	s.conns[conn] = true

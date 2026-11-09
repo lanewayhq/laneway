@@ -336,6 +336,9 @@ const (
 	CodeUnknownPlugin = "unknown_plugin"
 	// CodeUnknownCommand: the Plugin has no command of the name.
 	CodeUnknownCommand = "unknown_command"
+	// CodePluginInUse: a Plugin can't be removed while Linked Projects use
+	// it; the message lists them.
+	CodePluginInUse = "plugin_in_use"
 )
 
 // Service is a shared Service, such as redis:7, and how to connect to it.
@@ -528,6 +531,22 @@ type AddPluginResponse struct {
 	// Replaces is the installed Plugin of the same name it replaced (or
 	// would replace), if any.
 	Replaces *Plugin `json:"replaces,omitempty"`
+}
+
+// RemovePluginResponse is the body of DELETE /v1/plugins/{plugin}: the
+// Plugin removed.
+type RemovePluginResponse struct {
+	Plugin Plugin `json:"plugin"`
+	// Kept are the Services of the Plugin's Engines, stopped but with their
+	// data kept: adding the Plugin again brings them back as they were.
+	Kept []KeptService `json:"kept"`
+}
+
+// KeptService is a Service whose Engine's Plugin was removed, and the
+// volume its data is kept in.
+type KeptService struct {
+	Name   string `json:"name"`
+	Volume string `json:"volume"`
 }
 
 // PluginCommandRequest is the body of POST
