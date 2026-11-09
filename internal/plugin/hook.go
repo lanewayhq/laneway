@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/recipe"
 )
 
@@ -94,16 +93,11 @@ func (h *Host) Hooking(event string, res recipe.Resolved) []Plugin {
 }
 
 // usedBy reports whether a Project whose config is res uses the Plugin, so
-// its hooks fire there: its Recipe or one of its Integrations detected the
-// Project, or the Project uses one of its Engines. (Recipe, Integration and
-// Engine names are unique across Plugins and Laneway.) Plugins named in
-// config should count too, once config can name them.
+// its hooks fire there (see UsedBy, which also decides whether the Plugin
+// may be removed). Plugins named in config should count too, once config
+// can name them.
 func (p Plugin) usedBy(res recipe.Resolved) bool {
-	return slices.ContainsFunc(p.Recipes, func(r RecipeDecl) bool { return r.Name == res.Recipe }) ||
-		slices.ContainsFunc(p.Integrations, func(i IntegrationDecl) bool { return slices.Contains(res.Integrations, i.Name) }) ||
-		slices.ContainsFunc(p.Engines, func(e *engine.Manifest) bool {
-			return slices.ContainsFunc(res.Services, func(s recipe.Service) bool { return s.Engine == e.Name })
-		})
+	return len(p.UsedBy(res)) > 0
 }
 
 // HookSource names p's hook for event in errors and warnings, such as

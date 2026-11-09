@@ -147,12 +147,16 @@ func TestAPluginBuiltIntoLanewayOrNotInstalledCantBeRemoved(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 
-	builtin := d.RunCLI(d.Home, "plugin", "remove", "redis")
+	engine := d.RunCLI(d.Home, "plugin", "remove", "redis")
+	generator := d.RunCLI(d.Home, "plugin", "remove", "claude")
 	unknown := d.RunCLI(d.Home, "plugin", "remove", "nope")
 
-	if builtin.ExitCode == 0 || unknown.ExitCode == 0 {
-		t.Fatalf("removing a built-in or unknown Plugin exited 0:\n%s\n%s", builtin.Output(), unknown.Output())
+	for _, res := range []testkit.CLIResult{engine, generator, unknown} {
+		if res.ExitCode == 0 {
+			t.Fatalf("removing a built-in or unknown Plugin exited 0:\n%s", res.Output())
+		}
 	}
-	assertContains(t, builtin.Stderr, "Plugin redis is built into Laneway, so it can't be removed")
+	assertContains(t, engine.Stderr, "Plugin redis is built into Laneway, so it can't be removed")
+	assertContains(t, generator.Stderr, "Plugin claude is built into Laneway, so it can't be removed")
 	assertContains(t, unknown.Stderr, "no Plugin nope is installed; `lane plugin list` lists them")
 }

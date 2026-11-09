@@ -39,5 +39,8 @@ func (h *Host) Remove(name string) (Plugin, error) {
 // IsBuiltIn reports whether name is a Plugin built into Laneway, which isn't
 // installed and so can't be removed.
 func (h *Host) IsBuiltIn(name string) bool {
-	return slices.ContainsFunc(builtin(), func(p Plugin) bool { return p.Name == name })
+	h.mu.Lock()
+	_, ok := h.builtins[name]
+	h.mu.Unlock()
+	return ok || slices.ContainsFunc(builtin(), func(p Plugin) bool { return p.Name == name })
 }
