@@ -98,6 +98,13 @@ func (m *Manifest) DeclaredBucketVariable(name string) string {
 	return m.BucketVariable() + "_" + name
 }
 
+// ProjectVariables are the Service variables of a Service of m in a Project
+// that declares the Buckets called buckets: Variables, then each declared
+// Bucket's (DeclaredBucketVariables).
+func (m *Manifest) ProjectVariables(buckets []string) []string {
+	return append(m.Variables(), m.DeclaredBucketVariables(buckets)...)
+}
+
 // DeclaredBucketVariables are the variables (DeclaredBucketVariable) of
 // the declared Buckets called names in a Service of m.
 func (m *Manifest) DeclaredBucketVariables(names []string) []string {

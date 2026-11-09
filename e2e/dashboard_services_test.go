@@ -149,7 +149,7 @@ func TestTheDashboardShowsOrphansLiveAndDropsThemAsGcDoes(t *testing.T) {
 	got := waitForLive(t, events, "the removed Worktree's database", func(l api.OrphanList) bool {
 		return len(l.Orphans) == 1
 	}).Orphans[0]
-	if got.Database != "dash_gc_shop__feature" || got.Service != "postgres:18" || got.Project != "dash-gc-shop" ||
+	if got.Name != "dash_gc_shop__feature" || got.Service != "postgres:18" || got.Project != "dash-gc-shop" ||
 		got.Worktree != "feature" || got.Kind != "database" {
 		t.Fatalf("the Orphan: %+v", got)
 	}
@@ -167,13 +167,13 @@ func TestTheDashboardShowsOrphansLiveAndDropsThemAsGcDoes(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &preview); err != nil {
 		t.Fatal(err)
 	}
-	if len(preview.Orphans) != 1 || preview.Orphans[0].Database != "dash_gc_shop__feature" {
+	if len(preview.Orphans) != 1 || preview.Orphans[0].Name != "dash_gc_shop__feature" {
 		t.Fatalf("gc preview: %+v", preview)
 	}
 	waitForOrphans(t, d, "dash_gc_shop__feature")
 
 	status, body = dashboardRequest(t, d, http.MethodPost, dash+"/api/v1/gc", dash, api.GCRequest{
-		Databases: []api.OrphanRef{{Service: preview.Orphans[0].Service, Database: preview.Orphans[0].Database}},
+		Orphans: []api.OrphanRef{{Service: preview.Orphans[0].Service, Name: preview.Orphans[0].Name}},
 	})
 	if status != http.StatusOK {
 		t.Fatalf("gc from the Dashboard: status %d:\n%s", status, body)

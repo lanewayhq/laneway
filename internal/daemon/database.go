@@ -64,7 +64,7 @@ func (d *Daemon) databaseStep(p registry.Project, w worktreeRef, cfg recipe.Reso
 		if svc, ok := cfg.DatabaseService(); ok && database.Mode(db.Mode).Use(main, own) == own {
 			var release func()
 			var err error
-			server, release, err = d.databaseServer(ctx, svc, out)
+			server, release, err = d.startService(ctx, svc, out)
 			if err != nil {
 				return err
 			}
@@ -78,9 +78,10 @@ func (d *Daemon) databaseStep(p registry.Project, w worktreeRef, cfg recipe.Reso
 	}}, true
 }
 
-// databaseServer starts the Service svc for a database or Bucket step and
-// says how to reach it. Call release once the step is done with it.
-func (d *Daemon) databaseServer(ctx context.Context, svc recipe.Service, out io.Writer) (database.Server, func(), error) {
+// startService starts the Service svc for a database or Bucket step, or to
+// look for or drop Orphans, and says how to reach it. Call release once
+// done with it.
+func (d *Daemon) startService(ctx context.Context, svc recipe.Service, out io.Writer) (database.Server, func(), error) {
 	e, ok := d.plugins.Engines().Lookup(svc.Engine)
 	if !ok {
 		return database.Server{}, nil, fmt.Errorf("Laneway has no Service %q", svc.Engine)

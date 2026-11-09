@@ -7,6 +7,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/bucket"
 	"github.com/lanewayhq/laneway/internal/naming"
 	"github.com/lanewayhq/laneway/internal/recipe"
@@ -30,8 +31,8 @@ type goneWorktree struct {
 func (d *Daemon) bucketOrphans(p registry.Project, w worktreeRef, cfg recipe.Resolved, since time.Time) []registry.Orphan {
 	var out []registry.Orphan
 	for _, b := range d.worktreeBuckets(p, w, cfg) {
-		out = append(out, registry.Orphan{Ref: b.Service, Database: b.Name, ProjectName: p.Name,
-			Worktree: w.name, Kind: orphanBucket, Since: since})
+		out = append(out, registry.Orphan{Ref: b.Service, Name: b.Name, ProjectName: p.Name,
+			Worktree: w.name, Kind: api.OrphanBucket, Since: since})
 	}
 	return out
 }
@@ -54,7 +55,7 @@ func (d *Daemon) orphanedBuckets(batch []registry.Orphan, names []string, gone [
 				continue
 			}
 			o := batch[i]
-			o.Database = name
+			o.Name = name
 			if !slices.ContainsFunc(recorded, o.Same) && !slices.ContainsFunc(out, o.Same) && !d.existingWorktreeBucket(name, gone) {
 				out = append(out, o)
 			}
@@ -70,7 +71,7 @@ func (d *Daemon) orphanedBuckets(batch []registry.Orphan, names []string, gone [
 func (d *Daemon) orphanBucketsOf(p registry.Project, w worktreeRef) []registry.Orphan {
 	var out []registry.Orphan
 	for _, o := range d.registry.Orphans() {
-		if o.Kind == orphanBucket && o.ProjectName == p.Name && naming.BucketOf(o.Database, p.Name, w.label) {
+		if placeOf(o.Kind) == inBuckets && o.ProjectName == p.Name && naming.BucketOf(o.Name, p.Name, w.label) {
 			out = append(out, o)
 		}
 	}
@@ -107,7 +108,7 @@ func (d *Daemon) bucketStore(ctx context.Context, svc recipe.Service) (orphanSto
 	if !ok || e.Bucket == nil {
 		return nil, nil, fmt.Errorf("Laneway can't drop %s Buckets", svc.Engine)
 	}
-	server, release, err := d.databaseServer(ctx, svc, io.Discard)
+	server, release, err := d.startService(ctx, svc, io.Discard)
 	if err != nil {
 		return nil, nil, err
 	}

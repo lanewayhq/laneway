@@ -25,9 +25,9 @@ type Known struct {
 // Variables are the Service variables of the Installed Engines, with those
 // of the Buckets config declares.
 func (k Known) Variables() []string {
-	vars := k.Installed.Variables()
+	var vars []string
 	for _, m := range k.Installed {
-		vars = append(vars, m.DeclaredBucketVariables(k.Buckets)...)
+		vars = append(vars, m.ProjectVariables(k.Buckets)...)
 	}
 	return vars
 }

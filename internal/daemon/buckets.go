@@ -93,7 +93,7 @@ func (d *Daemon) bucketSteps(p registry.Project, w worktreeRef, cfg recipe.Resol
 					return err
 				}
 			}
-			server, release, err := d.databaseServer(ctx, b.Service, out)
+			server, release, err := d.startService(ctx, b.Service, out)
 			if err != nil {
 				return err
 			}
@@ -155,7 +155,7 @@ func (d *Daemon) worktreeOriginsChanged(p registry.Project, w worktreeRef) {
 		}
 		for _, b := range d.worktreeBuckets(p, w, cfg) {
 			if err := d.reconfigureBucket(s.ctx, p, w, b); err != nil {
-				d.log.Warn("updating a Bucket's CORS origins", "project", p.Name, "worktree", w.dir, "bucket", b.Name, "error", err)
+				d.log.Warn("updating a Bucket's CORS origins", "project", p.Name, "worktree", w.dir, "bucket", b.Name, "err", err)
 			}
 		}
 	})
@@ -164,7 +164,7 @@ func (d *Daemon) worktreeOriginsChanged(p registry.Project, w worktreeRef) {
 // reconfigureBucket sets who may reach the Worktree w's Bucket b again,
 // starting its Service if it has stopped.
 func (d *Daemon) reconfigureBucket(ctx context.Context, p registry.Project, w worktreeRef, b worktreeBucket) error {
-	server, release, err := d.databaseServer(ctx, b.Service, io.Discard)
+	server, release, err := d.startService(ctx, b.Service, io.Discard)
 	if err != nil {
 		return err
 	}

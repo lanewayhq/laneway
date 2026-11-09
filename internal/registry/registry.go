@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/naming"
 	"github.com/lanewayhq/laneway/internal/service"
 )
@@ -465,21 +466,23 @@ type Orphan struct {
 	// Ref is the Service it lives in, such as postgres:18 (stored
 	// as its engine and version).
 	service.Ref
-	// Database is its name: the database's, or the Bucket's (Kind bucket).
-	Database string `json:"database"`
+	// Name is its name in the Service: the database's, or the Bucket's
+	// (Kind bucket). It is stored as "database", from before Buckets could
+	// be Orphans. (The Service's own name is Ref.Name().)
+	Name string `json:"database"`
 	// ProjectName is the name of the Project it belonged to, and Worktree
 	// git's name for its Worktree ("" for the main Worktree).
 	ProjectName string `json:"projectName"`
 	Worktree    string `json:"worktree,omitempty"`
 	// Kind says what it was to the Worktree, as the API reports it.
-	Kind string `json:"kind"`
+	Kind api.OrphanKind `json:"kind"`
 	// Since is when it became an Orphan.
 	Since time.Time `json:"since"`
 }
 
 // Same reports whether o and other are the same database (or Bucket).
 func (o Orphan) Same(other Orphan) bool {
-	return o.Ref == other.Ref && o.Database == other.Database
+	return o.Ref == other.Ref && o.Name == other.Name
 }
 
 // Orphans returns every Orphan, oldest first.
@@ -491,7 +494,7 @@ func (r *Registry) Orphans() []Orphan {
 		if c := a.Since.Compare(b.Since); c != 0 {
 			return c
 		}
-		return strings.Compare(a.Database, b.Database)
+		return strings.Compare(a.Name, b.Name)
 	})
 	return out
 }
