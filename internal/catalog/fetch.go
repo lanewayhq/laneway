@@ -271,7 +271,7 @@ func (s *Source) getOnce(ctx context.Context, u string, limit int64, timeout tim
 	}
 	res, err := s.client.Do(req)
 	if err != nil {
-		return nil, failed(ctx, u, timeout, err)
+		return nil, markIfTemporary(ctx, u, timeout, err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
@@ -283,7 +283,7 @@ func (s *Source) getOnce(ctx context.Context, u string, limit int64, timeout tim
 	}
 	data, err := io.ReadAll(io.LimitReader(res.Body, limit+1))
 	if err != nil {
-		return nil, failed(ctx, u, timeout, fmt.Errorf("GET %s: %w", u, err))
+		return nil, markIfTemporary(ctx, u, timeout, fmt.Errorf("GET %s: %w", u, err))
 	}
 	if int64(len(data)) > limit {
 		return nil, fmt.Errorf("GET %s: it is larger than the %d bytes Laneway accepts", u, limit)
@@ -294,18 +294,19 @@ func (s *Source) getOnce(ctx context.Context, u string, limit int64, timeout tim
 // errAttemptTimedOut ends an attempt at a download that took too long.
 var errAttemptTimedOut = errors.New("the attempt timed out")
 
-// failed is err, from an attempt at downloading u that may take timeout, in
-// ctx, marked as temporary if the attempt timed out or its connection was
-// dropped: closed before the whole response came, or reset.
-func failed(ctx context.Context, u string, timeout time.Duration, err error) error {
+// markIfTemporary decides whether err, from an attempt at downloading u
+// that may take timeout, in ctx, is temporary, and marks it so if it is:
+// when the attempt timed out or its connection was dropped (closed before
+// the whole response came, or reset).
+func markIfTemporary(ctx context.Context, u string, timeout time.Duration, err error) error {
 	if context.Cause(ctx) == errAttemptTimedOut {
 		return temporaryError{fmt.Errorf("GET %s: it took longer than %s", u, timeout)}
 	}
 	if ne, ok := errors.AsType[net.Error](err); ok && ne.Timeout() {
 		return temporaryError{err}
 	}
-	for _, d := range []error{io.EOF, io.ErrUnexpectedEOF, syscall.ECONNRESET, syscall.ECONNABORTED, syscall.EPIPE} {
-		if errors.Is(err, d) {
+	for _, dropped := range []error{io.EOF, io.ErrUnexpectedEOF, syscall.ECONNRESET, syscall.ECONNABORTED, syscall.EPIPE} {
+		if errors.Is(err, dropped) {
 			return temporaryError{err}
 		}
 	}
