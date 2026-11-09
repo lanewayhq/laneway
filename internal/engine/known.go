@@ -39,6 +39,29 @@ func (k Known) Lookup(name string) (*Manifest, error) {
 	return nil, fmt.Errorf("Laneway has no Service %q; the Services are %s", name, strings.Join(k.Installed.Names(), ", "))
 }
 
+// TemplateError is why a template using Service variables no installed
+// Engine gives (uses reports whether it uses one) may be fine once an
+// Engine Laneway can fetch is installed: that Engine isn't. It is nil if
+// the template uses no variable of one. Every Engine gives
+// {<engine>_host}, {<engine>_port} and {<engine>_password}, but only one
+// with users gives {<engine>_username}, which Laneway can't tell before
+// fetching it.
+func (k Known) TemplateError(uses func(variable string) bool) error {
+	for _, name := range k.Fetchable {
+		if !k.CanFetch(name) {
+			continue
+		}
+		if slices.ContainsFunc((&Manifest{Name: name}).Variables(), uses) {
+			return NotInstalled(name)
+		}
+		if user := name + "_username"; uses(user) {
+			return fmt.Errorf("the %s Engine isn't installed, so Laneway can't tell whether it has {%s}; "+
+				"run `lane doctor` to fetch it from the Catalog", name, user)
+		}
+	}
+	return nil
+}
+
 // NotInstalled is the error for config naming the Engine name, which
 // Laneway hasn't installed but can fetch from the Catalog.
 func NotInstalled(name string) error {

@@ -1,0 +1,2 @@
+[env]
+REDIS_USER = "{redis_username}"

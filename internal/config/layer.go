@@ -304,13 +304,8 @@ func (l Layer) checkEngines(engines engine.Known) error {
 			}
 			// A Service variable of an Engine Laneway can fetch, such as
 			// {redis_port}, isn't unknown.
-			for _, name := range engines.Fetchable {
-				if engines.CanFetch(name) && slices.ContainsFunc(engine.Assumed(name).Variables(), func(v string) bool {
-					return envpatch.Uses(tmpl, v)
-				}) {
-					err = engine.NotInstalled(name)
-					break
-				}
+			if fetchErr := engines.TemplateError(func(v string) bool { return envpatch.Uses(tmpl, v) }); fetchErr != nil {
+				err = fetchErr
 			}
 			return fmt.Errorf("%s.%s: %w", env.table, key(k), err)
 		}
