@@ -93,6 +93,26 @@ func TestLinkingCreatesTheProjectsEmptyPostgresDatabase(t *testing.T) {
 	}
 }
 
+func TestPostgresDatabasesAreMadeByPsqlInsideTheServiceContainer(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	repo := postgresProject(t, "pg-psql", "")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	wt := repo.AddWorktree("feature")
+	d.MustRunCLI(wt.Dir, "worktree", "ready")
+
+	// Created with psql, then copied with it: no connection of Laneway's
+	// own to the Service.
+	if n := countCalls(d.Engine.Calls(), "exec laneway-postgres-18 psql "); n < 2 {
+		t.Fatalf("psql ran %d times in the Postgres Service's container, want it to make both databases: %v", n, d.Engine.Calls())
+	}
+	conn := dialPostgres(t, d, 5432, "pg_psql__feature")
+	if tables := pgColumn(t, conn, "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"); len(tables) != 0 {
+		t.Fatalf("the Worktree's database has tables %v, want none", tables)
+	}
+}
+
 func TestANewWorktreeGetsACopyOfTheMainWorktreesPostgresDatabaseByDefault(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)

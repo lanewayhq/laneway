@@ -3,6 +3,7 @@ package containertest
 import (
 	"bufio"
 	"cmp"
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -19,8 +20,9 @@ import (
 
 // Postgres is a Server speaking a little of Postgres's protocol (v3), as
 // the postgres image configured by POSTGRES_USER / POSTGRES_PASSWORD would:
-// a cleartext password login, and simple queries for the statements Laneway
-// and the tests send, matched by pattern rather than parsed:
+// a cleartext password login, and simple queries for the statements the
+// tests send, and Laneway sends through psql (PostgresCommands), matched by
+// pattern rather than parsed:
 //
 //	SELECT 1 FROM pg_database WHERE datname = '<db>'
 //	SELECT datname FROM pg_database WHERE NOT datistemplate
@@ -37,22 +39,7 @@ import (
 // pg_terminate_backend closes those sessions with 57P01. Databases (each a
 // set of one-column tables) are kept in the container's Volume.
 func Postgres(ln net.Listener, spec container.Spec, data *Volume) {
-	pg := &pgServer{data: data, user: "postgres", sessions: map[*pgSession]bool{}}
-	for _, kv := range spec.Env {
-		k, v, _ := strings.Cut(kv, "=")
-		switch k {
-		case "POSTGRES_USER":
-			pg.user = v
-		case "POSTGRES_PASSWORD":
-			pg.password = v
-		}
-	}
-	if _, ok := data.Get(pgDatabasesKey); !ok {
-		// What initdb and the image's entrypoint create.
-		for _, db := range []string{"postgres", "template0", "template1", pg.user} {
-			pg.setDatabase(db, pgDatabase{})
-		}
-	}
+	pg := pgServerOf(spec, data)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -63,6 +50,101 @@ func Postgres(ln net.Listener, spec container.Spec, data *Volume) {
 }
 
 const pgDatabasesKey = "postgres:databases"
+
+// pgServerOf is the fake container's Postgres server, shared by its port
+// and the commands run in it (PostgresCommands), so that psql sees the
+// sessions connected over TCP.
+func pgServerOf(spec container.Spec, data *Volume) *pgServer {
+	return data.Shared("postgres:server", func() any {
+		pg := &pgServer{data: data, user: "postgres", sessions: map[*pgSession]bool{}}
+		for _, kv := range spec.Env {
+			k, v, _ := strings.Cut(kv, "=")
+			switch k {
+			case "POSTGRES_USER":
+				pg.user = v
+			case "POSTGRES_PASSWORD":
+				pg.password = v
+			}
+		}
+		if _, ok := data.Get(pgDatabasesKey); !ok {
+			// What initdb and the image's entrypoint create.
+			for _, db := range []string{"postgres", "template0", "template1", pg.user} {
+				pg.setDatabase(db, pgDatabase{})
+			}
+		}
+		return pg
+	}).(*pgServer)
+}
+
+// PostgresCommands answers psql run in a fake postgres container, as the
+// image's psql would over its Unix socket (where the image trusts every
+// login): one statement given with -c, in database -d as user -U, printed
+// as -tA prints it (one row per line, no headers), with -q leaving out
+// command tags. An error goes to stderr with its SQLSTATE when VERBOSITY is
+// verbose, and psql exits 1; a login refused exits 2.
+func PostgresCommands(_ context.Context, spec container.Spec, data *Volume, cmd []string) container.Output {
+	if cmd[0] != "psql" {
+		return container.Output{ExitCode: 127, Stderr: fmt.Appendf(nil, "%s: command not found\n", cmd[0])}
+	}
+	pg := pgServerOf(spec, data)
+	var user, database, sql string
+	var quiet, verbose bool
+	for i := 1; i < len(cmd); i++ {
+		arg := func() string {
+			if i+1 < len(cmd) {
+				i++
+				return cmd[i]
+			}
+			return ""
+		}
+		switch cmd[i] {
+		case "-U":
+			user = arg()
+		case "-d":
+			database = arg()
+		case "-c":
+			sql = arg()
+		case "-v":
+			verbose = verbose || arg() == "VERBOSITY=verbose"
+		case "-q":
+			quiet = true
+		}
+	}
+	user = cmp.Or(user, "root")
+	database = cmp.Or(database, user)
+	pg.mu.Lock()
+	defer pg.mu.Unlock()
+	refused := func(message string) container.Output {
+		return container.Output{ExitCode: 2, Stderr: fmt.Appendf(nil,
+			"psql: error: connection to server on socket \"/var/run/postgresql/.s.PGSQL.5432\" failed: FATAL:  %s\n", message)}
+	}
+	if user != pg.user && user != "postgres" {
+		return refused(fmt.Sprintf("role %q does not exist", user))
+	}
+	if _, ok := pg.database(database); !ok {
+		return refused(fmt.Sprintf("database %q does not exist", database))
+	}
+	// A session of its own, never in pg.sessions: no one else sees it
+	// while pg.mu is held for its one statement.
+	s := &pgSession{pid: pg.nextPID.Add(1) + 100, database: database}
+	res := pg.query(s, strings.TrimSpace(sql))
+	var out container.Output
+	switch {
+	case res.code != "":
+		message := res.message
+		if verbose {
+			message = res.code + ": " + message
+		}
+		out.ExitCode, out.Stderr = 1, fmt.Appendf(nil, "ERROR:  %s\n", message)
+	case res.column != "":
+		for _, row := range res.rows {
+			out.Stdout = append(out.Stdout, row+"\n"...)
+		}
+	case !quiet:
+		out.Stdout = []byte(res.tag + "\n")
+	}
+	return out
+}
 
 // pgDatabase is a fake database: table → its rows (one text column).
 type pgDatabase map[string][]string
@@ -176,7 +258,10 @@ func (pg *pgServer) serve(conn net.Conn) {
 			s.send('Z', []byte("I"))
 			continue
 		}
-		pg.query(s, strings.TrimSpace(strings.TrimSuffix(string(body), "\x00")))
+		pg.mu.Lock()
+		res := pg.query(s, strings.TrimSpace(strings.TrimSuffix(string(body), "\x00")))
+		pg.mu.Unlock()
+		s.reply(res)
 		if s.send('Z', []byte("I")) != nil {
 			return
 		}
@@ -242,15 +327,24 @@ var (
 	pgSelect         = regexp.MustCompile(`^SELECT \w+ FROM (\w+)$`)
 )
 
-// query runs one statement for s and sends its results (not ReadyForQuery).
-func (pg *pgServer) query(s *pgSession, sql string) {
-	pg.mu.Lock()
-	defer pg.mu.Unlock()
-	fail := func(code, message string) { s.send('E', pgError("ERROR", code, message)) }
-	done := func(tag string) { s.send('C', []byte(tag+"\x00")) }
-	rows := func(column string, values []string) {
+// pgResult is what one statement gave: rows of one column, a command tag,
+// or an error (code is its SQLSTATE).
+type pgResult struct {
+	column        string
+	rows          []string
+	tag           string
+	code, message string
+}
+
+// reply sends res to s (not ReadyForQuery).
+func (s *pgSession) reply(res pgResult) {
+	if res.code != "" {
+		s.send('E', pgError("ERROR", res.code, res.message))
+		return
+	}
+	if res.column != "" {
 		desc := binary.BigEndian.AppendUint16(nil, 1)
-		desc = append(desc, column+"\x00"...)
+		desc = append(desc, res.column+"\x00"...)
 		desc = binary.BigEndian.AppendUint32(desc, 0)      // table OID
 		desc = binary.BigEndian.AppendUint16(desc, 0)      // column number
 		desc = binary.BigEndian.AppendUint32(desc, 25)     // text
@@ -258,12 +352,21 @@ func (pg *pgServer) query(s *pgSession, sql string) {
 		desc = binary.BigEndian.AppendUint32(desc, 0xffffffff)
 		desc = binary.BigEndian.AppendUint16(desc, 0) // text format
 		s.send('T', desc)
-		for _, v := range values {
+		for _, v := range res.rows {
 			row := binary.BigEndian.AppendUint16(nil, 1)
 			row = binary.BigEndian.AppendUint32(row, uint32(len(v)))
 			s.send('D', append(row, v...))
 		}
-		done(fmt.Sprintf("SELECT %d", len(values)))
+	}
+	s.send('C', []byte(res.tag+"\x00"))
+}
+
+// query runs one statement for s, which pg.mu must be held for.
+func (pg *pgServer) query(s *pgSession, sql string) pgResult {
+	fail := func(code, message string) pgResult { return pgResult{code: code, message: message} }
+	done := func(tag string) pgResult { return pgResult{tag: tag} }
+	rows := func(column string, values []string) pgResult {
+		return pgResult{column: column, rows: values, tag: fmt.Sprintf("SELECT %d", len(values))}
 	}
 	unquote := func(s, q string) string { return strings.ReplaceAll(s, q+q, q) }
 
@@ -272,52 +375,43 @@ func (pg *pgServer) query(s *pgSession, sql string) {
 		if _, ok := pg.database(unquote(m[1], "'")); ok {
 			found = []string{"1"}
 		}
-		rows("?column?", found)
-		return
+		return rows("?column?", found)
 	}
 	if pgListDatabases.MatchString(sql) {
-		rows("datname", slices.DeleteFunc(pg.databases(), func(db string) bool {
+		return rows("datname", slices.DeleteFunc(pg.databases(), func(db string) bool {
 			return db == "template0" || db == "template1"
 		}))
-		return
 	}
 	if m := pgDropDatabase.FindStringSubmatch(sql); m != nil {
 		name := unquote(m[1], `"`)
 		if name == s.database {
-			fail("55006", "cannot drop the currently open database")
-			return
+			return fail("55006", "cannot drop the currently open database")
 		}
 		pg.terminate(name, s)
 		pg.removeDatabase(name)
-		done("DROP DATABASE")
-		return
+		return done("DROP DATABASE")
 	}
 	if m := pgCreateDatabase.FindStringSubmatch(sql); m != nil {
 		name, template := unquote(m[1], `"`), cmp.Or(unquote(m[2], `"`), "template1")
 		if _, ok := pg.database(name); ok {
-			fail("42P04", fmt.Sprintf("database %q already exists", name))
-			return
+			return fail("42P04", fmt.Sprintf("database %q already exists", name))
 		}
 		source, ok := pg.database(template)
 		if !ok {
-			fail("3D000", fmt.Sprintf("template database %q does not exist", template))
-			return
+			return fail("3D000", fmt.Sprintf("template database %q does not exist", template))
 		}
 		if others := pg.connectedTo(template, s); others > 0 {
-			fail("55006", fmt.Sprintf("source database %q is being accessed by other users", template))
-			return
+			return fail("55006", fmt.Sprintf("source database %q is being accessed by other users", template))
 		}
 		pg.setDatabase(name, source)
-		done("CREATE DATABASE")
-		return
+		return done("CREATE DATABASE")
 	}
 	if m := pgTerminate.FindStringSubmatch(sql); m != nil {
 		var closed []string
 		for range pg.terminate(unquote(m[1], "'"), s) {
 			closed = append(closed, "t")
 		}
-		rows("pg_terminate_backend", closed)
-		return
+		return rows("pg_terminate_backend", closed)
 	}
 	db, _ := pg.database(s.database)
 	switch {
@@ -327,35 +421,32 @@ func (pg *pgServer) query(s *pgSession, sql string) {
 			tables = append(tables, t)
 		}
 		slices.Sort(tables)
-		rows("tablename", tables)
+		return rows("tablename", tables)
 	case pgCreateTable.MatchString(sql):
 		table := pgCreateTable.FindStringSubmatch(sql)[1]
 		if _, ok := db[table]; ok {
-			fail("42P07", fmt.Sprintf("relation %q already exists", table))
-			return
+			return fail("42P07", fmt.Sprintf("relation %q already exists", table))
 		}
 		db[table] = []string{}
 		pg.setDatabase(s.database, db)
-		done("CREATE TABLE")
+		return done("CREATE TABLE")
 	case pgInsert.MatchString(sql):
 		m := pgInsert.FindStringSubmatch(sql)
 		if _, ok := db[m[1]]; !ok {
-			fail("42P01", fmt.Sprintf("relation %q does not exist", m[1]))
-			return
+			return fail("42P01", fmt.Sprintf("relation %q does not exist", m[1]))
 		}
 		db[m[1]] = append(db[m[1]], unquote(m[2], "'"))
 		pg.setDatabase(s.database, db)
-		done("INSERT 0 1")
+		return done("INSERT 0 1")
 	case pgSelect.MatchString(sql):
 		table := pgSelect.FindStringSubmatch(sql)[1]
 		values, ok := db[table]
 		if !ok {
-			fail("42P01", fmt.Sprintf("relation %q does not exist", table))
-			return
+			return fail("42P01", fmt.Sprintf("relation %q does not exist", table))
 		}
-		rows("value", values)
+		return rows("value", values)
 	default:
-		fail("42601", fmt.Sprintf("the fake Postgres doesn't understand %q", sql))
+		return fail("42601", fmt.Sprintf("the fake Postgres doesn't understand %q", sql))
 	}
 }
 

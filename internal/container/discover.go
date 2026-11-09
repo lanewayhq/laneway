@@ -83,3 +83,13 @@ func (e *Discovered) Running(ctx context.Context, name string, port int) (string
 	e.forget(d, err)
 	return addr, running, err
 }
+
+func (e *Discovered) Exec(ctx context.Context, name string, cmd []string) (Output, error) {
+	d, err := e.get(ctx)
+	if err != nil {
+		return Output{}, err
+	}
+	out, err := d.Exec(ctx, name, cmd)
+	e.forget(d, err)
+	return out, err
+}
