@@ -19,9 +19,9 @@ import (
 // Project and on each of its Worktrees until a later fetch for the Project
 // succeeds, such as `lane doctor`'s or the next start's.
 
-// againStart is what a warning about Catalog Plugins Laneway couldn't fetch
+// remedyStart is what a warning about Catalog Plugins Laneway couldn't fetch
 // when it started says to do once Laneway can reach the Catalog.
-const againStart = "run `lane doctor` in the Project to fetch them; Laneway also tries again when it restarts"
+const remedyStart = "run `lane doctor` in the Project to fetch them; Laneway also tries again when it restarts"
 
 // fetchLinkedProjectsPlugins fetches, in the background, the Catalog
 // Plugins each Linked Project needs and doesn't have, loading the Catalog
@@ -58,7 +58,7 @@ func (d *Daemon) fetchLinkedProjectsPlugins() {
 func (d *Daemon) fetchOnStart(ctx context.Context, cat *catalog.Catalog, loadErr error, p registry.Project) bool {
 	d.catalogMu.Lock()
 	defer d.catalogMu.Unlock()
-	res, err := d.fetchCatalogPluginsFrom(ctx, cat, loadErr, p.Path, againStart)
+	res, err := d.fetchCatalogPluginsFrom(ctx, cat, loadErr, p.Path, remedyStart)
 	if ctx.Err() != nil {
 		return false
 	}
@@ -72,7 +72,7 @@ func (d *Daemon) fetchOnStart(ctx context.Context, cat *catalog.Catalog, loadErr
 		if _, err := d.plugins.ResolveDir(p.Path); err != nil {
 			d.setUnfetched(p.Path, fmt.Sprintf("its config doesn't resolve, maybe for want of a Plugin from the Catalog, "+
 				"which Laneway has never been able to fetch (%v): %v\nonce Laneway can reach the Catalog, %s",
-				res.unchecked, err, againStart))
+				res.unchecked, err, remedyStart))
 		}
 	}
 	return len(res.fetched) > 0

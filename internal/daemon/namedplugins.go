@@ -58,13 +58,14 @@ func notInCatalogError(plugins []namedPlugin) error {
 }
 
 // uncheckedNamedError says that Plugins the Project's config names aren't
-// installed, and the Catalog couldn't be checked for them (why says why).
-func uncheckedNamedError(plugins []namedPlugin, why error) error {
+// installed, and the Catalog couldn't be checked for them (why says why),
+// and remedy what to do once it can be.
+func uncheckedNamedError(plugins []namedPlugin, why error, remedy string) error {
 	var b strings.Builder
 	for _, p := range plugins {
 		fmt.Fprintf(&b, "%s: plugins names %s, but no Plugin %s is installed\n", p.file, p.name, p.name)
 	}
 	fmt.Fprintf(&b, "Laneway couldn't check whether the Catalog has it: %v\n", why)
-	b.WriteString("once Laneway can reach the Catalog, run `lane link` again; if the Plugin isn't in the Catalog, " + addByHand)
+	b.WriteString("once Laneway can reach the Catalog, " + remedy + "; if the Plugin isn't in the Catalog, " + addByHand)
 	return &api.Error{Code: api.CodePluginsUnavailable, Message: b.String()}
 }

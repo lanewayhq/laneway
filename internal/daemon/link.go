@@ -32,7 +32,7 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 	res := api.LinkResponse{}
 	// The Catalog Plugins the Project needs come first: its config can't be
 	// resolved without them.
-	catalogRes, err := d.fetchCatalogPlugins(ctx, checkout.MainDir, againLink)
+	catalogRes, err := d.fetchCatalogPlugins(ctx, checkout.MainDir, remedyLink)
 	if err != nil {
 		return api.LinkResponse{}, err
 	}

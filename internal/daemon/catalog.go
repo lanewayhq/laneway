@@ -29,14 +29,14 @@ import (
 // with neither, nothing is fetched and the Project resolves with what is
 // installed, with a warning (unchecked says why). A Catalog that is refused (its signature
 // isn't Laneway's) is reported in warnings. It fails, naming them, if a
-// Plugin the Project needs can't be fetched, such as when offline; again is
+// Plugin the Project needs can't be fetched, such as when offline; remedy is
 // what that says to do once Laneway can reach the Catalog, such as
-// againLink.
-func (d *Daemon) fetchCatalogPlugins(ctx context.Context, dir, again string) (catalogFetched, error) {
+// remedyLink.
+func (d *Daemon) fetchCatalogPlugins(ctx context.Context, dir, remedy string) (catalogFetched, error) {
 	d.catalogMu.Lock()
 	defer d.catalogMu.Unlock()
 	cat, loadErr := d.loadCatalog(ctx)
-	res, err := d.fetchCatalogPluginsFrom(ctx, cat, loadErr, dir, again)
+	res, err := d.fetchCatalogPluginsFrom(ctx, cat, loadErr, dir, remedy)
 	if err == nil && res.unchecked == nil {
 		// What the daemon couldn't fetch when it started is fetched.
 		d.setUnfetched(dir, "")
@@ -44,14 +44,14 @@ func (d *Daemon) fetchCatalogPlugins(ctx context.Context, dir, again string) (ca
 	return res, err
 }
 
-// againLink is what a command fetching a Project's Catalog Plugins says to
+// remedyLink is what a command fetching a Project's Catalog Plugins says to
 // do once Laneway can reach the Catalog.
-const againLink = "run `lane link` again"
+const remedyLink = "run `lane link` again"
 
 // fetchCatalogPluginsFrom is fetchCatalogPlugins with the Catalog cat
 // loaded already (nil if it couldn't be; loadErr says why). The caller holds
 // catalogMu.
-func (d *Daemon) fetchCatalogPluginsFrom(ctx context.Context, cat *catalog.Catalog, loadErr error, dir, again string) (res catalogFetched, err error) {
+func (d *Daemon) fetchCatalogPluginsFrom(ctx context.Context, cat *catalog.Catalog, loadErr error, dir, remedy string) (res catalogFetched, err error) {
 	if loadErr != nil {
 		d.log.Warn("couldn't fetch the Catalog", "url", d.catalog.URL(), "err", loadErr, "kept", cat != nil)
 		if errors.Is(loadErr, catalog.ErrRefused) {
@@ -61,14 +61,14 @@ func (d *Daemon) fetchCatalogPluginsFrom(ctx context.Context, cat *catalog.Catal
 	named := d.missingNamedPlugins(dir)
 	if cat == nil {
 		if len(named) > 0 {
-			return res, uncheckedNamedError(named, loadErr)
+			return res, uncheckedNamedError(named, loadErr, remedy)
 		}
 		// Without a Catalog, Laneway can't tell which of its Plugins
 		// detect the Project, so it can't name them: it says so.
 		res.unchecked = loadErr
 		res.warnings = append(res.warnings, fmt.Sprintf("Laneway has never been able to fetch the Catalog (%v), "+
 			"so it couldn't fetch any Plugin from it this Project needs, such as its Recipe; "+
-			"once Laneway can reach the Catalog, %s", loadErr, again))
+			"once Laneway can reach the Catalog, %s", loadErr, remedy))
 		return res, nil
 	}
 	f := catalogFetch{d: d, ctx: ctx, latest: latestAllowed(cat, d.pins(dir)), failed: map[string]error{}}
@@ -121,7 +121,7 @@ func (d *Daemon) fetchCatalogPluginsFrom(ctx context.Context, cat *catalog.Catal
 	}
 	res.fetched = f.fetched
 	if len(f.failed) > 0 {
-		return res, f.error(d.catalog.URL(), again)
+		return res, f.error(d.catalog.URL(), remedy)
 	}
 	return res, nil
 }
@@ -304,15 +304,15 @@ func (d *Daemon) loadKnownCatalog() {
 	}
 }
 
-// error names the Plugins that couldn't be fetched, and why, and says to do
-// again once Laneway can reach the Catalog at url.
-func (f *catalogFetch) error(url, again string) error {
+// error names the Plugins that couldn't be fetched, and why, and what to
+// do once Laneway can reach the Catalog at url: remedy.
+func (f *catalogFetch) error(url, remedy string) error {
 	names := slices.Sorted(maps.Keys(f.failed))
 	var b strings.Builder
 	fmt.Fprintf(&b, "this Project needs Plugins from the Catalog that Laneway couldn't fetch: %s", strings.Join(names, ", "))
 	for _, name := range names {
 		fmt.Fprintf(&b, "\n  %v", f.failed[name])
 	}
-	fmt.Fprintf(&b, "\nonce Laneway can reach the Catalog (%s), %s", url, again)
+	fmt.Fprintf(&b, "\nonce Laneway can reach the Catalog (%s), %s", url, remedy)
 	return &api.Error{Code: api.CodePluginsUnavailable, Message: b.String()}
 }
