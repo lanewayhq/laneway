@@ -28,20 +28,51 @@ var noWait = func() retryPolicy {
 	return p
 }()
 
+// testServer is a test server that counts the requests it is sent.
+type testServer struct {
+	*httptest.Server
+	requests atomic.Int32
+}
+
+// Requests is how many requests the server has been sent.
+func (s *testServer) Requests() int { return int(s.requests.Load()) }
+
 // server serves every request with respond, given the number of the request
 // (from 1), until the test ends.
-func server(t *testing.T, respond func(n int, w http.ResponseWriter, r *http.Request)) *httptest.Server {
+func server(t *testing.T, respond func(n int, w http.ResponseWriter, r *http.Request)) *testServer {
 	t.Helper()
-	var n atomic.Int32
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		respond(int(n.Add(1)), w, r)
+	s := &testServer{}
+	s.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		respond(int(s.requests.Add(1)), w, r)
 	}))
 	t.Cleanup(s.Close)
 	return s
 }
 
+// hijack takes over the connection w answers on. If it can't, the test
+// fails, and the handler is aborted rather than left without a connection.
+func hijack(t *testing.T, w http.ResponseWriter) net.Conn {
+	t.Helper()
+	conn, _, err := http.NewResponseController(w).Hijack()
+	if err != nil {
+		t.Errorf("hijacking the connection: %v", err)
+		panic(http.ErrAbortHandler)
+	}
+	return conn
+}
+
+// testKey is a new Catalog signing key.
+func testKey(t *testing.T) (ed25519.PublicKey, ed25519.PrivateKey) {
+	t.Helper()
+	pub, key, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pub, key
+}
+
 // testSource is a Source fetching from s, retrying with policy.
-func testSource(t *testing.T, s *httptest.Server, key ed25519.PublicKey, policy retryPolicy) *Source {
+func testSource(t *testing.T, s *testServer, key ed25519.PublicKey, policy retryPolicy) *Source {
 	t.Helper()
 	src := NewSource(Location{URL: s.URL + "/catalog.json", Key: key}, t.TempDir())
 	src.retry = policy
@@ -152,9 +183,7 @@ func TestEndingTheContextStopsFetchingAReleaseAtOnce(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var requests atomic.Int32
-			s := server(t, func(n int, w http.ResponseWriter, req *http.Request) {
-				requests.Store(int32(n))
+			s := server(t, func(_ int, w http.ResponseWriter, req *http.Request) {
 				tc.respond(w, req)
 			})
 			policy := defaultRetry
@@ -171,7 +200,7 @@ func TestEndingTheContextStopsFetchingAReleaseAtOnce(t *testing.T) {
 			if took := time.Since(start); took > 5*time.Second {
 				t.Fatalf("Fetch took %s after its context ended", took)
 			}
-			if got := requests.Load(); got != 1 {
+			if got := s.Requests(); got != 1 {
 				t.Fatalf("downloaded %d times, want 1", got)
 			}
 		})
@@ -179,10 +208,7 @@ func TestEndingTheContextStopsFetchingAReleaseAtOnce(t *testing.T) {
 }
 
 func TestTheCatalogIsLoadedWhenItsDownloadFailsTemporarilyFirst(t *testing.T) {
-	pub, key, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pub, key := testKey(t)
 	data := []byte(`{"format": 1, "plugins": [{"name": "kv", "releases": []}]}`)
 	var catalogRequests atomic.Int32
 	s := server(t, func(_ int, w http.ResponseWriter, req *http.Request) {
@@ -209,14 +235,8 @@ func TestTheCatalogIsLoadedWhenItsDownloadFailsTemporarilyFirst(t *testing.T) {
 }
 
 func TestACatalogThatFailsPermanentlyIsntDownloadedAgain(t *testing.T) {
-	pub, key, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, forger, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pub, key := testKey(t)
+	_, forger := testKey(t)
 	data := []byte(`{"format": 1, "plugins": []}`)
 	for _, tc := range []struct {
 		name string
@@ -227,9 +247,7 @@ func TestACatalogThatFailsPermanentlyIsntDownloadedAgain(t *testing.T) {
 		{"not signed with its key", Sign(data, forger), "isn't signed with Laneway's Catalog key"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var requests atomic.Int32
-			s := server(t, func(n int, w http.ResponseWriter, req *http.Request) {
-				requests.Store(int32(n))
+			s := server(t, func(_ int, w http.ResponseWriter, req *http.Request) {
 				if req.URL.Path == "/catalog.json" {
 					w.Write(data)
 					return
@@ -242,27 +260,16 @@ func TestACatalogThatFailsPermanentlyIsntDownloadedAgain(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("Load = %v, want an error saying %q", err, tc.want)
 			}
-			if got := requests.Load(); got != 2 {
+			if got := s.Requests(); got != 2 {
 				t.Fatalf("made %d requests, want 2: the Catalog and its signature, once each", got)
 			}
 		})
 	}
 }
 
-// hijack takes over the connection w answers on.
-func hijack(t *testing.T, w http.ResponseWriter) net.Conn {
-	conn, _, err := http.NewResponseController(w).Hijack()
-	if err != nil {
-		t.Error(err)
-	}
-	return conn
-}
-
 func TestAReleaseDownloadThatKeepsFailingTemporarilyIsGivenUpOnAfterAFewAttempts(t *testing.T) {
 	_, r := testRelease(t)
-	var requests atomic.Int32
-	s := server(t, func(n int, w http.ResponseWriter, _ *http.Request) {
-		requests.Store(int32(n))
+	s := server(t, func(_ int, w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "unavailable", http.StatusServiceUnavailable)
 	})
 
@@ -277,7 +284,7 @@ func TestAReleaseDownloadThatKeepsFailingTemporarilyIsGivenUpOnAfterAFewAttempts
 	if !strings.Contains(err.Error(), "503 Service Unavailable") {
 		t.Fatalf("the error doesn't say why: %v", err)
 	}
-	if got := requests.Load(); got != 3 {
+	if got := s.Requests(); got != 3 {
 		t.Fatalf("downloaded %d times, want 3", got)
 	}
 }
@@ -294,9 +301,7 @@ func TestAReleaseThatFailsPermanentlyIsntDownloadedAgain(t *testing.T) {
 		{"wrong SHA-256", func(w http.ResponseWriter) { w.Write(append(slices.Clone(archive), 0)) }, "its SHA-256 is"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var requests atomic.Int32
-			s := server(t, func(n int, w http.ResponseWriter, _ *http.Request) {
-				requests.Store(int32(n))
+			s := server(t, func(_ int, w http.ResponseWriter, _ *http.Request) {
 				tc.respond(w)
 			})
 
@@ -305,7 +310,7 @@ func TestAReleaseThatFailsPermanentlyIsntDownloadedAgain(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("Fetch = %v, want an error saying %q", err, tc.want)
 			}
-			if got := requests.Load(); got != 1 {
+			if got := s.Requests(); got != 1 {
 				t.Fatalf("downloaded %d times, want 1", got)
 			}
 		})
