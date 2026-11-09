@@ -65,6 +65,9 @@ type Layer struct {
 	Worktree *WorktreeLayer `toml:"worktree"`
 	// Database is the Project's database ([database] table).
 	Database *DatabaseLayer `toml:"database"`
+	// PluginVersions pin Plugins to version ranges, by Plugin name
+	// ([plugin_versions] table; see plugins.go).
+	PluginVersions map[string]string `toml:"plugin_versions"`
 }
 
 // WorktreeLayer is the [worktree] table: where `lane worktree add` creates
@@ -204,7 +207,7 @@ func ParseLayer(source string, data []byte) (Layer, error) {
 		return Layer{}, decodeError(source, err)
 	}
 	// The decoder silently skips a non-table value for a map field.
-	for _, key := range append([]toml.Key{{"processes"}, {"env"}, {"linked_env"}, {"database"}, {"services"}}, processKeys(l)...) {
+	for _, key := range append([]toml.Key{{"processes"}, {"env"}, {"linked_env"}, {"database"}, {"services"}, {"plugin_versions"}}, processKeys(l)...) {
 		if t := md.Type(key...); t != "" && t != "Hash" {
 			return Layer{}, fmt.Errorf("%s: %s must be a table, not a %s", source, key, strings.ToLower(t))
 		}
@@ -292,6 +295,9 @@ func (l Layer) validate() error {
 		return fmt.Errorf("idle_timeout must be positive, such as \"30m\", not %s", *l.IdleTimeout)
 	}
 	if err := l.Database.validate(); err != nil {
+		return err
+	}
+	if err := checkPluginVersions(l.PluginVersions); err != nil {
 		return err
 	}
 	if err := l.Worktree.validate(); err != nil {

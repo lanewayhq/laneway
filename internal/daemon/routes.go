@@ -32,6 +32,7 @@ func (d *Daemon) routes() http.Handler {
 	mux.HandleFunc("GET /v1/plugins", d.handleListPlugins)
 	mux.HandleFunc("POST /v1/plugins", d.handleAddPlugin)
 	mux.HandleFunc("POST /v1/plugins/{plugin}/commands/{command}", d.handleRunPluginCommand)
+	mux.HandleFunc("POST /v1/plugins/update", d.handleUpdatePlugins)
 	return mux
 }
 
@@ -238,6 +239,8 @@ var statusFor = map[string]int{
 	api.CodeUnknownCommand: http.StatusNotFound,
 
 	api.CodePluginsUnavailable: http.StatusBadGateway,
+	api.CodeNotFromCatalog:     http.StatusUnprocessableEntity,
+	api.CodeCatalogChanged:     http.StatusConflict,
 }
 
 // writeError sends err to the client. An *api.Error is passed through as is;
@@ -263,7 +266,7 @@ func (d *Daemon) queryDir(r *http.Request) (string, error) {
 }
 
 func (d *Daemon) handleListPlugins(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, d.listPlugins())
+	writeJSON(w, http.StatusOK, d.listPlugins(r.Context()))
 }
 
 func (d *Daemon) handleAddPlugin(w http.ResponseWriter, r *http.Request) {

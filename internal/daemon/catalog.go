@@ -31,7 +31,7 @@ import (
 func (d *Daemon) fetchCatalogPlugins(ctx context.Context, dir string) (res catalogFetched, err error) {
 	d.catalogMu.Lock()
 	defer d.catalogMu.Unlock()
-	cat, loadErr := d.catalog.Load(ctx)
+	cat, loadErr := d.loadCatalog(ctx)
 	if loadErr != nil {
 		d.log.Warn("couldn't fetch the Catalog", "url", d.catalog.URL(), "err", loadErr, "kept", cat != nil)
 		if errors.Is(loadErr, catalog.ErrRefused) {
@@ -42,7 +42,7 @@ func (d *Daemon) fetchCatalogPlugins(ctx context.Context, dir string) (res catal
 		res.unchecked = loadErr
 		return res, nil
 	}
-	f := catalogFetch{d: d, ctx: ctx, latest: cat.Latest(plugin.APIVersion), failed: map[string]error{}}
+	f := catalogFetch{d: d, ctx: ctx, latest: latestAllowed(cat, d.pins(dir)), failed: map[string]error{}}
 	for _, p := range d.plugins.List() {
 		delete(f.latest, p.Name)
 	}
@@ -130,7 +130,7 @@ func (f *catalogFetch) names() []string {
 func (f *catalogFetch) fetch(name string) {
 	r := f.latest[name]
 	delete(f.latest, name)
-	p, err := f.install(name, r)
+	p, err := f.d.installRelease(f.ctx, name, r)
 	if err != nil {
 		f.d.log.Warn("couldn't fetch a Plugin from the Catalog", "plugin", name, "version", r.Version, "err", err)
 		f.failed[name] = fmt.Errorf("%s %s: %w", name, r.Version, err)
@@ -140,8 +140,20 @@ func (f *catalogFetch) fetch(name string) {
 	f.fetched = append(f.fetched, p)
 }
 
-func (f *catalogFetch) install(name string, r catalog.Release) (plugin.Plugin, error) {
-	plugins := f.d.cfg.Paths.Plugins()
+// installRelease downloads the Catalog release r of the Plugin name and
+// installs it, replacing the installed version, if any.
+func (d *Daemon) installRelease(ctx context.Context, name string, r catalog.Release) (plugin.Plugin, error) {
+	return d.withRelease(ctx, name, r, func(dir string) (plugin.Plugin, error) {
+		p, _, err := d.plugins.AddFrom(dir, plugin.CatalogSource)
+		return p, err
+	})
+}
+
+// withRelease downloads the Catalog release r of the Plugin name into a
+// temporary directory, checks it is the release the Catalog lists, and calls
+// use with it. The directory is removed afterwards.
+func (d *Daemon) withRelease(ctx context.Context, name string, r catalog.Release, use func(dir string) (plugin.Plugin, error)) (plugin.Plugin, error) {
+	plugins := d.cfg.Paths.Plugins()
 	if err := os.MkdirAll(plugins, 0o755); err != nil {
 		return plugin.Plugin{}, err
 	}
@@ -150,7 +162,7 @@ func (f *catalogFetch) install(name string, r catalog.Release) (plugin.Plugin, e
 		return plugin.Plugin{}, err
 	}
 	defer os.RemoveAll(tmp)
-	if err := f.d.catalog.Fetch(f.ctx, r, tmp); err != nil {
+	if err := d.catalog.Fetch(ctx, r, tmp); err != nil {
 		return plugin.Plugin{}, err
 	}
 	m, err := plugin.LoadManifest(tmp)
@@ -160,8 +172,7 @@ func (f *catalogFetch) install(name string, r catalog.Release) (plugin.Plugin, e
 	if m.Name != name || m.Version != r.Version {
 		return plugin.Plugin{}, fmt.Errorf("the release is Plugin %s %s, but the Catalog lists it as %s %s", m.Name, m.Version, name, r.Version)
 	}
-	p, _, err := f.d.plugins.AddFrom(tmp, plugin.CatalogSource)
-	return p, err
+	return use(tmp)
 }
 
 // enginePlugins are the Catalog Plugins (not installed) adding the Engines

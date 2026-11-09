@@ -17,12 +17,13 @@ import (
 
 // pluginCommands are the `lane plugin <name>` subcommands.
 var pluginCommands = map[string]func(ctx context.Context, env Env, args []string) error{
-	"add":  runPluginAdd,
-	"list": runPluginList,
-	"test": runPluginTest,
+	"add":    runPluginAdd,
+	"list":   runPluginList,
+	"update": runPluginUpdate,
+	"test":   runPluginTest,
 }
 
-const pluginUsage = "use `lane plugin add <dir>`, `lane plugin list` or `lane plugin test [--update]`"
+const pluginUsage = "use `lane plugin add <dir>`, `lane plugin list`, `lane plugin update [name]` or `lane plugin test [--update]`"
 
 func runPlugin(ctx context.Context, env Env, args []string) error {
 	if len(args) == 0 {

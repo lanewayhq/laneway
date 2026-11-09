@@ -490,6 +490,9 @@ type Plugin struct {
 	Effects []PluginEffect `json:"effects"`
 	// HTTPHosts are the hosts its http effects may reach.
 	HTTPHosts []string `json:"httpHosts"`
+	// Update is the release `lane plugin update` would update it to, if
+	// the Catalog lists a newer one.
+	Update *PluginUpdate `json:"update,omitempty"`
 }
 
 // PluginRecipe is a Recipe a Plugin adds.
