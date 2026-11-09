@@ -347,3 +347,58 @@ func TestAPluginCommandsEnvEffectSetsKeysInTheWorktreesEnvFile(t *testing.T) {
 	assertContains(t, res.Stdout, "still ran\n")
 	assertContains(t, readFile(t, filepath.Join(repo.Dir, ".env")), "TASKS=on\n")
 }
+
+// fileHookedDaemon is a daemon with the hooked test Plugin added, its
+// manifest declaring file effects.
+func fileHookedDaemon(t *testing.T) *testkit.Daemon {
+	t.Helper()
+	d := testkit.StartDaemon(t)
+	d.MustRunCLI(d.Home, "plugin", "add", "--yes", withManifest(t, testkit.Plugin(t, "hooked"), `{
+  "name": "hooked",
+  "version": "0.1.0",
+  "api_version": 1,
+  "recipes": [{"name": "hooked", "detect": {"file": "hooked"}}],
+  "hooks": ["preparing", "ready", "worktree_removed"],
+  "capabilities": {"effects": ["file", "warning"]}
+}`))
+	return d
+}
+
+func TestAHooksFileEffectIsMergedIntoTheWorktreesFiles(t *testing.T) {
+	t.Parallel()
+	d := fileHookedDaemon(t)
+	repo := gitfixture.New(t, "hook-file").
+		WriteFile(".gitignore", ".env\n").
+		WriteFile("hooked", "").
+		WriteFile("NOTES.md", "# Notes\n\nmine\n").
+		WriteFile("hooks.json", `{"preparing": {"effects": [
+  {"kind": "file", "file": {"path": "NOTES.md", "markdown": "from the hook\n"}}
+]}}`).
+		Commit("a Project whose hook merges a block")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+
+	notes := readFile(t, filepath.Join(repo.Dir, "NOTES.md"))
+	assertContains(t, notes, "# Notes\n\nmine\n")
+	assertContains(t, lanewayBlock(t, notes), "from the hook")
+}
+
+func TestAPluginDeclaringProcessEffectsIsRefusedSayingHowPluginsAddProcesses(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	plugin := withManifest(t, testkit.Plugin(t, "hooked"), `{
+  "name": "hooked",
+  "version": "0.1.0",
+  "api_version": 1,
+  "hooks": ["ready"],
+  "capabilities": {"effects": ["process"]}
+}`)
+
+	res := d.RunCLI(d.Home, "plugin", "add", "--yes", plugin)
+
+	if res.ExitCode == 0 {
+		t.Fatalf("adding a Plugin declaring process effects exited 0:\n%s", res.Output())
+	}
+	assertContains(t, res.Stderr, `capabilities.effects: "process" isn't an effect kind: a Plugin adds Processes with the config its Recipes and Integrations return`)
+}

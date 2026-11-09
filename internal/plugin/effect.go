@@ -26,7 +26,7 @@ type Effect struct {
 	// Env is an env effect's keys for the Worktree's .env.
 	Env map[string]string `json:"env,omitempty"`
 	// File is a file effect's block, merged into the Worktree's files by
-	// fileblock.Apply. Only Generators' file effects are applied today.
+	// fileblock.Apply.
 	File *fileblock.Block `json:"file,omitempty"`
 	// HTTP is an http effect's request, which Laneway sends (see
 	// HTTPRequest).

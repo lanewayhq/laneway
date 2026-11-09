@@ -85,10 +85,11 @@ type Capabilities struct {
 }
 
 // Effect kinds a Plugin's hooks and commands may return, which Laneway
-// applies under its usual rules.
+// applies under its usual rules. There is no Process effect: a Plugin adds
+// Processes with the config its Recipes and Integrations return, which
+// Laneway keeps running and restarts as the config changes.
 const (
 	EffectEnv     = "env"
-	EffectProcess = "process"
 	EffectExec    = "exec"
 	EffectFile    = "file"
 	EffectHTTP    = "http"
@@ -98,7 +99,6 @@ const (
 // EffectKinds describes every effect kind, as the developer is shown it.
 var EffectKinds = map[string]string{
 	EffectEnv:     "set keys in Worktrees' env files",
-	EffectProcess: "add Processes",
 	EffectExec:    "run commands in Worktrees",
 	EffectFile:    "merge blocks into files",
 	EffectHTTP:    "send HTTP requests",
@@ -209,6 +209,9 @@ func (m Manifest) validate() error {
 		return err
 	}
 	for _, kind := range m.Capabilities.Effects {
+		if kind == "process" {
+			return errors.New(`capabilities.effects: "process" isn't an effect kind: a Plugin adds Processes with the config its Recipes and Integrations return; remove it`)
+		}
 		if _, ok := EffectKinds[kind]; !ok {
 			return fmt.Errorf("capabilities.effects: %q isn't an effect kind; use %s", kind, strings.Join(slices.Sorted(maps.Keys(EffectKinds)), ", "))
 		}
