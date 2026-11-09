@@ -36,7 +36,7 @@ type effectsResponse struct {
 }
 
 // ErrUnknownPlugin is returned by Generate for a Plugin that isn't
-// installed or built in.
+// installed.
 var ErrUnknownPlugin = errors.New("unknown Plugin")
 
 // Generate runs every Generator of the Plugin name on the Worktree at root,
