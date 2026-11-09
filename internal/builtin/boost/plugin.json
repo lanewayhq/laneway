@@ -1,0 +1,7 @@
+{
+  "name": "boost",
+  "version": "1.0.0",
+  "api_version": 1,
+  "generators": [{"name": "boost"}],
+  "capabilities": {"effects": ["file"]}
+}

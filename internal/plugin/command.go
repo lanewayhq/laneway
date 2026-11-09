@@ -37,19 +37,6 @@ func (m Manifest) validateCommands() error {
 	return nil
 }
 
-// Effect is something a Plugin's command asks Laneway to do (see
-// sdk.Effect). Laneway applies it only if the Plugin's manifest declares its
-// kind.
-type Effect struct {
-	Kind string `json:"kind"`
-	// Command is an exec effect's command and arguments.
-	Command []string `json:"command,omitempty"`
-	// Message is a warning effect's warning.
-	Message string `json:"message,omitempty"`
-	// Env is an env effect's keys.
-	Env map[string]string `json:"env,omitempty"`
-}
-
 // commandResponse is a module's answer to a command call.
 type commandResponse struct {
 	Effects []Effect `json:"effects"`
@@ -57,8 +44,8 @@ type commandResponse struct {
 
 // Command runs the installed Plugin's command with args in the Worktree in
 // dir, mounted read-only, and returns the effects it asks for, in order. It
-// doesn't check their kinds against the manifest: whoever applies them
-// refuses those it doesn't declare (see Plugin.Declares).
+// doesn't check them against the manifest: whoever applies them refuses
+// those it may not return (see Plugin.CheckEffects).
 //
 // A command's result isn't reused, unlike a Recipe's: the developer runs it
 // to have it run.

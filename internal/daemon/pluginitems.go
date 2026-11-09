@@ -1,7 +1,6 @@
 package daemon
 
 import (
-	"slices"
 	"strconv"
 
 	"github.com/lanewayhq/laneway/internal/api"
@@ -45,33 +44,11 @@ func (d *Daemon) worktreeItems(scope string, project string, w api.Worktree, cfg
 		"domain":           w.PrimaryDomain,
 	}
 	for _, p := range d.plugins.Showing() {
-		if usesPlugin(cfg, p) {
+		if p.ShowsOn(cfg) {
 			addItems(&items, p.Name, p.Dashboard.In(scope, vars))
 		}
 	}
 	return items
-}
-
-// usesPlugin reports whether a Worktree whose resolved config is cfg uses
-// p: p's Recipe or one of its Integrations detected it, or it uses a Service
-// of an Engine p adds.
-func usesPlugin(cfg recipe.Resolved, p plugin.Plugin) bool {
-	for _, r := range p.Recipes {
-		if r.Name == cfg.Recipe {
-			return true
-		}
-	}
-	for _, in := range p.Integrations {
-		if slices.Contains(cfg.Integrations, in.Name) {
-			return true
-		}
-	}
-	for _, s := range cfg.Services {
-		if addsEngine(p, s.Engine) {
-			return true
-		}
-	}
-	return false
 }
 
 // addsEngine reports whether p adds the Engine called name.

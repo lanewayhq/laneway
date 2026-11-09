@@ -1,0 +1,8 @@
+{
+  "name": "hooked",
+  "version": "0.1.0",
+  "api_version": 1,
+  "recipes": [{"name": "hooked", "detect": {"file": "hooked"}}],
+  "hooks": ["preparing", "ready", "worktree_removed"],
+  "capabilities": {"effects": ["env", "exec", "warning"]}
+}

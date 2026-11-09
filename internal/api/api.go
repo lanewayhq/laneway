@@ -468,6 +468,12 @@ type Plugin struct {
 	Commands []PluginCommand `json:"commands"`
 	// Engines are the Engines it adds.
 	Engines []PluginEngine `json:"engines"`
+	// Generators are the names of the Generators it adds, run with
+	// `lane generate <plugin>`.
+	Generators []string `json:"generators"`
+	// Hooks are the lifecycle events it hooks, such as "ready", in
+	// lifecycle order.
+	Hooks []string `json:"hooks"`
 	// Effects are the kinds of effect it may return, each with what it
 	// lets the Plugin do; empty if it only returns config.
 	Effects []PluginEffect `json:"effects"`

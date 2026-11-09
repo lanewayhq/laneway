@@ -73,13 +73,19 @@ func (d *Daemon) planEnvPatch(p registry.Project, w worktreeRef) (envpatch.Plan,
 	if err != nil {
 		return envpatch.Plan{}, err
 	}
+	return envpatch.Prepare(envFileOf(p, w), values)
+}
+
+// envFileOf is the Worktree's .env, as the Env Patch and env effects patch
+// it.
+func envFileOf(p registry.Project, w worktreeRef) envpatch.File {
 	f := envpatch.File{Path: filepath.Join(w.dir, envFileName)}
 	if !w.main {
 		// A new Worktree shares the main Worktree's settings and app key.
 		f.Seeds = append(f.Seeds, filepath.Join(p.Path, envFileName))
 	}
 	f.Seeds = append(f.Seeds, filepath.Join(w.dir, envFileName+".example"))
-	return envpatch.Prepare(f, values)
+	return f
 }
 
 // envPatchVars are the template variables' values for the Worktree w whose

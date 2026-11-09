@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/lanewayhq/laneway/internal/recipe"
 )
 
 // Dashboard links, badges and actions from Plugins (spec #48): a Plugin
@@ -184,4 +186,11 @@ func (h *Host) Showing() []Plugin {
 		}
 	}
 	return out
+}
+
+// ShowsOn reports whether p's project and worktree items show on a Project
+// or Worktree whose config is res: whether it uses p, as for hooks (see
+// usedBy).
+func (p Plugin) ShowsOn(res recipe.Resolved) bool {
+	return p.usedBy(res)
 }

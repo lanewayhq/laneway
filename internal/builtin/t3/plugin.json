@@ -1,0 +1,7 @@
+{
+  "name": "t3",
+  "version": "1.0.0",
+  "api_version": 1,
+  "generators": [{"name": "t3"}],
+  "capabilities": {"effects": ["file", "warning"]}
+}
