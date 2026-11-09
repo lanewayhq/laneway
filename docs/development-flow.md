@@ -46,7 +46,7 @@ Both repositories have the same protection on `main`:
 
 - **Pull requests only.** No direct pushes, no force pushes.
 - **The `test` check must pass.** In laneway it's gofmt, `go vet` and `go test ./...`. In plugins it's gofmt, `go vet`, the SDK's tests, `lane plugin test` for every Plugin and the e2e tests against a `lane` built from Laneway's `main`.
-- **Code owners, no required approval.** [CODEOWNERS](../.github/CODEOWNERS) makes the maintainer (`mrsafalpiya`) the owner of everything, and above all of CI, the release workflows, `install.sh`, the Catalog key (`internal/catalog/`) and, in plugins, `keys/` and `catalog/`, so every pull request asks for their review. Merging doesn't need an approval: the maintainer is the only one with write access, so nothing merges without them, and their own pull requests (which GitHub won't let them approve) merge once `test` is green. Give anyone else write access only together with bringing back a required code-owner approval.
+- **Code owners, no required approval.** [CODEOWNERS](../.github/CODEOWNERS) makes the maintainer (`mrsafalpiya`) the owner of everything, and above all of CI, the release workflows, `install.sh`, the Catalog key (`internal/catalog/`) and, in plugins, `keys/`, so every pull request asks for their review. Merging doesn't need an approval: the maintainer is the only one with write access, so nothing merges without them, and their own pull requests (which GitHub won't let them approve) merge once `test` is green. Give anyone else write access only together with bringing back a required code-owner approval.
 
 Conventions, as the history already follows them:
 
@@ -127,7 +127,7 @@ The same flow as a feature, with three differences:
 1. **Reproduce it in a test first.** The test fails on `main` and passes with the fix. For a Plugin, that's usually a new `lane plugin test` case or an e2e test.
 2. **Branch** `fix/<N>-<slug>` (or `ticket/<N>-<slug>`), and the pull request says `Fixes #N`.
 3. **Ship it quickly:**
-   - **Bug in a Plugin:** merge with a patch bump of its version, release the Plugin and sign the Catalog. That's the whole fix for users: no Laneway release is needed. Tell reporters to run `lane plugin update <name>`. Then bump Laneway's pin. (#81, MySQL readiness on Podman, is this case: fixed in the mysql Plugin, waiting for its release.)
+   - **Bug in a Plugin:** merge with a patch bump of its version, release the Plugin and sign the Catalog. That's the whole fix for users: no Laneway release is needed. Tell reporters to run `lane plugin update <name>`. Then bump Laneway's pin. (#81, MySQL readiness on Podman, was this case: fixed in mysql 1.0.1.)
    - **Bug in Laneway:** merge, then cut a patch release, `vX.Y.Z+1`, from `main`. There are no release branches: until 1.0, `main` is always releasable, so a fix ships with whatever else has merged since. If `main` holds something that mustn't ship yet, hold the fix's release until it's ready, or revert that change first.
    - **Bug in both** (a Laneway bug a Plugin works around, say): fix Laneway, release it, then release the Plugin without the workaround. Same order as a feature.
 
@@ -145,7 +145,7 @@ flowchart LR
 1. **Start with an issue** unless the change is small and obvious (a typo, a clear bug with a one-line fix). Pull requests aren't a feature-request channel: one without an agreed issue may be closed in favour of discussing it first. Issues labelled `good first issue` or `help wanted` are open for anyone to take; say in the issue that you are.
 2. **Fork** the repository and branch from `main`.
 3. **Build and test** as in the feature flow above: `go test ./...` in laneway; in plugins, `lane plugin test` for every Plugin you changed, with a `lane` built from Laneway's `main`. Run `gofmt -w` on your Go files.
-4. **Follow the conventions:** commit messages as above, the glossary's words, tests with the change. Don't bump a Plugin's version and don't touch `catalog/`, `keys/`, `.github/` or `install.sh` unless the issue asks for it; the maintainer handles versions and releases.
+4. **Follow the conventions:** commit messages as above, the glossary's words, tests with the change. Don't bump a Plugin's version and don't touch `keys/`, `.github/` or `install.sh` unless the issue asks for it; the maintainer handles versions and releases.
 5. **Open the pull request** against `main` with `Fixes #N` and how you tested it.
 
 Contributions are licensed under the Apache License 2.0, as the repositories are.
@@ -171,14 +171,14 @@ sequenceDiagram
   participant L as Installed Laneways
   M->>M: merge the change, with version bumped in plugin.json
   M->>R: push tag mysql/v1.0.1
+  R->>R: refuse the tag unless its commit is on main
   R->>R: lane plugin test + e2e against Laneway main
   R->>R: refuse the tag unless it is the manifest's version
   R->>R: publish the Plugin's release (never "latest")
-  R->>M: open PR "Catalog: mysql 1.0.1"
-  M->>M: review catalog/catalog.json, merge
+  R->>C: start the Catalog workflow
   C->>M: publish job waits in the catalog-signing Environment
   M->>C: approve (web or GitHub mobile)
-  C->>C: rebuild + compare, sign, verify with keys/catalog.pub
+  C->>C: rebuild from every release, sign, verify with keys/catalog.pub
   C->>L: release catalog/TIMESTAMP, marked latest
   L->>L: next fetch: new Projects get it, lane plugin update for the rest
 ```
@@ -189,10 +189,9 @@ sequenceDiagram
    git switch main && git pull
    git tag mysql/v1.0.1 && git push origin mysql/v1.0.1
    ```
-3. The **Release** workflow tests the Plugin against Laneway's `main`, refuses a tag that isn't the manifest's version, publishes the release (archive, `plugin.json`, `SHA256SUMS`) and opens a **Catalog: mysql 1.0.1** pull request.
-4. Review that pull request: `catalog/catalog.json` must list exactly the releases, and the **Catalog** check proves it. Merge it. Releasing several Plugins at once opens several Catalog pull requests, each listing every release before it: merge the newest and close the rest.
-5. The **Catalog** workflow's `publish` job waits for your approval in the `catalog-signing` Environment. Approve it. It signs the Catalog and publishes it as the latest release, where Laneway fetches it.
-6. Check it: `gh release list -R lanewayhq/plugins` shows a new `Catalog <date>` marked Latest, and on a machine with Laneway, `lane plugin update <name>` installs the new version.
+3. The **Release** workflow refuses a tag whose commit isn't on `main` or isn't the manifest's version, tests the Plugin against Laneway's `main`, publishes the release (archive, `plugin.json`, `SHA256SUMS`) and starts the **Catalog** workflow. Nothing so far reaches users.
+4. **Approve the signing: your only manual step.** The Catalog workflow's `publish` job waits for you in the `catalog-signing` Environment, and GitHub notifies you. On the run's page, click **Review deployments**, tick `catalog-signing` and click **Approve and deploy**, or approve it in the GitHub mobile app. It rebuilds the Catalog from every Plugin release, signs it and publishes it as the latest release, where Laneway fetches it. Releasing several Plugins at once starts several runs: approve one once all their releases are out, and the rest find nothing new and publish nothing.
+5. Check it: `gh release list -R lanewayhq/plugins` shows a new `Catalog <date>` marked Latest, and on a machine with Laneway, `lane plugin update <name>` installs the new version.
 
 A published tag and release are never reused. If a release is wrong, fix it and release the next patch version.
 
@@ -261,7 +260,7 @@ Commit as `chore: Laneway's tests use lanewayhq/plugins <what changed>` and open
 | --- | --- | --- |
 | Add a Laneway feature | laneway | issue → `ticket/N-slug` → tests → PR → merge → next `vX.Y.Z` |
 | Fix a Laneway bug | laneway | failing test → fix → PR `Fixes #N` → merge → patch release |
-| Change a Plugin | plugins | issue → branch → `lane plugin test` cases → bump `plugin.json` → PR → merge → tag `<plugin>/v<version>` → merge Catalog PR → approve signing |
+| Change a Plugin | plugins | issue → branch → `lane plugin test` cases → bump `plugin.json` → PR → merge → tag `<plugin>/v<version>` → approve signing |
 | Add an Effect / Event / SDK call | both | SDK PR (plugins) → pin + host side (laneway) → Plugin uses it (plugins) → release Laneway → release Plugin |
 | Ship a Plugin fix to users | plugins | release the Plugin and sign the Catalog; users run `lane plugin update` |
 | Release Laneway | laneway | Plugins first → pin + snapshot PR → slow tier → checklist → tag `vX.Y.Z` → verify `install.sh` |
