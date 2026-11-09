@@ -266,10 +266,7 @@ func (e *Docker) Stop(ctx context.Context, name string) error {
 }
 
 // removeAttempts is how many times Remove asks the engine to delete a
-// container, and removeRetryDelay how long it waits between attempts. A
-// failed forced delete on rootless Podman takes about 15s (the stop timeout,
-// then SIGKILL and a wait), so Remove can take about 45s before it gives up;
-// a caller that bounds it with a deadline should allow for that.
+// container, and removeRetryDelay how long it waits between attempts.
 const removeAttempts = 3
 
 var removeRetryDelay = time.Second
@@ -280,10 +277,8 @@ var removeRetryDelay = time.Second
 //
 // A forced delete stops the container first, and rootless Podman can fail
 // that stop with HTTP 500 ("could not be stopped: given PID did not die
-// within timeout") when the process is slow to die. By then Podman has most
-// likely already sent SIGKILL and waited, so what helps is trying the delete
-// again after a pause, a bounded number of times. Before each retry Remove
-// also sends a kill, as a best-effort nudge.
+// within timeout") when the process is slow to die. Remove then kills the
+// container and tries the delete again, a bounded number of times.
 func (e *Docker) Remove(ctx context.Context, name, volume string) error {
 	path := "/containers/" + url.PathEscape(name)
 	for attempt := 1; ; attempt++ {
@@ -294,9 +289,9 @@ func (e *Docker) Remove(ctx context.Context, name, volume string) error {
 		if !isStatus(err, http.StatusInternalServerError) || attempt == removeAttempts {
 			return err
 		}
-		// A best-effort nudge: Podman has most likely sent SIGKILL already,
-		// so this often answers 409 (not running) or 404 (gone). Its answer
-		// doesn't matter; the retried delete reports what still does.
+		// The kill's answer doesn't matter: 404 or 409 mean the container
+		// is gone or no longer running, and the next delete reports
+		// anything else.
 		e.do(ctx, http.MethodPost, path+"/kill", nil, nil, nil)
 		select {
 		case <-ctx.Done():
