@@ -1,7 +1,6 @@
 package recipe
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"maps"
@@ -15,6 +14,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/detect"
 	"github.com/lanewayhq/laneway/internal/dotenv"
 	"github.com/lanewayhq/laneway/internal/service"
 )
@@ -27,8 +27,11 @@ type Rails struct{}
 
 func (Rails) Name() string { return "rails" }
 
-func (Rails) Detect(dir string) bool {
-	return exists(dir, filepath.Join("config", "application.rb")) && gemfileDeclares(dir, "rails", "railties")
+func (Rails) Detection() detect.Rule {
+	return detect.Rule{All: []detect.Rule{
+		{File: "config/application.rb"},
+		{Any: []detect.Rule{{Gem: "rails"}, {Gem: "railties"}}},
+	}}
 }
 
 // withEnv loads the Worktree's .env into the environment of the command
@@ -201,26 +204,8 @@ func railsSQLitePath(dir, file string) string {
 	return filepath.ToSlash(rel)
 }
 
-// gemLine matches a Gemfile line declaring a gem: gem "name", ….
-var gemLine = regexp.MustCompile(`^\s*gem\s*\(?\s*["']([^"']+)["']`)
-
 // gemfileDeclares reports whether the Gemfile in dir declares any of gems.
 func gemfileDeclares(dir string, gems ...string) bool {
-	data, err := os.ReadFile(filepath.Join(dir, "Gemfile"))
-	if err != nil {
-		return false
-	}
-	sc := bufio.NewScanner(bytes.NewReader(data))
-	for sc.Scan() {
-		m := gemLine.FindStringSubmatch(sc.Text())
-		if m == nil {
-			continue
-		}
-		for _, gem := range gems {
-			if m[1] == gem {
-				return true
-			}
-		}
-	}
-	return false
+	declared := detect.Gems(dir)
+	return slices.ContainsFunc(gems, func(gem string) bool { return declared[gem] })
 }

@@ -6,15 +6,17 @@ import (
 	"testing"
 
 	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/detect"
 	"github.com/lanewayhq/laneway/internal/recipe"
 )
 
-// fixtureIntegration is a test Integration that detects every Project and
-// adds the layer in its TOML.
+// fixtureIntegration is a test Integration that detects every Project
+// resolveIntegrations makes (by its fixture-stack file) and adds the layer in
+// its TOML.
 type fixtureIntegration struct{ name, toml string }
 
 func (i fixtureIntegration) Name() string           { return i.name }
-func (i fixtureIntegration) Detect(dir string) bool { return true }
+func (i fixtureIntegration) Detection() detect.Rule { return detect.Rule{File: "fixture-stack"} }
 
 func (i fixtureIntegration) Defaults(dir string) (config.Layer, error) {
 	return config.ParseLayer("the "+i.name+" Integration", []byte(i.toml))

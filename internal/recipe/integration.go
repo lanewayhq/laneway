@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/detect"
 )
 
 // Integration is a tool a Project uses alongside its stack, such as Vite:
@@ -16,8 +17,8 @@ import (
 type Integration interface {
 	// Name identifies the Integration, such as "vite".
 	Name() string
-	// Detect reports whether the Project in dir uses the Integration.
-	Detect(dir string) bool
+	// Detection is the rule a Project using the Integration matches.
+	Detection() detect.Rule
 	// Defaults is the config layer the Integration adds for the Project in
 	// dir, applied over the Recipe's. It may not choose the Primary
 	// Process.
@@ -29,25 +30,31 @@ var BuiltinIntegrations = []Integration{Vite{}}
 
 // detectIntegrations are the layers of the Integrations that detect the
 // Project in dir, sorted by name so that they apply in a stable order, with
-// their names.
-func detectIntegrations(dir string, integrations []Integration) ([]config.Layer, []string, error) {
+// their names and, by name, the rule the Project matched.
+func detectIntegrations(dir string, integrations []Integration) ([]config.Layer, []string, map[string]string, error) {
 	detected := slices.SortedFunc(slices.Values(integrations), func(a, b Integration) int {
 		return cmp.Compare(a.Name(), b.Name())
 	})
 	var layers []config.Layer
 	var names []string
+	var rules map[string]string
 	for _, in := range detected {
-		if !in.Detect(dir) {
+		matched, ok := in.Detection().Match(dir)
+		if !ok {
 			continue
 		}
 		l, err := in.Defaults(dir)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		layers = append(layers, l)
 		names = append(names, in.Name())
+		if rules == nil {
+			rules = map[string]string{}
+		}
+		rules[in.Name()] = matched
 	}
-	return layers, names, nil
+	return layers, names, rules, nil
 }
 
 // checkIntegrations fails when an Integration layer sets

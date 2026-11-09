@@ -401,7 +401,7 @@ func TestTheLaravelRecipesConfigWrittenAsALayerResolvesToItself(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					again.Recipe, again.Integrations, again.Warnings = res.Recipe, res.Integrations, res.Warnings
+					again.Recipe, again.RecipeRule, again.Integrations, again.IntegrationRules, again.Warnings = res.Recipe, res.RecipeRule, res.Integrations, res.IntegrationRules, res.Warnings
 					if !reflect.DeepEqual(again, res) {
 						t.Errorf("with Recipes %v and Integrations %v, the written config\n%s\nresolves to\n  %+v\nwant\n  %+v",
 							recipes, integrations, buf.String(), again, res)
