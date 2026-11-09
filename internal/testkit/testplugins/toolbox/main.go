@@ -7,7 +7,7 @@ package main
 import (
 	"errors"
 
-	"github.com/lanewayhq/laneway/sdk"
+	"github.com/lanewayhq/plugins/sdk"
 )
 
 func main() {
