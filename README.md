@@ -23,7 +23,7 @@ git worktree add ../shop-checkout -b checkout
 
 ## Plugins
 
-Laneway's knowledge of stacks, tools and services comes from **Plugins**: Laravel, Rails and Vite, the Postgres, MySQL, Redis and Mailpit engines, and the Claude Code, T3 Code and Laravel Boost generators. They live in [lanewayhq/plugins](https://github.com/lanewayhq/plugins) and are listed in a signed Catalog. Laneway fetches the ones a Project needs the first time you Link it. You can also add your own (`lane plugin add <dir|github.com/owner/repo>`) or write one: see the [Plugin authoring guide](https://github.com/lanewayhq/plugins/blob/main/docs/authoring.md).
+Laneway's knowledge of stacks, tools and services comes from **Plugins**: Laravel, Rails and Vite, the Postgres, MySQL, Redis and Mailpit engines, and the Claude Code, T3 Code and Laravel Boost generators. They live in [lanewayhq/plugins](https://github.com/lanewayhq/plugins) and are listed in a signed Catalog. Laneway fetches the ones a Project needs the first time you Link it, and again whenever it starts if any are missing, such as after an upgrade. You can also add your own (`lane plugin add <dir|github.com/owner/repo>`) or write one: see the [Plugin authoring guide](https://github.com/lanewayhq/plugins/blob/main/docs/authoring.md).
 
 ## Install
 

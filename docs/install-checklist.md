@@ -77,6 +77,11 @@ The binary carries no Recipes, Integrations, Engines or Generators: a fresh inst
 - [ ] `sysctl net.ipv4.ip_unprivileged_port_start` is still `80`.
 - [ ] The service started on its own (`systemctl --user is-active laneway` prints `active`), and `lane doctor` is all `ok`.
 
+## After an upgrade
+
+- [ ] With a Project Linked, remove the installed Plugins (`systemctl --user stop laneway`, `rm -r ~/.local/state/laneway/plugins`, `systemctl --user start laneway`), as an upgrade that leaves them behind does. Without running anything else, `lane plugin list` lists the Project's Plugins again within a few seconds, and `lane info` in the Project shows its Recipe and no `Config` error.
+- [ ] Do the same offline. `lane status` and `lane info` warn that Laneway couldn't fetch the Project's Plugins and say to run `lane doctor`. Back online, `lane doctor` fetches them and the warning goes.
+
 ## Results
 
 | Date | Machine (distro, WSL mode) | Section | Result | Notes |
