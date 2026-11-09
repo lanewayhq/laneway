@@ -73,8 +73,14 @@ func Open(path string) (*Registry, error) {
 	if err := json.Unmarshal(data, &r.state); err != nil {
 		return nil, fmt.Errorf("reading registry %s: %w", path, err)
 	}
+	// Laneway once gave some Services a port above 65535, which none can
+	// listen on: such a Service has no port, so it gets a fresh one.
+	r.state.Services = slices.DeleteFunc(r.state.Services, func(s Service) bool { return s.Port > maxPort })
 	return r, nil
 }
+
+// maxPort is the highest TCP port.
+const maxPort = 65535
 
 // Projects returns every Project, sorted by name.
 func (r *Registry) Projects() []Project {
@@ -443,7 +449,8 @@ func (r *Registry) RemoveAlias(a Alias) error {
 }
 
 // Service is a Service and the port Laneway listens on for it. Once a
-// Service has a port it keeps it, so connection settings never change.
+// Service has a port it keeps it, so connection settings never change
+// (unless it is above 65535: see Open).
 type Service struct {
 	service.Ref
 	Port int `json:"port"`

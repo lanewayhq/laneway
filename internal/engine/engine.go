@@ -238,16 +238,27 @@ func (m *Manifest) Values(host string, port int) map[string]string {
 
 // Ports are the ports a Service of m at version may listen on, best first.
 // The default version gets the standard Port. Any other version gets a port
-// derived from the first three digits of the standard port and the
-// version's digits, such as redis:6 → 63706 and postgres:14 → 54314; a
-// version with more than two digits uses a hash of it instead. The others
-// are the rest of that block of 100, in order, for when the first is taken.
-// The port a Service gets is recorded in the Registry, so it never changes.
+// in a block of 100 picked by the standard port, at the version's digits,
+// such as redis:6 → 63706 and postgres:14 → 54314; a version with more than
+// two digits uses a hash of it instead. The block is the first three digits
+// of the standard port, as with those two, if the whole block is a port
+// (up to 65535). Otherwise it is 50000 plus the first two digits, so the
+// block of a high or 5-digit port is within 51000–59999: rustfs:2 (port
+// 9000) → 59002, port 27017 → 527xx. The others are the rest of that block,
+// in order, for when the first is taken. The port a Service gets is
+// recorded in the Registry, so it never changes.
 func (m *Manifest) Ports(version string) []int {
 	if version == m.DefaultVersion {
 		return []int{m.Port}
 	}
 	base := m.Port / 10 * 100
+	if base+99 > 65535 {
+		first := m.Port
+		for first >= 100 {
+			first /= 10
+		}
+		base = 50000 + first*100
+	}
 	digits := strings.Map(func(r rune) rune {
 		if r >= '0' && r <= '9' {
 			return r
