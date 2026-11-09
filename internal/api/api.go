@@ -448,6 +448,8 @@ type Plugin struct {
 	SHA256 string `json:"sha256,omitempty"`
 	// Recipes are the Recipes it adds.
 	Recipes []PluginRecipe `json:"recipes"`
+	// Integrations are the Integrations it adds.
+	Integrations []PluginIntegration `json:"integrations"`
 	// Effects are the kinds of effect it may return, each with what it
 	// lets the Plugin do; empty if it only returns config.
 	Effects []PluginEffect `json:"effects"`
@@ -460,6 +462,14 @@ type PluginRecipe struct {
 	Name string `json:"name"`
 	// Detects describes the Projects its detection rule matches, such as
 	// "Procfile exists".
+	Detects string `json:"detects"`
+}
+
+// PluginIntegration is an Integration a Plugin adds.
+type PluginIntegration struct {
+	Name string `json:"name"`
+	// Detects describes the Projects its detection rule matches, such as
+	// "package.json depends on vite".
 	Detects string `json:"detects"`
 }
 

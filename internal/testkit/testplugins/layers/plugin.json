@@ -1,0 +1,9 @@
+{
+  "name": "layers",
+  "version": "0.1.0",
+  "api_version": 1,
+  "integrations": [
+    {"name": "assets", "detect": {"file": "assets.json"}},
+    {"name": "queue", "detect": {"file": "queue.json"}}
+  ]
+}
