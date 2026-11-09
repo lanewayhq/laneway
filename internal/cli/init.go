@@ -16,9 +16,10 @@ import (
 )
 
 // runInit writes the resolved config to laneway.toml at the root of the
-// current Worktree. It works on files only, so it doesn't need the daemon.
-// laneway.local.toml is left out: personal overrides don't belong in the
-// committed file.
+// current Worktree. It works on files only, so it needs the daemon only to
+// fetch the Catalog Plugins the Project needs, as Linking it would; without
+// the daemon it uses the Plugins installed. laneway.local.toml is left out:
+// personal overrides don't belong in the committed file.
 func runInit(ctx context.Context, env Env, args []string) error {
 	flags := newFlags(env, "init")
 	force := flags.Bool("force", false, "overwrite an existing "+config.FileName)
@@ -34,6 +35,10 @@ func runInit(ctx context.Context, env Env, args []string) error {
 	}
 	path := filepath.Join(checkout.Dir, config.FileName)
 
+	daemon, err := fetchProjectPlugins(ctx, env, checkout.Dir)
+	if err != nil {
+		return err
+	}
 	plugins, err := openPlugins(env)
 	if err != nil {
 		return err
@@ -55,6 +60,10 @@ func runInit(ctx context.Context, env Env, args []string) error {
 	}
 	for _, w := range res.Warnings {
 		fmt.Fprintf(env.Stderr, "warning: %s (left out of the new file)\n", w)
+	}
+	if res.Recipe == "" && !daemon {
+		fmt.Fprintf(env.Stderr, "warning: no Recipe detects this Project, and Laneway isn't running to fetch one from the Catalog; "+
+			"start it (`lane install`) and run `lane init --force` to write the Recipe's defaults\n")
 	}
 
 	var buf bytes.Buffer

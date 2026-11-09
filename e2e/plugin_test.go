@@ -307,9 +307,10 @@ func TestAddingAPluginAgainReplacesTheInstalledOne(t *testing.T) {
 	assertContains(t, lineWith(t, d.MustRunCLI(d.Home, "plugin", "list").Stdout, "procfile"), "0.2.0")
 }
 
-func TestAPluginWhoseRecipeHasTheNameOfLanewaysOwnIsRefused(t *testing.T) {
+func TestAPluginWhoseRecipeHasTheNameOfAnotherPluginsIsRefused(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
+	d.MustRunCLI(d.Home, "plugin", "add", "--yes", testkit.FirstPartyPlugin(t, "laravel"))
 	plugin := withManifest(t, testkit.Plugin(t, "procfile"), `{"name": "procfile", "version": "0.1.0", "api_version": 1, "recipes": [{"name": "laravel", "detect": {"file": "artisan"}}]}`)
 
 	res := d.RunCLI(d.Home, "plugin", "add", "--yes", plugin)
@@ -317,5 +318,5 @@ func TestAPluginWhoseRecipeHasTheNameOfLanewaysOwnIsRefused(t *testing.T) {
 	if res.ExitCode == 0 {
 		t.Fatalf("adding a second laravel Recipe exited 0:\n%s", res.Output())
 	}
-	assertContains(t, res.Stderr, "Plugin procfile adds Recipe laravel, but Laneway already has a Recipe of that name")
+	assertContains(t, res.Stderr, "Plugin procfile adds Recipe laravel, but Plugin laravel already has a Recipe of that name")
 }

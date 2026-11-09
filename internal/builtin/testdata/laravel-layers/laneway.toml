@@ -1,9 +1,0 @@
-# Jobs run synchronously in this Project's tests; no worker locally.
-[processes.queue]
-disabled = true
-
-[services]
-mysql = "8.0"
-
-[worktree]
-on_create = ["php artisan migrate --seed"]

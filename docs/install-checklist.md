@@ -44,6 +44,17 @@ Record each result as pass/fail, plus anything surprising, in the table at the e
 - [ ] Firefox does too, after a restart. If it doesn't, note the value of `security.enterprise_roots.enabled` in `about:config`.
 - [ ] Mirrored mode: the first request to a new Domain may take about 300 ms longer (the `::1` attempt times out first). That's expected.
 
+## Plugins from the Catalog
+
+The binary carries no Recipes, Integrations, Engines or Generators: a fresh install fetches the first-party Plugins a Project needs from the signed Catalog (`catalog.DefaultURL`, the latest release of lanewayhq/plugins). The binary trusts the Catalog signed with the key in `internal/catalog/fetch.go` (`catalogKey`).
+
+- [ ] Before any Link, `lane plugin list` lists no Plugins, and `~/.local/state/laneway/plugins` doesn't exist or is empty.
+- [ ] Link a fresh Laravel app (`laravel new`, then `git init`) with `lane link`. It prints `Fetched Plugin laravel … from the Catalog`, plus one line for each Engine its `.env.example` uses (such as `mysql`, `redis` and `mailpit`; none for SQLite), and the app is served at `https://<project>.localhost/`.
+- [ ] `lane plugin list` shows them, with source `Catalog`.
+- [ ] `lane harness add claude` in that app prints `Fetched Plugin claude … from the Catalog` the first time, and not the second.
+- [ ] Offline on a fresh install: remove `~/.local/state/laneway/plugins` and `~/.local/state/laneway/catalog` with the daemon stopped, start it, disconnect from the network, and `lane link` a Laravel app. It fails with "this Project needs Plugins from the Catalog that Laneway couldn't fetch: laravel" (named from the Catalog snapshot built into Laneway). If no snapshot was built in yet, it Links with a warning that Laneway has never been able to fetch the Catalog instead.
+- [ ] A Project with only a SQLite database (`[database] engine = "sqlite"`) Links and serves with Podman and Docker stopped, and fetches no Plugins.
+
 ## `lane open`
 
 - [ ] In the Linked Project, `lane open` opens `https://<project>.localhost/` in the default browser. On WSL2 that's the Windows default browser, and no console window or "UNC paths are not supported" message appears.

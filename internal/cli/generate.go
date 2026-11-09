@@ -5,14 +5,16 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/client"
 	"github.com/lanewayhq/laneway/internal/gitrepo"
 	"github.com/lanewayhq/laneway/internal/plugin"
 )
 
 // runGenerate is `lane generate <plugin>`: it runs the Plugin's Generators
 // on the current Worktree and merges the file blocks they return into its
-// files. Like `init`, it works on the Worktree's files only, so it doesn't
-// need the daemon.
+// files. Like `init`, it works on the Worktree's files only, so it needs the
+// daemon only to fetch the Plugin from the Catalog if it isn't installed.
 func runGenerate(ctx context.Context, env Env, args []string) error {
 	fs := newFlags(env, "generate <plugin>")
 	if err := fs.Parse(args); err != nil {
@@ -39,10 +41,19 @@ func generate(ctx context.Context, env Env, name, command string) error {
 	if err != nil {
 		return err
 	}
+	if !plugins.Has(name) {
+		plugins.Close()
+		if err := fetchPlugin(ctx, env, name, checkout.Dir, command); err != nil {
+			return err
+		}
+		if plugins, err = openPlugins(env); err != nil {
+			return err
+		}
+	}
 	defer plugins.Close()
 	res, err := plugins.Generate(name, checkout.Dir)
 	if errors.Is(err, plugin.ErrUnknownPlugin) {
-		return fmt.Errorf("no Plugin named %s is installed or built in; add it with `lane plugin add <dir|github.com/<owner>/<repo>>`", name)
+		return fmt.Errorf("no Plugin named %s is installed; add it with `lane plugin add <dir|github.com/<owner>/<repo>>`", name)
 	}
 	for _, f := range res.Files {
 		switch {
@@ -58,4 +69,58 @@ func generate(ctx context.Context, env Env, name, command string) error {
 		fmt.Fprintf(env.Stderr, "warning: %s\n", w)
 	}
 	return err
+}
+
+// fetchPlugin asks the daemon to install the Catalog Plugin name, which
+// isn't installed, for the Worktree in dir, and shows what it fetched.
+// command names the command for errors.
+func fetchPlugin(ctx context.Context, env Env, name, dir, command string) error {
+	c, err := apiClient(env)
+	if err != nil {
+		return err
+	}
+	res, err := c.FetchPlugins(ctx, api.FetchPluginsRequest{Dir: dir, Name: name})
+	var apiErr *api.Error
+	switch {
+	case errors.Is(err, client.ErrDaemonNotRunning):
+		return fmt.Errorf("no Plugin named %s is installed, and Laneway isn't running to fetch it from the Catalog; "+
+			"start it (`lane install`) and run `%s %s` again, or add the Plugin with `lane plugin add <dir|github.com/<owner>/<repo>>`", name, command, name)
+	case errors.As(err, &apiErr) && apiErr.Code == api.CodePluginsUnavailable:
+		return fmt.Errorf("%s\nonce Laneway can reach the Catalog, run `%s %s` again", apiErr.Message, command, name)
+	case err != nil:
+		return err
+	}
+	printFetched(env, res)
+	return nil
+}
+
+// printFetched shows the Plugins fetched from the Catalog, as `lane link`
+// does, and any warnings.
+func printFetched(env Env, res api.FetchPluginsResponse) {
+	for _, w := range res.Warnings {
+		fmt.Fprintf(env.Stderr, "warning: %s\n", w)
+	}
+	for _, p := range res.Fetched {
+		fmt.Fprintf(env.Stdout, "Fetched Plugin %s %s from the Catalog\n", p.Name, p.Version)
+	}
+}
+
+// fetchProjectPlugins asks the daemon to install the Catalog Plugins the
+// Project in dir needs and doesn't have yet, as Linking it would, and shows
+// what it fetched. It reports whether the daemon was there to ask: without
+// it, commands go on with the Plugins installed.
+func fetchProjectPlugins(ctx context.Context, env Env, dir string) (bool, error) {
+	c, err := apiClient(env)
+	if err != nil {
+		return false, err
+	}
+	res, err := c.FetchPlugins(ctx, api.FetchPluginsRequest{Dir: dir})
+	if errors.Is(err, client.ErrDaemonNotRunning) {
+		return false, nil
+	}
+	if err != nil {
+		return true, err
+	}
+	printFetched(env, res)
+	return true, nil
 }

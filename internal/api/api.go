@@ -558,6 +558,26 @@ type PluginList struct {
 	Plugins []Plugin `json:"plugins"`
 }
 
+// FetchPluginsRequest is the body of POST /v1/plugins/fetch: install from
+// the Catalog, without Linking anything, the Catalog Plugins the Project in
+// Dir needs and doesn't have yet, as Linking it would, or with Name, the
+// Catalog Plugin of that name (for `lane generate`), unless it is installed.
+type FetchPluginsRequest struct {
+	// Dir is a directory in the Project, which must be absolute: its
+	// config's version pins apply.
+	Dir  string `json:"dir"`
+	Name string `json:"name,omitempty"`
+}
+
+// FetchPluginsResponse is what POST /v1/plugins/fetch fetched.
+type FetchPluginsResponse struct {
+	// Fetched are the Plugins installed from the Catalog.
+	Fetched []Plugin `json:"fetched,omitempty"`
+	// Warnings are problems that didn't stop it, such as a Catalog Laneway
+	// refused.
+	Warnings []string `json:"warnings,omitempty"`
+}
+
 // AddPluginRequest is the body of POST /v1/plugins: add the Plugin in a
 // directory.
 type AddPluginRequest struct {

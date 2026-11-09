@@ -226,6 +226,14 @@ func (c *Client) InstalledPlugins(ctx context.Context) ([]api.Plugin, error) {
 	return list.Plugins, nil
 }
 
+// FetchPlugins installs Plugins from the Catalog without Linking anything
+// (see api.FetchPluginsRequest).
+func (c *Client) FetchPlugins(ctx context.Context, req api.FetchPluginsRequest) (api.FetchPluginsResponse, error) {
+	var res api.FetchPluginsResponse
+	err := c.do(ctx, http.MethodPost, "/v1/plugins/fetch", req, &res)
+	return res, err
+}
+
 // AddPlugin adds the Plugin in the directory req.Source (with req.Preview,
 // only reads and checks it).
 func (c *Client) AddPlugin(ctx context.Context, req api.AddPluginRequest) (api.AddPluginResponse, error) {

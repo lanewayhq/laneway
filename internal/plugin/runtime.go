@@ -271,19 +271,12 @@ func (rt *runtime) compileLocked(p Plugin) (wazero.CompiledModule, error) {
 	if ok {
 		return mod, nil
 	}
-	var data []byte
-	var err error
-	if p.readModule != nil {
-		// Built into Laneway: nothing to check it against.
-		data, err = p.readModule()
-	} else {
-		data, err = os.ReadFile(filepath.Join(p.Dir, filepath.FromSlash(p.module())))
-	}
+	data, err := os.ReadFile(filepath.Join(p.Dir, filepath.FromSlash(p.module())))
 	if err != nil {
 		return nil, err
 	}
 	sum := sha256.Sum256(data)
-	if p.readModule == nil && hex.EncodeToString(sum[:]) != p.SHA256 {
+	if hex.EncodeToString(sum[:]) != p.SHA256 {
 		return nil, fmt.Errorf("its module isn't the one it had when added (SHA-256 %s); add it again with `lane plugin add %s`", p.SHA256, p.Source)
 	}
 	mod, err = rt.wasm.CompileModule(context.Background(), data)

@@ -23,7 +23,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/lanewayhq/laneway/sdk"
+	"github.com/lanewayhq/plugins/sdk"
 )
 
 func main() {

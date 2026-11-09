@@ -35,7 +35,7 @@ func resolveIntegrations(t *testing.T, committed string, integrations ...recipe.
 	if err != nil {
 		t.Fatal(err)
 	}
-	return recipe.Resolve(recipe.Input{Engines: builtinEngines(), Dir: dir, Layers: layers, Recipes: []recipe.Recipe{fixtureStack{}}, Integrations: integrations})
+	return recipe.Resolve(recipe.Input{Engines: firstPartyEngines(), Dir: dir, Layers: layers, Recipes: []recipe.Recipe{fixtureStack{}}, Integrations: integrations})
 }
 
 func TestTwoIntegrationsSettingTheSameKeyIsAnErrorNamingBoth(t *testing.T) {

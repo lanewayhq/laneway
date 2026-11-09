@@ -5,7 +5,9 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -83,4 +85,23 @@ func waitForDaemon(t *testing.T, socket string) {
 		_, err := c.Projects(context.Background())
 		return err == nil
 	})
+}
+
+func TestTheLaneBinaryCarriesNoFirstPartyPlugins(t *testing.T) {
+	t.Parallel()
+	out, err := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}\t{{join .EmbedFiles \" \"}}", "../cmd/lane").Output()
+	if err != nil {
+		t.Fatalf("go list: %v", err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		pkg, embedded, _ := strings.Cut(line, "\t")
+		if strings.HasPrefix(pkg, "github.com/lanewayhq/plugins") {
+			t.Errorf("lane links %s, a first-party Plugin's code", pkg)
+		}
+		for _, f := range strings.Fields(embedded) {
+			if strings.HasSuffix(f, ".wasm") || strings.HasSuffix(f, ".wasm.gz") || path.Base(f) == "plugin.json" || strings.HasSuffix(f, ".toml") {
+				t.Errorf("lane embeds %s from %s, a Plugin's module or manifest", f, pkg)
+			}
+		}
+	}
 }

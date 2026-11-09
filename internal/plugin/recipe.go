@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -21,6 +23,8 @@ type pluginRecipe struct {
 	host   *Host
 	plugin Plugin
 	decl   RecipeDecl
+	// engines are the Engines its layer's Services may name.
+	engines engine.Set
 }
 
 // recipeResponse is a module's answer to a Recipe call (see
@@ -55,7 +59,7 @@ func (r pluginRecipe) Defaults(dir string) (recipe.Result, error) {
 	if err := r.host.call(r.plugin, r.source(), request{Call: callRecipe, Name: r.decl.Name}, dir, &res); err != nil {
 		return recipe.Result{}, err
 	}
-	l, err := parseLayer(r.source(), res.Layer, r.host.Engines())
+	l, err := parseLayer(r.source(), res.Layer, r.engines)
 	if err != nil {
 		return recipe.Result{}, err
 	}
@@ -94,10 +98,16 @@ func parseLayer(source string, raw json.RawMessage, engines engine.Set) (config.
 	// A Service without a version is at its Engine's default one, among
 	// engines.
 	if services, ok := table["services"].(map[string]any); ok {
-		for name, version := range services {
-			if e, known := engines.Lookup(name); known && version == "" {
-				services[name] = e.DefaultVersion
+		for _, name := range slices.Sorted(maps.Keys(services)) {
+			if services[name] != "" {
+				continue
 			}
+			e, known := engines.Lookup(name)
+			if !known {
+				return config.Layer{}, fmt.Errorf("%s: services.%s: Laneway has no Service %q; the Services are %s",
+					source, name, name, strings.Join(engines.Names(), ", "))
+			}
+			services[name] = e.DefaultVersion
 		}
 	}
 	var buf bytes.Buffer

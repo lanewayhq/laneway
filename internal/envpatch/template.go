@@ -44,6 +44,16 @@ func CheckTemplate(template string, serviceVars []string) error {
 	return err
 }
 
+// Uses reports whether template uses the variable name, as {name}.
+func Uses(template, name string) bool {
+	used := false
+	expand(template, func(n string) (string, error) {
+		used = used || n == name
+		return "", nil
+	})
+	return used
+}
+
 // Render replaces each {name} in template with vars[name], {{ with { and
 // }} with }. A variable with no value in vars is an error; CheckTemplate has
 // already refused unknown ones.

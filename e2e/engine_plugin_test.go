@@ -84,9 +84,10 @@ func TestAddingAnEnginePluginShowsItsEnginesAndPluginListListsThem(t *testing.T)
 	assertContains(t, lineWith(t, d.MustRunCLI(d.Home, "plugin", "list").Stdout, "kv"), "Engine kv")
 }
 
-func TestAPluginWhoseEngineHasTheNameOfLanewaysOwnIsRefused(t *testing.T) {
+func TestAPluginWhoseEngineHasTheNameOfAnotherPluginsIsRefused(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
+	d.MustRunCLI(d.Home, "plugin", "add", "--yes", testkit.FirstPartyPlugin(t, "redis"))
 	plugin := testkit.Plugin(t, "kv")
 	writeFile(t, filepath.Join(plugin, "kv.toml"), strings.Replace(readFile(t, filepath.Join(plugin, "kv.toml")), `name = "kv"`, `name = "redis"`, 1))
 
@@ -95,7 +96,7 @@ func TestAPluginWhoseEngineHasTheNameOfLanewaysOwnIsRefused(t *testing.T) {
 	if res.ExitCode == 0 {
 		t.Fatalf("adding a second redis Engine exited 0:\n%s", res.Output())
 	}
-	assertContains(t, res.Stderr, "Plugin kv adds the Engine redis, but Laneway already has an Engine of that name")
+	assertContains(t, res.Stderr, "Plugin kv adds the Engine redis, but Plugin redis already has an Engine of that name")
 }
 
 func TestAPluginWithAnInvalidEngineManifestIsRefusedNamingTheFileAndKey(t *testing.T) {

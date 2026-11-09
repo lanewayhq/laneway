@@ -122,7 +122,11 @@ func TestInitWritesAtTheWorktreeRootFromASubdirectory(t *testing.T) {
 func TestInitWritesTheIntegrationsProcessesToo(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
-	d.Stop()
+	// The Recipe and Integration, and the Engines the Recipe names.
+	for _, name := range []string{"laravel", "vite", "mysql", "redis", "mailpit"} {
+		d.MustRunCLI(d.Home, "plugin", "add", "--yes", testkit.FirstPartyPlugin(t, name))
+	}
+	d.Stop() // with its Plugins installed, init needs no daemon
 	repo := laravelViteRepo(t, "init-vite")
 
 	d.MustRunCLI(repo.Dir, "init")
@@ -130,4 +134,29 @@ func TestInitWritesTheIntegrationsProcessesToo(t *testing.T) {
 	written := readFile(t, filepath.Join(repo.Dir, "laneway.toml"))
 	assertContains(t, written, "[processes.vite]")
 	assertContains(t, written, "the laravel Recipe's and the vite Integration's defaults")
+}
+
+func TestInitOnAFreshInstallFetchesThePluginsTheProjectNeedsFromTheCatalog(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t) // nothing installed; its Catalog lists the first-party Plugins
+	repo := laravelViteRepo(t, "init-fresh")
+
+	res := d.MustRunCLI(repo.Dir, "init")
+
+	assertContains(t, res.Stdout, "Fetched Plugin laravel ")
+	assertContains(t, res.Stdout, "Fetched Plugin vite ")
+	written := readFile(t, filepath.Join(repo.Dir, "laneway.toml"))
+	assertContains(t, written, "[processes.vite]")
+	assertContains(t, written, "the laravel Recipe's and the vite Integration's defaults")
+}
+
+func TestInitWithoutTheDaemonWarnsWhenNoRecipeDetectsTheProject(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	d.Stop()
+	repo := laravelViteRepo(t, "init-offline")
+
+	res := d.MustRunCLI(repo.Dir, "init")
+
+	assertContains(t, res.Stderr, "warning: no Recipe detects this Project, and Laneway isn't running to fetch one from the Catalog")
 }

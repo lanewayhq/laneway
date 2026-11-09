@@ -154,6 +154,8 @@ func TestMailHostAndPortAreEnvPatchVariables(t *testing.T) {
 func TestTheInboxExplainsHowToDeclareMailpitWhenNoProjectUsesIt(t *testing.T) {
 	t.Parallel()
 	d, _ := dashboardDaemon(t, "mail-undeclared")
+	// Installed, as after a Project that used it was unlinked.
+	d.MustRunCLI(d.Home, "plugin", "add", "--yes", testkit.FirstPartyPlugin(t, "mailpit"))
 	d.MustRunCLI(serviceProject(t, "mail-undeclared-redis", `redis = "7"`, "").Dir, "link")
 
 	res := d.Get("https://mail.mail-undeclared.localhost/")
@@ -165,4 +167,17 @@ func TestTheInboxExplainsHowToDeclareMailpitWhenNoProjectUsesIt(t *testing.T) {
 	if calls := d.Engine.Calls(); containsCall(calls, "start") {
 		t.Fatalf("visiting the inbox started a container: %v", calls)
 	}
+}
+
+func TestOnAFreshInstallTheInboxSaysToDeclareMailpitInAProject(t *testing.T) {
+	t.Parallel()
+	d, _ := dashboardDaemon(t, "mail-fresh")
+
+	res := d.Get("https://mail.mail-fresh.localhost/")
+
+	if res.StatusCode != http.StatusBadGateway {
+		t.Fatalf("GET the inbox with no Mailpit Plugin = %d, want 502:\n%s", res.StatusCode, res.Body)
+	}
+	assertContains(t, res.Body, "no Project uses an inbox yet, such as Mailpit")
+	assertContains(t, res.Body, "Linking it fetches its Plugin from the Catalog")
 }

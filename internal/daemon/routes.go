@@ -34,6 +34,7 @@ func (d *Daemon) routes() http.Handler {
 	mux.HandleFunc("DELETE /v1/plugins/{plugin}", d.handleRemovePlugin)
 	mux.HandleFunc("POST /v1/plugins/{plugin}/commands/{command}", d.handleRunPluginCommand)
 	mux.HandleFunc("POST /v1/plugins/update", d.handleUpdatePlugins)
+	mux.HandleFunc("POST /v1/plugins/fetch", d.handleFetchPlugins)
 	mux.HandleFunc("POST /v1/plugins/{plugin}/update", d.handleUpdateHandAdded)
 	return mux
 }
@@ -279,6 +280,19 @@ func (d *Daemon) handleAddPlugin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := d.addPlugin(r.Context(), req)
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (d *Daemon) handleFetchPlugins(w http.ResponseWriter, r *http.Request) {
+	var req api.FetchPluginsRequest
+	if !readJSON(w, r, &req) {
+		return
+	}
+	res, err := d.fetchPlugins(r.Context(), req)
 	if err != nil {
 		d.writeError(w, err)
 		return

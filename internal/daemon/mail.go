@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -55,7 +54,8 @@ func (d *Daemon) mailUpstream(ctx context.Context) (string, error) {
 	if !ok {
 		engines := d.plugins.EnginesLinkedAt(mailLink)
 		if len(engines) == 0 {
-			return "", errors.New("no installed Plugin serves an inbox here, such as Mailpit's")
+			return "", fmt.Errorf("no Project uses an inbox yet, such as Mailpit's: declare its Engine in the [services] table of a Project's %s "+
+				"and link the Project; Linking it fetches its Plugin from the Catalog", config.FileName)
 		}
 		e := engines[0]
 		return "", fmt.Errorf("no Project uses %s yet: declare it in the [services] table of %s (%s = %q) and link the Project",

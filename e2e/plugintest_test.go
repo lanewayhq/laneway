@@ -194,6 +194,21 @@ func TestPluginTestRecordsTheLayersOfOnlyTheIntegrationsThatDetectTheFixtureProj
 	}
 }
 
+func TestPluginTestDoesntDependOnTheEnginesInstalledWhereItRuns(t *testing.T) {
+	t.Parallel()
+	d := noDaemon(t) // no Engines installed
+	plugin := testkit.Plugin(t, "layers")
+	root := writeCase(t, plugin, "mail", map[string]string{
+		"project/queue.json": `{"services": {"mailpit": ""}, "env": {"MAIL_PORT": "{mailpit_port}"}}`,
+	})
+
+	d.MustRunCLI(plugin, "plugin", "test", "--update")
+
+	golden := readFile(t, filepath.Join(root, "golden.json"))
+	assertContains(t, golden, `"mailpit": ""`)
+	assertNotContains(t, golden, `"error"`)
+}
+
 func TestPluginTestRecordsTheFileEffectsAGeneratorReturnsForTheFixtureProject(t *testing.T) {
 	t.Parallel()
 	d := noDaemon(t)

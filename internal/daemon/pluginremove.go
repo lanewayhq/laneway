@@ -15,10 +15,6 @@ import (
 // Project uses it (spec #48): removing it would break the Project.
 func (d *Daemon) removePlugin(ctx context.Context, name string) (api.RemovePluginResponse, error) {
 	p, ok := d.plugins.Plugin(name)
-	if !ok && d.plugins.IsBuiltIn(name) {
-		return api.RemovePluginResponse{}, &api.Error{Code: api.CodeInvalidPlugin,
-			Message: fmt.Sprintf("Plugin %s is built into Laneway, so it can't be removed", name)}
-	}
 	if !ok {
 		return api.RemovePluginResponse{}, &api.Error{Code: api.CodeUnknownPlugin,
 			Message: fmt.Sprintf("no Plugin named %s is installed; `lane plugin list` lists them", name)}

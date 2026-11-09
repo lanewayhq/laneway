@@ -175,11 +175,10 @@ func (d Dashboard) In(scope string, vars map[string]string) Dashboard {
 	return out
 }
 
-// Showing are the Plugins that declare Dashboard items: the built-in ones
-// first, then the installed ones, by name.
+// Showing are the installed Plugins that declare Dashboard items, by name.
 func (h *Host) Showing() []Plugin {
 	var out []Plugin
-	for _, p := range append(builtin(), h.List()...) {
+	for _, p := range h.List() {
 		d := p.Dashboard
 		if len(d.Links)+len(d.Badges)+len(d.Actions) > 0 {
 			out = append(out, p)

@@ -127,7 +127,7 @@ func TestDatabaseConfigWrittenAsALayerResolvesToItself(t *testing.T) {
 			if err != nil {
 				t.Fatalf("reading back:\n%s\n%v", buf.String(), err)
 			}
-			again, err := recipe.Resolve(recipe.Input{Engines: builtinEngines(), Layers: []config.Layer{written}})
+			again, err := recipe.Resolve(recipe.Input{Engines: firstPartyEngines(), Layers: []config.Layer{written}})
 			if err != nil {
 				t.Fatalf("resolving what was written:\n%s\n%v", buf.String(), err)
 			}

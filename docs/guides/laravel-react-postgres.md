@@ -84,6 +84,8 @@ Daemon, service, ports 443 and 80, port permission, the CA in each store, the co
 
 > Ran `lane install` before installing mise? Run it again. It rewrites the unit with your current `PATH` and restarts the daemon. Nothing else changes.
 
+The `lane` binary knows nothing about Laravel yet, and that's expected. Laravel support (the Laravel Recipe), Vite, the Postgres and Mailpit Engines, and the Claude Code and T3 Code Harness config are **Plugins** from [lanewayhq/plugins](https://github.com/lanewayhq/plugins). Laneway fetches the ones a Project needs from its signed **Catalog** the first time it needs them (`lane init` in §5.4, or `lane link`), and you'll see a `Fetched Plugin … from the Catalog` line for each one. That first time needs internet access. After that they stay installed, and work offline, until you run `lane plugin update`. `lane plugin list` shows what's installed.
+
 ---
 
 ## 3. Create the project folder with its own Runtimes
@@ -235,6 +237,8 @@ Write the Recipe's resolved config to a file you can edit and commit:
 ```sh
 lane init
 ```
+
+On a fresh install, this first fetches the Plugins the app needs from the Catalog (see §2): `laravel` for the Recipe, `vite`, and the `postgres` and `mailpit` Engines its config names.
 
 The Recipe found a `web` Process (`php artisan serve`, the Primary Process, with `public/` served directly by Laneway), a `queue` worker (`QUEUE_CONNECTION=database`), a `vite` Process (`laravel-vite-plugin` is in `package.json`), Postgres 18 and Mailpit as Services, and its setup steps, which install packages with `bun install` because the app has a `bun.lock`.
 
@@ -486,7 +490,7 @@ lane harness add t3       # a "Laneway: wait until Ready" script in t3.json that
 
 The hook runs `lane worktree ready`, so an agent's session in a new worktree starts only once its database, `.env` and `composer`/`bun install` are done. The `AGENTS.md` section tells the agent to use `lane info --json` for its URL and `lane exec` for commands, and, in a linked worktree without an Alias, to name it after its task once it is Ready (`lane worktree alias checkout-redesign`, see Aliases in §8). Projects set up before that instruction existed get it when `lane harness add` runs again. It's safe for teammates without Laneway: the hook does nothing if `lane` isn't installed.
 
-These are Generators of Plugins built into Laneway, so `lane generate claude` and `lane generate t3` do the same, and `lane generate <plugin>` runs any added Plugin's Generators. Laneway merges what they generate into your files: JSON structurally, Markdown between `laneway:begin`/`laneway:end` markers, never touching the rest, and it writes nothing if one of the files can't be merged.
+These are the Generators of the first-party `claude` and `t3` Plugins, fetched from the Catalog the first time you run them. `lane generate claude` and `lane generate t3` do the same, and `lane generate <plugin>` runs any Plugin's Generators. Laneway merges what they generate into your files: JSON structurally, Markdown between `laneway:begin`/`laneway:end` markers, never touching the rest, and it writes nothing if one of the files can't be merged.
 
 **If you use Laravel Boost**, Boost writes `CLAUDE.md` and `AGENTS.md` itself, so Laneway leaves them alone and puts its instructions in `.ai/guidelines/laneway.md`, where Boost [takes custom guidelines](https://laravel.com/docs/boost#adding-custom-ai-guidelines). Boost adds them to its files when it runs, so run it after `lane harness add`:
 
@@ -554,6 +558,8 @@ If you wrote `laneway.toml` with `lane init` before this change, add `redis = "7
 | Symptom | Cause and fix |
 | --- | --- |
 | `lane worktree ready` exits 1 at `composer install`: "php: not found" | Laneway's daemon can't get PHP from mise. Check `mise settings get trusted_config_paths` covers the worktree, and that `mise` was on your `PATH` when you ran `lane install` (if not, run it again; `systemctl --user cat laneway` shows the `PATH` the daemon has). `lane doctor`, run in the worktree, shows the PHP mise resolves there. Fix it, then `lane worktree ready --retry`. |
+| `lane init` or `lane link`: "this Project needs Plugins from the Catalog that Laneway couldn't fetch: laravel, …" | It's the first time this machine needs those Plugins (§2), and Laneway couldn't reach the Catalog. Get online, then run the command again. Plugins it has fetched once keep working offline. |
+| `lane harness add claude`: "Laneway couldn't fetch the Plugin claude from the Catalog" | The same, for the Harness Plugin (§9.1). Get online and run it again. |
 | `lane worktree ready` exits 1 at `bun install`: "bun: not found" | The Worktree's `mise.toml` has no `bun` (§3), or it isn't installed yet. Add it, run `mise install`, then `lane worktree ready --retry`. |
 | The `vite` Process fails right away: `node_modules/.bin/vite: not found` | The Vite+ starter kit has no `vite` binary. Apply the `vp dev` override from §5.4, then `lane restart vite`. |
 | Pages load without CSS or JS, or with a CORS or mixed-content error | Check `lane logs vite`. Check `public/hot` holds `https://vite.<domain>…` and not `http://127.0.0.1…`. A stale file from running `bun run dev` by hand is the usual cause: delete it, then `lane restart vite`. |
@@ -574,4 +580,4 @@ lane unlink        # stops it; its databases become Orphans (re-linking within 2
 lane gc --yes      # drop them now
 ```
 
-Laneway's own state lives in `~/.local/state/laneway`, global config in `~/.config/laneway`, and the Service data in container volumes.
+Laneway's own state lives in `~/.local/state/laneway` (the Plugins it fetched are in its `plugins/` directory: `lane plugin remove <name>` removes one no Linked Project uses), global config in `~/.config/laneway`, and the Service data in container volumes.

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 )
 
 // Remove uninstalls the installed Plugin called name and returns it. It
@@ -34,13 +33,4 @@ func (h *Host) Remove(name string) (Plugin, error) {
 		h.opts.Log.Warn("deleting a removed Plugin's files", "plugin", name, "dir", tmp, "err", err)
 	}
 	return p, nil
-}
-
-// IsBuiltIn reports whether name is a Plugin built into Laneway, which isn't
-// installed and so can't be removed.
-func (h *Host) IsBuiltIn(name string) bool {
-	h.mu.Lock()
-	_, ok := h.builtins[name]
-	h.mu.Unlock()
-	return ok || slices.ContainsFunc(builtin(), func(p Plugin) bool { return p.Name == name })
 }

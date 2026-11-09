@@ -27,7 +27,7 @@ func (r ruleRecipe) Defaults(string) (recipe.Result, error) {
 // "" if it didn't detect the Project).
 func detectRecipe(t *testing.T, files map[string]string, rule detect.Rule) (name, matched string) {
 	t.Helper()
-	res, err := recipe.Resolve(recipe.Input{Engines: builtinEngines(), Dir: project(t, files), Recipes: []recipe.Recipe{ruleRecipe{"stack", rule}}})
+	res, err := recipe.Resolve(recipe.Input{Engines: firstPartyEngines(), Dir: project(t, files), Recipes: []recipe.Recipe{ruleRecipe{"stack", rule}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestEachIntegrationNamesTheRuleTheProjectMatched(t *testing.T) {
 	dir := project(t, map[string]string{
 		"package.json": `{"dependencies": {"tailwindcss": "^4"}, "devDependencies": {"vite": "^8.0.0"}}`,
 	})
-	res, err := recipe.Resolve(recipe.Input{Engines: builtinEngines(), Dir: dir, Integrations: []recipe.Integration{
+	res, err := recipe.Resolve(recipe.Input{Engines: firstPartyEngines(), Dir: dir, Integrations: []recipe.Integration{
 		ruleIntegration{"vite", detect.Rule{Any: []detect.Rule{{Package: "laravel-vite-plugin"}, {Package: "vite"}}}},
 		ruleIntegration{"tailwind", detect.Rule{Package: "tailwindcss"}},
 		ruleIntegration{"webpack", detect.Rule{Package: "webpack"}},

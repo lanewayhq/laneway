@@ -5,8 +5,9 @@
 // database commands inside it.
 //
 // Every Engine comes from a Plugin (package plugin), which lists Engine
-// manifests that Parse reads. Redis, Mailpit, Postgres and MySQL come from
-// Plugins built into Laneway. Set is the Engines Laneway can run.
+// manifests that Parse reads. Even Redis, Mailpit, Postgres and MySQL come
+// from first-party Plugins in the Catalog. Set is the Engines Laneway can
+// run.
 package engine
 
 import (
@@ -370,9 +371,16 @@ func checkPlaceholders(key string, args []string, allowed []string) error {
 }
 
 // Set is the Engines Laneway can run, in the order Names lists them: the
-// built-in Plugins' and the installed Plugins' (see plugin.Host.Engines).
-// Each has its own name.
+// installed Plugins' (see plugin.Host.Engines). Each has its own name.
 type Set []*Manifest
+
+// Assumed stands for an Engine known by its name alone, such as a Catalog
+// Engine not fetched yet: config naming it, and anything config may ask of
+// an Engine (users, databases), resolves as if it were installed. It can't
+// be run.
+func Assumed(name string) *Manifest {
+	return &Manifest{Name: name, DefaultVersion: "latest", User: "assumed", Database: &Databases{}}
+}
 
 // Lookup returns the Engine called name.
 func (s Set) Lookup(name string) (*Manifest, bool) {
