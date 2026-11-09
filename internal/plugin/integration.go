@@ -58,15 +58,15 @@ func (h *Host) integrationsTaken(p Plugin) error {
 // installed Plugins'. The Recipe Resolver applies the detected ones by name,
 // whichever Plugin adds them.
 func (h *Host) Integrations() []recipe.Integration {
-	return h.integrations(h.Engines())
+	return h.integrations(h.Engines(), h.catalogEngines())
 }
 
 // integrations are Integrations, whose layers' Services may name engines.
-func (h *Host) integrations(engines engine.Set) []recipe.Integration {
+func (h *Host) integrations(engines engine.Set, catalog []string) []recipe.Integration {
 	var integrations []recipe.Integration
 	for _, p := range h.List() {
 		for _, in := range p.Integrations {
-			integrations = append(integrations, pluginIntegration{host: h, plugin: p, decl: in, engines: engines})
+			integrations = append(integrations, pluginIntegration{host: h, plugin: p, decl: in, engines: engines, catalog: catalog})
 		}
 	}
 	return integrations
@@ -81,6 +81,9 @@ type pluginIntegration struct {
 	decl   IntegrationDecl
 	// engines are the Engines its layer's Services may name.
 	engines engine.Set
+	// catalog are the Engines Laneway can fetch from the Catalog (see
+	// Options.CatalogEngines).
+	catalog []string
 }
 
 // integrationResponse is a module's answer to an Integration call (see
@@ -105,7 +108,7 @@ func (in pluginIntegration) Defaults(dir string) (config.Layer, error) {
 	if err := in.host.call(in.plugin, in.source(), request{Call: callIntegration, Name: in.decl.Name}, dir, &res); err != nil {
 		return config.Layer{}, err
 	}
-	l, err := parseLayer(in.source(), res.Layer, in.engines)
+	l, err := parseLayer(in.source(), res.Layer, in.engines, in.catalog)
 	if err != nil {
 		return config.Layer{}, err
 	}

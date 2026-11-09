@@ -269,6 +269,41 @@ func (f *catalogFetch) enginePlugins(dir string) []string {
 	return names
 }
 
+// catalogEngines are the Engines that Catalog Plugins not installed add, in
+// the Catalog last loaded, at each one's latest release for this Laneway:
+// what fetching a Project's Catalog Plugins, as `lane doctor` does, can
+// install. Config naming one says so rather than that the Engine is unknown
+// (see plugin.Options.CatalogEngines). It doesn't take catalogMu, so it can
+// be read while a fetch holds it.
+func (d *Daemon) catalogEngines() []string {
+	cat := d.known.Load()
+	if cat == nil {
+		return nil
+	}
+	latest := latestAllowed(cat, nil)
+	for _, p := range d.plugins.List() {
+		delete(latest, p.Name)
+	}
+	var engines []string
+	for _, name := range slices.Sorted(maps.Keys(latest)) {
+		engines = append(engines, latest[name].Engines...)
+	}
+	return engines
+}
+
+// loadKnownCatalog sets the Catalog catalogEngines reads, when the daemon
+// starts, to the copy kept last time, or else the snapshot in Laneway,
+// without waiting on the network: config resolved before the Catalog is
+// fetched, such as a Worktree's setup, then already tells an Engine Laneway
+// can fetch from an unknown one.
+func (d *Daemon) loadKnownCatalog() {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // so Load falls back at once on what it has
+	if cat, _ := d.catalog.Load(ctx); cat != nil {
+		d.known.Store(cat)
+	}
+}
+
 // error names the Plugins that couldn't be fetched, and why, and says to do
 // again once Laneway can reach the Catalog at url.
 func (f *catalogFetch) error(url, again string) error {

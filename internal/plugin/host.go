@@ -58,6 +58,12 @@ type Options struct {
 	// GlobalConfig is the global config file, whose plugins turn on
 	// machine-wide Plugins in every Project; "" for none.
 	GlobalConfig string
+	// CatalogEngines, if set, lists the Engines Laneway hasn't installed
+	// but can fetch from the Catalog, such as after an upgrade left the
+	// installed Plugins behind: config naming one says to fetch it, rather
+	// than that the Engine is unknown. It is called on every resolve, so it
+	// must not wait on the Catalog.
+	CatalogEngines func() []string
 }
 
 // Plugin is a Plugin: its manifest, and where it came from.
@@ -324,15 +330,15 @@ func (h *Host) List() []Plugin {
 // the installed Plugins', by Plugin name, then in the order each declares
 // them.
 func (h *Host) Recipes() []recipe.Recipe {
-	return h.recipes(h.Engines())
+	return h.recipes(h.Engines(), h.catalogEngines())
 }
 
 // recipes are Recipes, whose layers' Services may name engines.
-func (h *Host) recipes(engines engine.Set) []recipe.Recipe {
+func (h *Host) recipes(engines engine.Set, catalog []string) []recipe.Recipe {
 	var recipes []recipe.Recipe
 	for _, p := range h.List() {
 		for _, r := range p.Recipes {
-			recipes = append(recipes, pluginRecipe{host: h, plugin: p, decl: r, engines: engines})
+			recipes = append(recipes, pluginRecipe{host: h, plugin: p, decl: r, engines: engines, catalog: catalog})
 		}
 	}
 	return recipes
@@ -365,16 +371,27 @@ func (h *Host) resolveDir(dir string, assumed []*engine.Manifest, found []runtim
 		return recipe.Resolved{}, err
 	}
 	engines := append(h.Engines(), assumed...)
+	catalog := h.catalogEngines()
 	res, err := recipe.Resolve(recipe.Input{
-		Dir:          dir,
-		Layers:       layers,
-		Recipes:      h.recipes(engines),
-		Engines:      engines,
-		Integrations: h.integrations(engines),
-		Runtimes:     found,
+		Dir:            dir,
+		Layers:         layers,
+		Recipes:        h.recipes(engines, catalog),
+		Engines:        engines,
+		CatalogEngines: catalog,
+		Integrations:   h.integrations(engines, catalog),
+		Runtimes:       found,
 	})
 	res.Plugins = on
 	return res, err
+}
+
+// catalogEngines are the Engines Laneway hasn't installed but can fetch
+// from the Catalog (see Options.CatalogEngines).
+func (h *Host) catalogEngines() []string {
+	if h.opts.CatalogEngines == nil {
+		return nil
+	}
+	return h.opts.CatalogEngines()
 }
 
 // call runs p's module for req about the Project in dir, decoding its

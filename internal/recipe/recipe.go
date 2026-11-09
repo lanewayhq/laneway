@@ -36,6 +36,10 @@ type Input struct {
 	// database engine and Service variables must be among (see
 	// config.Layer.CheckEngines).
 	Engines engine.Set
+	// CatalogEngines are the Engines Laneway hasn't installed but can
+	// fetch from the Catalog: config naming one says so, rather than that
+	// the Engine is unknown.
+	CatalogEngines []string
 	// Runtimes are the Runtimes resolved for Dir (see package runtimes).
 	// If set, they are checked against the Project's declared constraints
 	// into Resolved.RuntimeWarnings; nil skips the check.
@@ -378,7 +382,7 @@ func (r Resolved) WorktreeRootOf(mainDir string) string {
 // Integrations', then in.Layers.
 func Resolve(in Input) (Resolved, error) {
 	for _, l := range in.Layers {
-		if err := l.CheckEngines(in.Engines); err != nil {
+		if err := l.CheckEngines(in.Engines, in.CatalogEngines); err != nil {
 			return Resolved{}, err
 		}
 	}
@@ -411,7 +415,7 @@ func Resolve(in Input) (Resolved, error) {
 	// The layers before project are the Recipe's and the Integrations'.
 	project := len(layers)
 	for _, l := range layers {
-		if err := l.CheckEngines(in.Engines); err != nil {
+		if err := l.CheckEngines(in.Engines, in.CatalogEngines); err != nil {
 			return Resolved{}, err
 		}
 	}

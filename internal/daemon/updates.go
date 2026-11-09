@@ -312,6 +312,9 @@ type checkedCatalog struct {
 func (d *Daemon) loadCatalog(ctx context.Context) (*catalog.Catalog, error) {
 	cat, err := d.catalog.Load(ctx)
 	d.checked = checkedCatalog{cat: cat, at: d.cfg.Clock.Now()}
+	if cat != nil {
+		d.known.Store(cat)
+	}
 	return cat, err
 }
 

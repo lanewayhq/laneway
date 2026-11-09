@@ -25,6 +25,9 @@ type pluginRecipe struct {
 	decl   RecipeDecl
 	// engines are the Engines its layer's Services may name.
 	engines engine.Set
+	// catalog are the Engines Laneway can fetch from the Catalog (see
+	// Options.CatalogEngines).
+	catalog []string
 }
 
 // recipeResponse is a module's answer to a Recipe call (see
@@ -59,7 +62,7 @@ func (r pluginRecipe) Defaults(dir string) (recipe.Result, error) {
 	if err := r.host.call(r.plugin, r.source(), request{Call: callRecipe, Name: r.decl.Name}, dir, &res); err != nil {
 		return recipe.Result{}, err
 	}
-	l, err := parseLayer(r.source(), res.Layer, r.engines)
+	l, err := parseLayer(r.source(), res.Layer, r.engines, r.catalog)
 	if err != nil {
 		return recipe.Result{}, err
 	}
@@ -80,8 +83,11 @@ func (r pluginRecipe) Defaults(dir string) (recipe.Result, error) {
 
 // parseLayer reads a layer a module returned as JSON keyed like
 // laneway.toml, checking it exactly as laneway.toml is checked: it goes
-// through TOML so that config.ParseLayer's validation and errors apply.
-func parseLayer(source string, raw json.RawMessage, engines engine.Set) (config.Layer, error) {
+// through TOML so that config.ParseLayer's validation and errors apply. A
+// Service without a version takes its Engine's default one, so its Engine
+// must be among engines; one among catalog, the Engines Laneway can fetch
+// from the Catalog, is a config.EngineNotInstalled error.
+func parseLayer(source string, raw json.RawMessage, engines engine.Set, catalog []string) (config.Layer, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return config.Layer{Source: source}, nil
 	}
@@ -103,6 +109,9 @@ func parseLayer(source string, raw json.RawMessage, engines engine.Set) (config.
 				continue
 			}
 			e, known := engines.Lookup(name)
+			if !known && slices.Contains(catalog, name) {
+				return config.Layer{}, fmt.Errorf("%s: services.%s: %w", source, name, config.EngineNotInstalled(name))
+			}
 			if !known {
 				return config.Layer{}, fmt.Errorf("%s: services.%s: Laneway has no Service %q; the Services are %s",
 					source, name, name, strings.Join(engines.Names(), ", "))

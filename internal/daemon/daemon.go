@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/catalog"
@@ -148,6 +149,10 @@ type Daemon struct {
 	// checked is the Catalog last loaded, for Plugin updates, see
 	// updates.go. Guarded by catalogMu.
 	checked checkedCatalog
+	// known is the Catalog last loaded, if any, without catalogMu: config
+	// errors read it to tell an Engine Laneway can fetch from an unknown
+	// one (see catalogEngines), while catalogMu may be held for a fetch.
+	known atomic.Pointer[catalog.Catalog]
 	// unfetched is why Laneway couldn't fetch the Catalog Plugins each
 	// Linked Project needs when it started, by Project path, until a later
 	// fetch for it succeeds (see startfetch.go).
@@ -227,18 +232,6 @@ func Start(cfg Config) (*Daemon, error) {
 		ln.Close()
 		return nil, err
 	}
-	plugins, err := plugin.Open(plugin.Options{
-		Dir:      cfg.Paths.Plugins(),
-		CacheDir: cmp.Or(cfg.PluginCacheDir, cfg.Paths.PluginCache()),
-		Log:      log,
-		Timeout:  cfg.PluginTimeout,
-		// The global config may turn on machine-wide Plugins.
-		GlobalConfig: cfg.Paths.GlobalConfig(),
-	})
-	if err != nil {
-		ln.Close()
-		return nil, err
-	}
 	d := &Daemon{
 		cfg:      cfg,
 		log:      log,
@@ -248,12 +241,26 @@ func Start(cfg Config) (*Daemon, error) {
 		closing:  make(chan struct{}),
 		done:     make(chan struct{}),
 	}
+	plugins, err := plugin.Open(plugin.Options{
+		Dir:      cfg.Paths.Plugins(),
+		CacheDir: cmp.Or(cfg.PluginCacheDir, cfg.Paths.PluginCache()),
+		Log:      log,
+		Timeout:  cfg.PluginTimeout,
+		// The global config may turn on machine-wide Plugins.
+		GlobalConfig:   cfg.Paths.GlobalConfig(),
+		CatalogEngines: d.catalogEngines,
+	})
+	if err != nil {
+		ln.Close()
+		return nil, err
+	}
 	d.supervisor = supervisor.New(log, supervisor.Options{Clock: cfg.Clock, LogMaxBytes: cfg.LogFileMaxBytes,
 		OnEvent: d.processEvent})
 	d.preparer = prov
 	prov.OnReady(d.worktreeBecameReady)
 	d.plugins = plugins
 	d.catalog = catalog.NewSource(cfg.Catalog, cfg.Paths.Catalog())
+	d.loadKnownCatalog()
 	d.github = github.New(cfg.GitHub)
 	d.services = service.New(service.Options{
 		Engine:      cfg.ContainerEngine,
