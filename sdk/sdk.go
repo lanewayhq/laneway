@@ -12,6 +12,13 @@
 // Project's files with relative paths. What the module writes to stderr goes
 // to Laneway's logs.
 //
+// `lane plugin test`, run in the Plugin's directory, runs the Plugin against
+// the test cases under testdata/<case>/: a fixture Project in project/ and
+// sample events for its hooks in events/<name>.json. It compares the layers
+// and effects the Plugin returns with the case's golden.json and shows each
+// difference as a diff; `lane plugin test --update` rewrites the golden
+// files. It needs no daemon.
+//
 // The SDK starts in Laneway's repository and moves to lanewayhq/plugins with
 // the first-party Plugins.
 package sdk

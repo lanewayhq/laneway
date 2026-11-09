@@ -19,9 +19,10 @@ import (
 var pluginCommands = map[string]func(ctx context.Context, env Env, args []string) error{
 	"add":  runPluginAdd,
 	"list": runPluginList,
+	"test": runPluginTest,
 }
 
-const pluginUsage = "use `lane plugin add <dir>` or `lane plugin list`"
+const pluginUsage = "use `lane plugin add <dir>`, `lane plugin list` or `lane plugin test [--update]`"
 
 func runPlugin(ctx context.Context, env Env, args []string) error {
 	if len(args) == 0 {
