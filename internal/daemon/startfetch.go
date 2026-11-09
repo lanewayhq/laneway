@@ -45,8 +45,26 @@ func (d *Daemon) fetchLinkedProjectsPlugins() {
 				return
 			}
 			d.fetchOnStart(ctx, cat, loadErr, p)
+			d.retryConfigFailures(p)
 		}
 	})
+}
+
+// retryConfigFailures retries the setups of the Linked Project p's
+// Worktrees that failed at the config step and whose config now resolves.
+// Such a failure carries over from when the daemon last ran: the Plugins
+// its config needed may have been installed since, such as by a fetch the
+// daemon stopped right after, before bringing the Worktrees up to date with
+// it (see pluginsFetched), so this start fetches nothing for them.
+func (d *Daemon) retryConfigFailures(p registry.Project) {
+	for _, w := range d.worktreesOf(p) {
+		if st := d.preparer.Status(w.dir); st.State != prepare.Failed || st.Step != prepare.StepConfig {
+			continue
+		}
+		if _, err := d.plugins.ResolveDir(w.dir); err == nil {
+			d.prepare(p, w, true)
+		}
+	}
 }
 
 // fetchOnStart fetches the Catalog Plugins the Linked Project p needs from
@@ -119,11 +137,7 @@ func (d *Daemon) pluginsFetched(fetched []plugin.Plugin) {
 	gen := d.pluginsGen.Load()
 	d.serveRecordedServices()
 	for _, p := range d.registry.Projects() {
-		worktrees := []worktreeRef{mainWorktreeRef(p)}
-		for _, w := range d.registry.Worktrees(p.Path) {
-			worktrees = append(worktrees, linkedWorktreeRef(p, w))
-		}
-		for _, w := range worktrees {
+		for _, w := range d.worktreesOf(p) {
 			cfg, err := d.plugins.ResolveDir(w.dir)
 			if err != nil || !slices.ContainsFunc(fetched, func(pl plugin.Plugin) bool { return usesPlugin(cfg, pl) }) {
 				continue

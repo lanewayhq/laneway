@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/gitfixture"
@@ -30,6 +31,20 @@ func upgrade(t *testing.T, d *testkit.Daemon) {
 	d.Start()
 }
 
+// backgroundTimeout is how long a test waits for what the daemon does in
+// the background when it starts or fetches from the Catalog: loading the
+// Catalog, downloading and compiling Plugins, and preparing or serving
+// Worktrees again. On a loaded CI runner that takes well over
+// discoveryTimeout.
+const backgroundTimeout = 30 * time.Second
+
+// eventuallyInBackground is eventually, for what the daemon does in the
+// background (see backgroundTimeout).
+func eventuallyInBackground(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	testkit.WaitUntil(t, backgroundTimeout, what, cond)
+}
+
 func TestOnStartTheDaemonFetchesTheCatalogPluginsALinkedProjectNeedsAndServesItsServices(t *testing.T) {
 	t.Parallel()
 	cat := testkit.NewCatalog(t)
@@ -40,8 +55,8 @@ func TestOnStartTheDaemonFetchesTheCatalogPluginsALinkedProjectNeedsAndServesIts
 
 	upgrade(t, d)
 
-	eventually(t, "kv to be fetched again", func() bool { return slices.Contains(installedPlugins(t, d), "kv") })
-	eventually(t, "the kv Service to be served again", func() bool { return servesService(t, d, "kv") })
+	eventuallyInBackground(t, "kv to be fetched again", func() bool { return slices.Contains(installedPlugins(t, d), "kv") })
+	eventuallyInBackground(t, "the kv Service to be served again", func() bool { return servesService(t, d, "kv") })
 	c := dialRedis(t, d, 7379)
 	if got := c.do("AUTH", "laneway"); got != "+OK" {
 		t.Fatalf("AUTH after the upgrade = %q, want +OK", got)
@@ -69,12 +84,48 @@ func TestAWorktreeWhoseSetupFailedForAMissingPluginIsPreparedAgainOnceTheDaemonF
 	d.Stop()
 	wt := repo.AddWorktree("feature")
 	upgrade(t, d)
-	eventually(t, "the new Worktree's setup to fail", func() bool { return setupState(t, d, wt.Dir) == api.SetupFailed })
+	eventuallyInBackground(t, "the new Worktree's setup to fail", func() bool { return setupState(t, d, wt.Dir) == api.SetupFailed })
+	// The start-up fetch fails before the Catalog comes back, so it's the
+	// next start that fetches kv.
+	eventuallyInBackground(t, "the start-up fetch to fail", func() bool { return len(projectWarnings(t, d, "kv-retry")) > 0 })
 
 	cat.Online()
 	d.Restart()
 
-	eventually(t, "the new Worktree to be Ready", func() bool { return setupState(t, d, wt.Dir) == api.SetupReady })
+	eventuallyInBackground(t, "the new Worktree to be Ready", func() bool { return setupState(t, d, wt.Dir) == api.SetupReady })
+	assertContains(t, readFile(t, filepath.Join(wt.Dir, ".env")), "KV_PORT=7379\n")
+}
+
+func TestAWorktreeWhoseSetupFailedForAPluginInstalledSinceIsPreparedAgainOnStart(t *testing.T) {
+	t.Parallel()
+	cat := testkit.NewCatalog(t)
+	cat.Publish(testkit.Plugin(t, "kv"))
+	d := catalogDaemon(t, cat)
+	repo := kvEnvProject(t, "kv-installed-since")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	installed := filepath.Join(gitfixture.TempDir(t), "plugins")
+	if err := os.CopyFS(installed, os.DirFS(d.Paths.Plugins())); err != nil {
+		t.Fatal(err)
+	}
+	cat.Offline()
+	d.Stop()
+	wt := repo.AddWorktree("feature")
+	upgrade(t, d)
+	eventuallyInBackground(t, "the new Worktree's setup to fail", func() bool { return setupState(t, d, wt.Dir) == api.SetupFailed })
+	eventuallyInBackground(t, "the start-up fetch to fail", func() bool { return len(projectWarnings(t, d, "kv-installed-since")) > 0 })
+	d.Stop()
+	// kv is installed while the daemon is stopped, as when it stops right
+	// after fetching kv, before bringing the Worktrees up to date with it.
+	if err := os.RemoveAll(d.Paths.Plugins()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.CopyFS(d.Paths.Plugins(), os.DirFS(installed)); err != nil {
+		t.Fatal(err)
+	}
+
+	d.Start()
+
+	eventuallyInBackground(t, "the new Worktree to be Ready", func() bool { return setupState(t, d, wt.Dir) == api.SetupReady })
 	assertContains(t, readFile(t, filepath.Join(wt.Dir, ".env")), "KV_PORT=7379\n")
 }
 
@@ -113,8 +164,15 @@ func TestPluginsTheDaemonCouldntFetchOnStartAreAWarningOnTheProjectUntilLaneDoct
 	upgrade(t, d)
 
 	const warning = "this Project needs Plugins from the Catalog that Laneway couldn't fetch: kv"
-	eventually(t, "the Project to warn that kv couldn't be fetched", func() bool {
-		return slices.ContainsFunc(projectWarnings(t, d, "kv-offline"), func(w string) bool { return strings.Contains(w, warning) })
+	var seen []string
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("the Project's warnings were last %q", seen)
+		}
+	})
+	eventuallyInBackground(t, "the Project to warn that kv couldn't be fetched", func() bool {
+		seen = projectWarnings(t, d, "kv-offline")
+		return slices.ContainsFunc(seen, func(w string) bool { return strings.Contains(w, warning) })
 	})
 	status := d.MustRunCLI(d.Home, "status").Stdout
 	assertContains(t, status, `warning: Project "kv-offline": `+warning)
@@ -129,7 +187,7 @@ func TestPluginsTheDaemonCouldntFetchOnStartAreAWarningOnTheProjectUntilLaneDoct
 		t.Fatalf("the Project still warns after lane doctor fetched its Plugins: %q", w)
 	}
 	assertNotContains(t, d.MustRunCLI(d.Home, "status").Stdout, "warning:")
-	eventually(t, "the kv Service to be served", func() bool { return servesService(t, d, "kv") })
+	eventuallyInBackground(t, "the kv Service to be served", func() bool { return servesService(t, d, "kv") })
 }
 
 // projectWarnings are the warnings GET /v1/projects, which the Dashboard
@@ -186,7 +244,7 @@ func TestWithoutEverReachingTheCatalogAConfigErrorOnStartIsntPutDownToPluginsLan
 
 	d.Start()
 
-	eventually(t, "the Project to warn", func() bool { return len(projectWarnings(t, d, "never-checked")) > 0 })
+	eventuallyInBackground(t, "the Project to warn", func() bool { return len(projectWarnings(t, d, "never-checked")) > 0 })
 	w := projectWarnings(t, d, "never-checked")[0]
 	assertContains(t, w, "unknown template variable {domian}")
 	assertNotContains(t, w, "couldn't fetch any Plugin from it this Project needs")
@@ -240,7 +298,7 @@ func TestAWorktreeSetUpWithoutAPluginItNeedsIsSetUpAgainOnceLaneDoctorFetchesIt(
 	cat.Online()
 	d.RunCLI(repo.Dir, "doctor")
 
-	eventually(t, "the assets Integration's setup step to run", func() bool {
+	eventuallyInBackground(t, "the assets Integration's setup step to run", func() bool {
 		_, err := os.Stat(marker)
 		return err == nil
 	})
