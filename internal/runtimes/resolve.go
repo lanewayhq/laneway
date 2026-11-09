@@ -111,11 +111,11 @@ func (e Environment) LookPath(name string) (string, error) {
 	return lookPath(name, e.Getenv("PATH"))
 }
 
-// Find finds PHP and Node in e and asks each for its version (and PHP for
-// its extensions). It always returns both, in that order; one that wasn't
-// found has no Version.
+// Find finds PHP, Node and Ruby in e and asks each for its version (and PHP
+// for its extensions). It always returns all three, in that order; one that
+// wasn't found has no Version.
 func (e Environment) Find(ctx context.Context) []Runtime {
-	return []Runtime{e.findPHP(ctx), e.findNode(ctx)}
+	return []Runtime{e.findPHP(ctx), e.findNode(ctx), e.findRuby(ctx)}
 }
 
 // phpInfo prints PHP_VERSION, then one loaded extension per line.
@@ -142,6 +142,14 @@ func (e Environment) findNode(ctx context.Context) Runtime {
 	r := Runtime{Name: Node}
 	if out, ok := e.ask(ctx, &r, "node", "--version"); ok {
 		r.Version = strings.TrimPrefix(strings.TrimSpace(out), "v")
+	}
+	return r
+}
+
+func (e Environment) findRuby(ctx context.Context) Runtime {
+	r := Runtime{Name: Ruby}
+	if out, ok := e.ask(ctx, &r, "ruby", "-e", "print RUBY_VERSION"); ok {
+		r.Version = strings.TrimSpace(out)
 	}
 	return r
 }

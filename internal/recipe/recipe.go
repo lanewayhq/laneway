@@ -324,7 +324,7 @@ func (r Resolved) WorktreeRootOf(mainDir string) string {
 }
 
 // Builtin are the Recipes Laneway ships, in detection order.
-var Builtin = []Recipe{Laravel{}}
+var Builtin = []Recipe{Laravel{}, Rails{}}
 
 // ResolveDir resolves the Project in dir from its laneway.toml and
 // laneway.local.toml with the Builtin Recipes and BuiltinIntegrations,

@@ -7,6 +7,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -22,8 +23,9 @@ type packageJSON struct {
 }
 
 // Check compares the Runtimes found for the Project in dir with what its
-// files declare: composer.json `require.php` and `ext-*` for PHP, and
-// package.json `engines.node` for Node. It only reads files.
+// files declare: composer.json `require.php` and `ext-*` for PHP,
+// package.json `engines.node` for Node, and the Gemfile's `ruby` for Ruby.
+// It only reads files.
 func Check(dir string, found []Runtime) []Warning {
 	var warnings []Warning
 	byName := map[string]Runtime{}
@@ -41,6 +43,9 @@ func Check(dir string, found []Runtime) []Warning {
 		warnings = append(warnings, checkNode(byName[Node], pkg)...)
 	} else if w != nil {
 		warnings = append(warnings, *w)
+	}
+	if gemfile, ok := readGemfile(dir); ok {
+		warnings = append(warnings, checkRuby(byName[Ruby], gemfile)...)
 	}
 	return warnings
 }
@@ -140,6 +145,92 @@ func checkNode(node Runtime, pkg packageJSON) []Warning {
 	return nil
 }
 
+// gemfileRuby matches the Gemfile's `ruby` line, such as ruby "~> 3.3" or
+// ruby file: ".ruby-version".
+var gemfileRuby = regexp.MustCompile(`^\s*ruby\b(.*)$`)
+
+// rubyArg is one argument of the Gemfile's `ruby` line: a quoted version
+// requirement, or an option such as file: ".ruby-version" or engine: "jruby".
+var rubyArg = regexp.MustCompile(`(?:(\w+):\s*)?["']([^"']+)["']`)
+
+// gemfile is the part of a Gemfile Check reads.
+type gemfile struct {
+	// ruby is the `ruby` line's arguments as written, such as "~> 3.3";
+	// "" without one.
+	ruby string
+	// constraint is what they ask for in Composer's syntax (see
+	// rubyConstraint).
+	constraint string
+}
+
+// readGemfile reads dir's Gemfile, reporting whether there is one.
+func readGemfile(dir string) (gemfile, bool) {
+	data, err := os.ReadFile(filepath.Join(dir, "Gemfile"))
+	if err != nil {
+		return gemfile{}, false
+	}
+	for line := range strings.SplitSeq(string(data), "\n") {
+		m := gemfileRuby.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		var reqs []string
+		for _, arg := range rubyArg.FindAllStringSubmatch(m[1], -1) {
+			switch arg[1] {
+			case "":
+				reqs = append(reqs, arg[2])
+			case "file":
+				// The version in that file, such as .ruby-version.
+				if v, err := os.ReadFile(filepath.Join(dir, arg[2])); err == nil {
+					reqs = append(reqs, strings.TrimPrefix(strings.TrimSpace(string(v)), "ruby-"))
+				}
+			}
+		}
+		return gemfile{ruby: strings.TrimSpace(m[1]), constraint: rubyConstraint(reqs)}, true
+	}
+	return gemfile{}, true
+}
+
+// rubyConstraint is RubyGems version requirements, all of which must hold,
+// in Composer's syntax, which reads the same apart from the pessimistic
+// operator: RubyGems' ~> 3.3 is Composer's ~3.3 (>=3.3 <4.0), and ~> 3.3.5
+// is ~3.3.5 (>=3.3.5 <3.4).
+func rubyConstraint(reqs []string) string {
+	for i, r := range reqs {
+		r = strings.TrimSpace(r)
+		if rest, ok := strings.CutPrefix(r, "~>"); ok {
+			r = "~" + strings.TrimSpace(rest)
+		}
+		reqs[i] = strings.ReplaceAll(r, " ", "")
+	}
+	return strings.Join(reqs, " ")
+}
+
+func checkRuby(ruby Runtime, g gemfile) []Warning {
+	if ruby.Version == "" && ruby.Path != "" {
+		return []Warning{{Runtime: Ruby, Message: fmt.Sprintf("can't run Ruby at %s: %s", ruby.Path, ruby.Error)}}
+	}
+	if ruby.Version == "" {
+		return []Warning{{Runtime: Ruby,
+			Message: "Ruby was not found through mise or on PATH, but this Project has a Gemfile",
+			Fix:     installHint(Ruby, g.constraint)}}
+	}
+	if g.constraint == "" {
+		return nil
+	}
+	ok, err := Satisfies(ruby.Version, g.constraint, Composer)
+	switch {
+	case err != nil:
+		return []Warning{{Runtime: Ruby,
+			Message: fmt.Sprintf("can't check Ruby %s against ruby %s in the Gemfile: %v", ruby.Version, g.ruby, err)}}
+	case !ok:
+		return []Warning{{Runtime: Ruby,
+			Message: fmt.Sprintf("Ruby %s doesn't satisfy ruby %s in the Gemfile", ruby.Version, g.ruby),
+			Fix:     installHint(Ruby, g.constraint)}}
+	}
+	return nil
+}
+
 // installHint suggests how to get a Runtime matching constraint with mise.
 func installHint(runtime, constraint string) string {
 	return fmt.Sprintf("install a matching version with mise: `mise use %s@%s` (Laneway never installs Runtimes)",
@@ -147,7 +238,10 @@ func installHint(runtime, constraint string) string {
 }
 
 // commandRuntimes are the Runtimes commands belong to, for NotFound.
-var commandRuntimes = map[string]string{"php": PHP, "node": Node, "npm": Node, "npx": Node}
+var commandRuntimes = map[string]string{
+	"php": PHP, "node": Node, "npm": Node, "npx": Node,
+	"ruby": Ruby, "gem": Ruby, "bundle": Ruby, "bundler": Ruby,
+}
 
 // NotFound is the error for a command that isn't on the resolved PATH of the
 // Project in dir. For a Runtime's own command it says how to install a
@@ -159,16 +253,20 @@ func NotFound(dir, command string) error {
 		return errors.New(msg)
 	}
 	var constraint string
-	if runtime == PHP {
+	switch runtime {
+	case PHP:
 		var composer composerJSON
 		if ok, _ := readManifest(dir, "composer.json", &composer); ok {
 			constraint = composer.Require["php"]
 		}
-	} else {
+	case Node:
 		var pkg packageJSON
 		if ok, _ := readManifest(dir, "package.json", &pkg); ok {
 			constraint = pkg.Engines["node"]
 		}
+	case Ruby:
+		g, _ := readGemfile(dir)
+		constraint = g.constraint
 	}
 	return fmt.Errorf("%s; %s", msg, installHint(runtime, constraint))
 }
