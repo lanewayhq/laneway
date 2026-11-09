@@ -289,7 +289,14 @@ type objectScript struct {
 //	create: sh -c '… curl -X DELETE … x-rustfs-force-delete …; curl -X PUT …' sh <bucket>
 //	drop:   sh -c '… curl -X DELETE -H 'x-rustfs-force-delete: true' …' sh <bucket>
 //	exists: sh -c '… curl -I …/<bucket>; curl …/<bucket>?tagging …' sh <bucket>
+//	clone:  sh -c '<rc fetch> … rc … cp --recursive … local/<from>/ local/<to>/ …' sh <from> <to>
+//	size:   sh -c '<rc fetch> … rc --json … bucket list --recursive --summarize …' sh <bucket>
+//
+// The rc fetch at the top of clone and size needs no network here: the
+// fake answers the whole script.
 var objectScripts = []objectScript{
+	{"clone", 2, "cp --recursive", (*objectStore).cloneScript},
+	{"size", 1, "--summarize", (*objectStore).sizeScript},
 	{"list", 0, "<Name>", (*objectStore).listScript},
 	{"create", 1, "-X PUT", (*objectStore).createScript},
 	{"drop", 1, "x-rustfs-force-delete", (*objectStore).dropScript},
@@ -361,6 +368,48 @@ func (s *objectStore) dropScript(args []string) container.Output {
 	defer s.mu.Unlock()
 	delete(s.buckets, args[0])
 	return container.Output{}
+}
+
+// cloneScript copies every object of the Bucket args[0] into a new Bucket
+// args[1], as rc cp --recursive does on the server, keeping each object's
+// content type. Like the script, it first drops a leftover args[1] (exists
+// said there was none), and fails as rc does, leaving no args[1], when
+// args[0] doesn't exist.
+func (s *objectStore) cloneScript(args []string) container.Output {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	from, to := args[0], args[1]
+	if !validBucketName(to) {
+		return s3Failure("InvalidBucketName", "The specified bucket is not valid.")
+	}
+	delete(s.buckets, to)
+	src := s.buckets[from]
+	if src == nil {
+		return container.Output{ExitCode: 1, Stderr: fmt.Appendf(nil, "Error: Bucket not found: %s\n", from)}
+	}
+	copied := &fakeBucket{objects: map[string]fakeObject{}, tags: map[string]string{}}
+	for key, o := range src.objects {
+		copied.objects[key] = fakeObject{body: slices.Clone(o.body), contentType: o.contentType}
+	}
+	s.buckets[to] = copied
+	return container.Output{}
+}
+
+// sizeScript prints the total bytes of the objects in the Bucket args[0],
+// as the script does from rc's total_size_bytes, and fails as rc does when
+// there is no such Bucket.
+func (s *objectStore) sizeScript(args []string) container.Output {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	b := s.buckets[args[0]]
+	if b == nil {
+		return container.Output{ExitCode: 1, Stderr: fmt.Appendf(nil, "Error: Bucket not found: %s\n", args[0])}
+	}
+	size := 0
+	for _, o := range b.objects {
+		size += len(o.body)
+	}
+	return container.Output{Stdout: fmt.Appendf(nil, "%d\n", size)}
 }
 
 // s3Failure is how the scripts fail on an S3 error: curl exits 1 with the

@@ -23,8 +23,10 @@ path = "/health/ready"
 [bucket]
 exists = ["sh", "-c", "exists", "sh", "{bucket}"]
 create = ["sh", "-c", "create", "sh", "{bucket}", "{user}"]
+clone = ["sh", "-c", "clone", "sh", "{from}", "{to}"]
 drop = ["sh", "-c", "drop", "sh", "{bucket}"]
 list = ["sh", "-c", "list --password={password}"]
+size = ["sh", "-c", "size", "sh", "{bucket}"]
 `
 
 func TestAnEngineManifestMayDeclareBucketCommands(t *testing.T) {
@@ -38,6 +40,12 @@ func TestAnEngineManifestMayDeclareBucketCommands(t *testing.T) {
 	}
 	if got := m.Expand(b.Create, map[string]string{"bucket": "shop--feature"}); !slices.Equal(got, []string{"sh", "-c", "create", "sh", "shop--feature", "admin"}) {
 		t.Fatalf("expanded create command %q", got)
+	}
+	if got := m.Expand(b.Clone, map[string]string{"from": "shop", "to": "shop--feature"}); !slices.Equal(got, []string{"sh", "-c", "clone", "sh", "shop", "shop--feature"}) {
+		t.Fatalf("expanded clone command %q", got)
+	}
+	if got := m.Expand(b.Size, map[string]string{"bucket": "shop"}); !slices.Equal(got, []string{"sh", "-c", "size", "sh", "shop"}) {
+		t.Fatalf("expanded size command %q", got)
 	}
 	if got := m.Expand(b.List, nil); !slices.Equal(got, []string{"sh", "-c", "list --password=laneway"}) {
 		t.Fatalf("expanded list command %q", got)
@@ -70,6 +78,10 @@ func TestBucketCommandsLanewayCannotUseAreRefusedSayingWhy(t *testing.T) {
 	}{
 		{"no exists", without("exists"), "bucket.exists is missing"},
 		{"no create", without("create"), "bucket.create is missing"},
+		{"no clone", without("clone"), "bucket.clone is missing: the Bucket commands are exists, create, clone, drop, list and size"},
+		{"no size", without("size"), "bucket.size is missing"},
+		{"a Bucket in clone", strings.Replace(objectsManifest, `"{from}", "{to}"`, `"{bucket}", "{to}"`, 1), "bucket.clone uses {bucket}"},
+		{"a copy's source in size", strings.Replace(objectsManifest, `"size", "sh", "{bucket}"`, `"size", "sh", "{from}"`, 1), "bucket.size uses {from}"},
 		{"no drop", without("drop"), "bucket.drop is missing"},
 		{"no list", without("list"), "bucket.list is missing"},
 		{"an unknown key", objectsManifest + "colour = [\"red\"]\n", "bucket.colour"},

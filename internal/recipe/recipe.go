@@ -130,6 +130,10 @@ type Resolved struct {
 	// IdleTimeout is how long a Worktree may go without traffic before it
 	// is Idle; 0 means the global default.
 	IdleTimeout time.Duration
+	// BucketCopyLimit is the biggest the main Worktree's Bucket may be for
+	// a new Worktree's Bucket to start as a copy of it; nil means the
+	// global default.
+	BucketCopyLimit *config.Size
 	// Env is the Env Patch: env key → template, merged by key. nil if no
 	// layer declares any.
 	Env map[string]string
@@ -450,6 +454,9 @@ func Resolve(in Input) (Resolved, error) {
 		}
 		if l.IdleTimeout != nil {
 			res.IdleTimeout = *l.IdleTimeout
+		}
+		if l.BucketCopyLimit != nil {
+			res.BucketCopyLimit = l.BucketCopyLimit
 		}
 		wt := config.WorktreeLayer{}
 		if l.Worktree != nil {

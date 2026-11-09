@@ -20,6 +20,11 @@ type Global struct {
 	// and without running Worktrees using it before it is stopped, such
 	// as "1h".
 	ServiceIdleTimeout *time.Duration `toml:"service_idle_timeout"`
+	// BucketCopyLimit is the biggest a main Worktree's Bucket may be for a
+	// new Worktree's Bucket to start as a copy of it, such as "1GB"; above
+	// it the new Bucket starts empty. A Project's bucket_copy_limit
+	// overrides it. See Layer.BucketCopyLimit.
+	BucketCopyLimit *Size `toml:"bucket_copy_limit"`
 	// Plugins are the machine-wide Plugins (added with `lane plugin add
 	// --global`) turned on in every Project, by name.
 	Plugins []string `toml:"plugins"`
