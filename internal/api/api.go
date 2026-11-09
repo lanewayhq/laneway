@@ -50,6 +50,9 @@ type Project struct {
 	Path string `json:"path"`
 	// Worktrees are the Project's Worktrees, the main one first.
 	Worktrees []Worktree `json:"worktrees"`
+	// PluginItems are what Plugins the Project uses show on it; only
+	// GET /v1/projects and GET /v1/events fill them in.
+	PluginItems
 }
 
 // Process is one of a Worktree's Processes and what it is doing.
@@ -89,6 +92,9 @@ type Worktree struct {
 	// GET /v1/worktree, POST /v1/worktree/ready and the up/down/restart
 	// routes fill it in.
 	Setup *Setup `json:"setup,omitempty"`
+	// PluginItems are what Plugins the Worktree uses show on it; only
+	// GET /v1/projects and GET /v1/events fill them in.
+	PluginItems
 }
 
 // DeclaredProcess is a Process as the Worktree's config declares it.
@@ -355,6 +361,9 @@ type Service struct {
 	// Error says why the Service can't be used (Laneway can't listen on
 	// its port, or its last start failed).
 	Error string `json:"error,omitempty"`
+	// PluginItems are what the Plugin that adds the Service's Engine shows
+	// on it, such as Mailpit's Inbox link.
+	PluginItems
 }
 
 // ServiceList is every Service Laneway serves, sorted by name.

@@ -53,6 +53,9 @@ type Manifest struct {
 	// EngineFiles are the Engines it adds: Engine manifests (TOML, read by
 	// engine.Parse), relative to its directory. An Engine needs no module.
 	EngineFiles []string `json:"engines,omitempty"`
+	// Dashboard is the links, badges and actions it shows on the
+	// Dashboard (see dashboard.go).
+	Dashboard Dashboard `json:"dashboard,omitzero"`
 	// Capabilities are what it may do beyond returning config.
 	Capabilities Capabilities `json:"capabilities,omitzero"`
 }
@@ -188,6 +191,9 @@ func (m Manifest) validate() error {
 		return err
 	}
 	if err := m.validateCommands(); err != nil {
+		return err
+	}
+	if err := m.validateDashboard(); err != nil {
 		return err
 	}
 	for _, kind := range m.Capabilities.Effects {
