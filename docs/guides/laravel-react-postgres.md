@@ -137,7 +137,7 @@ Notes:
 - This PHP has no `gd` and no `redis` extension. If you later switch the cache or queue to Redis (§9.4), use Predis instead of phpredis.
 - `composer diagnose` reports `Checking pubkeys: FAIL`. That only affects `composer self-update`. mise updates Composer, so you can ignore it.
 
-Commit `mise.toml` with the app (§5.5). Teammates, every worktree and Laneway's Processes then use the same versions. Laneway never installs Runtimes: it asks mise (`mise env`) in each Worktree, then checks the result against `composer.json`'s `require.php` / `ext-*` and `package.json`'s `engines`. Any mismatch shows up in `lane doctor` and when the Worktree starts.
+Commit `mise.toml` with the app (§5.5). Teammates, every worktree and Laneway's Processes then use the same versions. Laneway never installs Runtimes: it asks mise (`mise env`) in each Worktree, then checks the result against `composer.json`'s `require.php` / `ext-*` and `package.json`'s `engines`, and checks PHP loads the driver for the Project's database (`pdo_pgsql` here). Any mismatch shows up in `lane link`, in `lane doctor` and when the Worktree starts.
 
 ---
 

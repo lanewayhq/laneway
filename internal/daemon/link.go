@@ -40,10 +40,20 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 		res.Fetched = append(res.Fetched, apiPlugin(p))
 	}
 	res.Warnings = catalogRes.warnings
-	cfg, err := d.plugins.ResolveDir(checkout.MainDir)
+	// The config is the main Worktree's. The Runtime warnings are the ones
+	// a start of the Worktree linked from would give, which is usually the
+	// main one too.
+	cfg, err := d.resolveRuntimes(ctx, checkout.MainDir)
 	if err != nil {
 		return api.LinkResponse{}, &api.Error{Code: api.CodeInvalidConfig, Message: catalogRes.explain(err)}
 	}
+	runtimeWarnings := cfg.notes
+	if checkout.Dir != checkout.MainDir {
+		if w, err := d.resolveRuntimes(ctx, checkout.Dir); err == nil {
+			runtimeWarnings = w.notes
+		}
+	}
+	res.Warnings = append(res.Warnings, runtimeWarnings...)
 	name := req.Name
 	if name == "" {
 		name = cfg.Name

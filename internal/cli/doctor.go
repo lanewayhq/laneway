@@ -17,6 +17,7 @@ import (
 	"github.com/lanewayhq/laneway/internal/gitrepo"
 	"github.com/lanewayhq/laneway/internal/paths"
 	"github.com/lanewayhq/laneway/internal/platform"
+	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/runtimes"
 )
 
@@ -111,8 +112,21 @@ func runDoctor(ctx context.Context, env Env, args []string) error {
 	} else {
 		r.check(statusOK, "mise", v, "")
 	}
-	checkRuntimes(ctx, r, env)
-	checkTestDatabase(ctx, r, env)
+	// The Project's config, once the Plugins it needs are fetched, gives
+	// the Runtime checks its database engine and gives its Test Database
+	// warnings. Without it, the Runtimes are still checked, but not the PDO
+	// extension for the database.
+	dir := worktreeDir(ctx, env)
+	checkProjectPlugins(ctx, r, env, dir)
+	cfg, cfgErr := resolveProject(env, dir)
+	if cfgErr != nil {
+		checkRuntimes(ctx, r, env, dir, "")
+		r.check(statusWarn, "database driver", "skipped: can't resolve the Project's config: "+cfgErr.Error(),
+			"run `lane link` to see what to fix")
+	} else {
+		checkRuntimes(ctx, r, env, dir, cfg.Database.Engine)
+		checkTestDatabase(r, cfg)
+	}
 
 	if r.failures > 0 {
 		fmt.Fprintln(env.Stdout)
@@ -121,15 +135,15 @@ func runDoctor(ctx context.Context, env Env, args []string) error {
 	return nil
 }
 
-// checkRuntimes reports the Runtimes resolved for the current Worktree (or
+// checkRuntimes reports the Runtimes resolved for the Worktree in dir (or
 // directory, outside a git repository), and how they fit what the Project
-// declares. A Runtime that is neither found nor needed isn't mentioned.
-func checkRuntimes(ctx context.Context, r *report, env Env) {
-	dir := worktreeDir(ctx, env)
+// declares and its database engine, engine ("" for none or unknown). A
+// Runtime that is neither found nor needed isn't mentioned.
+func checkRuntimes(ctx context.Context, r *report, env Env, dir, engine string) {
 	rt := runtimes.Environ(ctx, dir, environOf(env))
 	found := rt.Find(ctx)
 	warned := map[string]bool{}
-	for _, w := range append(rt.Warnings, runtimes.Check(dir, found)...) {
+	for _, w := range append(rt.Warnings, runtimes.Check(dir, found, engine)...) {
 		warned[w.Runtime] = true
 		name := w.Runtime
 		if name == "mise" {
@@ -149,24 +163,22 @@ func checkRuntimes(ctx context.Context, r *report, env Env) {
 	}
 }
 
-// checkTestDatabase reports why the tests of the current Worktree's Project
-// may not use its Test Database, such as a phpunit.xml that hard-codes
-// DB_DATABASE, once the daemon, if running, has fetched the Catalog Plugins
-// the Project needs, such as its Recipe. A config that can't be resolved
-// isn't reported here: link and starts report it.
-func checkTestDatabase(ctx context.Context, r *report, env Env) {
-	dir := worktreeDir(ctx, env)
-	checkProjectPlugins(ctx, r, env, dir)
+// resolveProject resolves the config of the Project in dir with the
+// installed Plugins.
+func resolveProject(env Env, dir string) (recipe.Resolved, error) {
 	plugins, err := openPlugins(env)
 	if err != nil {
-		return
+		return recipe.Resolved{}, err
 	}
 	defer plugins.Close()
-	res, err := plugins.ResolveDir(dir)
-	if err != nil {
-		return
-	}
-	for _, w := range res.TestDatabaseWarnings {
+	return plugins.ResolveDir(dir)
+}
+
+// checkTestDatabase reports why the tests of the Project resolved as cfg may
+// not use its Test Database, such as a phpunit.xml that hard-codes
+// DB_DATABASE.
+func checkTestDatabase(r *report, cfg recipe.Resolved) {
+	for _, w := range cfg.TestDatabaseWarnings {
 		r.check(statusWarn, "Test Database", w, "")
 	}
 }
