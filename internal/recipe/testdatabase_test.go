@@ -68,7 +68,7 @@ func TestTheTestDatabaseSettingWrittenAsALayerResolvesToItself(t *testing.T) {
 			if err != nil {
 				t.Fatalf("reading back:\n%s\n%v", buf.String(), err)
 			}
-			again, err := recipe.Resolve(recipe.Input{Layers: []config.Layer{written}})
+			again, err := recipe.Resolve(recipe.Input{Engines: builtinEngines(), Layers: []config.Layer{written}})
 			if err != nil {
 				t.Fatalf("resolving what was written:\n%s\n%v", buf.String(), err)
 			}
@@ -105,7 +105,7 @@ func TestTheRecipesAnswerDecidesTheTestDatabaseItsEnvFileAndItsWarnings(t *testi
 		TestDatabaseWarnings: []string{"spec/config.rb sets the database"},
 	}
 
-	res, err := recipe.Resolve(recipe.Input{Dir: dir, Recipes: []recipe.Recipe{testedStack{answer}}})
+	res, err := recipe.Resolve(recipe.Input{Engines: builtinEngines(), Dir: dir, Recipes: []recipe.Recipe{testedStack{answer}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestTheRecipesAnswerDecidesTheTestDatabaseItsEnvFileAndItsWarnings(t *testi
 func TestARecipeNamingNoTestEnvFileGetsTheDefaultOne(t *testing.T) {
 	dir := project(t, map[string]string{"tested-stack": ""})
 
-	res, err := recipe.Resolve(recipe.Input{Dir: dir, Recipes: []recipe.Recipe{testedStack{recipe.Result{TestDatabase: true}}}})
+	res, err := recipe.Resolve(recipe.Input{Engines: builtinEngines(), Dir: dir, Recipes: []recipe.Recipe{testedStack{recipe.Result{TestDatabase: true}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestDatabaseTestOverridesTheRecipesAnswer(t *testing.T) {
 				stack = testedStack{recipe.Result{}}
 			}
 
-			res, err := recipe.Resolve(recipe.Input{Dir: dir, Layers: layers, Recipes: []recipe.Recipe{stack}})
+			res, err := recipe.Resolve(recipe.Input{Engines: builtinEngines(), Dir: dir, Layers: layers, Recipes: []recipe.Recipe{stack}})
 			if err != nil {
 				t.Fatal(err)
 			}

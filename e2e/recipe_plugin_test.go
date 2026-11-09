@@ -72,5 +72,5 @@ func TestAPluginNamedLikeOneBuiltIntoLanewayIsRefused(t *testing.T) {
 	if res.ExitCode == 0 {
 		t.Fatalf("adding a second rails Plugin exited 0:\n%s", res.Output())
 	}
-	assertContains(t, res.Stderr, "Plugin rails has the name of a Plugin built into Laneway; give it another name")
+	assertContains(t, res.Stderr, "Laneway has a built-in Plugin named rails; give the Plugin another name")
 }

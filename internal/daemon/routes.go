@@ -31,6 +31,7 @@ func (d *Daemon) routes() http.Handler {
 	mux.HandleFunc("POST /v1/gc", d.handleGC)
 	mux.HandleFunc("GET /v1/plugins", d.handleListPlugins)
 	mux.HandleFunc("POST /v1/plugins", d.handleAddPlugin)
+	mux.HandleFunc("POST /v1/plugins/{plugin}/commands/{command}", d.handleRunPluginCommand)
 	return mux
 }
 
@@ -232,7 +233,9 @@ var statusFor = map[string]int{
 	api.CodeUnknownService: http.StatusNotFound,
 	api.CodeServiceFailed:  http.StatusBadGateway,
 
-	api.CodeInvalidPlugin: http.StatusUnprocessableEntity,
+	api.CodeInvalidPlugin:  http.StatusUnprocessableEntity,
+	api.CodeUnknownPlugin:  http.StatusNotFound,
+	api.CodeUnknownCommand: http.StatusNotFound,
 }
 
 // writeError sends err to the client. An *api.Error is passed through as is;
@@ -267,6 +270,19 @@ func (d *Daemon) handleAddPlugin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := d.addPlugin(req)
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (d *Daemon) handleRunPluginCommand(w http.ResponseWriter, r *http.Request) {
+	var req api.PluginCommandRequest
+	if !readJSON(w, r, &req) {
+		return
+	}
+	res, err := d.runPluginCommand(r.Context(), r.PathValue("plugin"), r.PathValue("command"), req)
 	if err != nil {
 		d.writeError(w, err)
 		return

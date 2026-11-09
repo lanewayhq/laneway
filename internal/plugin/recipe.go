@@ -54,7 +54,7 @@ func (r pluginRecipe) Defaults(dir string) (recipe.Result, error) {
 	if err := r.host.call(r.plugin, r.source(), request{Call: callRecipe, Name: r.decl.Name}, dir, &res); err != nil {
 		return recipe.Result{}, err
 	}
-	l, err := parseLayer(r.source(), res.Layer)
+	l, err := parseLayer(r.source(), res.Layer, r.host.Engines())
 	if err != nil {
 		return recipe.Result{}, err
 	}
@@ -76,7 +76,7 @@ func (r pluginRecipe) Defaults(dir string) (recipe.Result, error) {
 // parseLayer reads a layer a module returned as JSON keyed like
 // laneway.toml, checking it exactly as laneway.toml is checked: it goes
 // through TOML so that config.ParseLayer's validation and errors apply.
-func parseLayer(source string, raw json.RawMessage) (config.Layer, error) {
+func parseLayer(source string, raw json.RawMessage, engines engine.Set) (config.Layer, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return config.Layer{Source: source}, nil
 	}
@@ -90,10 +90,11 @@ func parseLayer(source string, raw json.RawMessage) (config.Layer, error) {
 	if !ok {
 		return config.Layer{}, fmt.Errorf("%s: its layer must be a JSON object keyed like laneway.toml", source)
 	}
-	// A Service without a version is at its Engine's default one.
+	// A Service without a version is at its Engine's default one, among
+	// engines.
 	if services, ok := table["services"].(map[string]any); ok {
 		for name, version := range services {
-			if e, known := engine.Lookup(name); known && version == "" {
+			if e, known := engines.Lookup(name); known && version == "" {
 				services[name] = e.DefaultVersion
 			}
 		}

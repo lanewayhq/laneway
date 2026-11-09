@@ -88,7 +88,7 @@ func TestSetupConfigWrittenAsALayerResolvesToItself(t *testing.T) {
 			}
 			dir := filepath.Join("testdata", fixture)
 			for _, recipes := range [][]recipe.Recipe{nil, {setupStack{}}} {
-				again, err := recipe.Resolve(recipe.Input{Dir: dir, Layers: []config.Layer{written}, Recipes: recipes})
+				again, err := recipe.Resolve(recipe.Input{Engines: builtinEngines(), Dir: dir, Layers: []config.Layer{written}, Recipes: recipes})
 				if err != nil {
 					t.Fatal(err)
 				}

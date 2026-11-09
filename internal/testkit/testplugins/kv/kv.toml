@@ -1,0 +1,12 @@
+# kv: a test Engine that speaks Redis's protocol, from a manifest-only
+# Plugin. Tests make the fake container engine serve its image with
+# containertest.Redis.
+name = "kv"
+default_version = "1"
+image = "example.test/kv"
+port = 7379
+data_dir = "/data"
+command = ["kv-server", "--requirepass", "{password}"]
+
+[[ready]]
+kind = "redis-ping"

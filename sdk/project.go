@@ -10,22 +10,22 @@ import (
 	"github.com/lanewayhq/laneway/internal/dotenv"
 )
 
-// Env is what the Project's env file sets.
-type Env struct{ f *dotenv.File }
+// EnvFile is what the Project's env file sets.
+type EnvFile struct{ f *dotenv.File }
 
-// Env reads the Project's .env or, before there is one (Laneway creates it
-// from .env.example), its .env.example. With neither, it sets nothing.
-func (p Project) Env() Env {
+// EnvFile reads the Project's .env or, before there is one (Laneway creates
+// it from .env.example), its .env.example. With neither, it sets nothing.
+func (p Project) EnvFile() EnvFile {
 	for _, name := range []string{".env", ".env.example"} {
 		if data, err := p.ReadFile(name); err == nil {
-			return Env{dotenv.Parse(data)}
+			return EnvFile{dotenv.Parse(data)}
 		}
 	}
-	return Env{dotenv.Parse(nil)}
+	return EnvFile{dotenv.Parse(nil)}
 }
 
 // Get is the value the env file gives key, and whether it gives it one.
-func (e Env) Get(key string) (string, bool) {
+func (e EnvFile) Get(key string) (string, bool) {
 	return e.f.Get(key)
 }
 

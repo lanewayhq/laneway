@@ -17,7 +17,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"maps"
 	"os"
@@ -28,6 +27,7 @@ import (
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/runtimes"
 )
@@ -52,6 +52,8 @@ type Options struct {
 	Log *slog.Logger
 	// Timeout is how long one call may take; DefaultTimeout if 0.
 	Timeout time.Duration
+	// Builtin are the Plugins built into Laneway.
+	Builtin []Builtin
 }
 
 // Plugin is a Plugin: its manifest, and where it came from.
@@ -65,12 +67,15 @@ type Plugin struct {
 	Source string
 	// SHA256 is its module's hash, hex-encoded, as it was when added: the
 	// installed Plugin is pinned to it. For a Plugin built into Laneway,
-	// it is the hash of its module as embedded. "" without a module.
+	// it is its Builtin.ModuleID. "" without a module.
 	SHA256 string
+	// Engines are the Engines it adds, read from its EngineFiles.
+	Engines []*engine.Manifest
 
-	// embedded holds the files of a Plugin built into Laneway, which has
-	// no Dir; nil for any other Plugin.
-	embedded fs.FS
+	// serve answers a built-in Plugin's calls in Laneway's process, and
+	// readModule reads a built-in Plugin's module (see Builtin).
+	serve      func([]byte) ([]byte, error)
+	readModule func() ([]byte, error)
 }
 
 // installed is what installedFile records.
@@ -84,10 +89,10 @@ type installed struct {
 type Host struct {
 	opts    Options
 	runtime *runtime
-	builtin []Plugin // built into Laneway, by name
 
-	mu      sync.Mutex
-	plugins map[string]Plugin // by name
+	mu       sync.Mutex
+	plugins  map[string]Plugin // by name
+	builtins map[string]Plugin // by name
 }
 
 // Open loads the Plugins installed in opts.Dir. A Plugin that can't be
@@ -98,7 +103,7 @@ func Open(opts Options) (*Host, error) {
 		opts.Log = slog.New(slog.DiscardHandler)
 	}
 	opts.Timeout = cmp.Or(opts.Timeout, DefaultTimeout)
-	builtin, err := builtin()
+	builtins, err := loadBuiltins(opts.Builtin)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +111,7 @@ func Open(opts Options) (*Host, error) {
 	if err != nil {
 		return nil, err
 	}
-	h := &Host{opts: opts, runtime: rt, builtin: builtin, plugins: map[string]Plugin{}}
+	h := &Host{opts: opts, runtime: rt, plugins: map[string]Plugin{}, builtins: builtins}
 	entries, err := os.ReadDir(opts.Dir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		rt.close()
@@ -144,24 +149,32 @@ func loadInstalled(dir string) (Plugin, error) {
 	if err := json.Unmarshal(data, &in); err != nil {
 		return Plugin{}, fmt.Errorf("%s: %w", filepath.Join(dir, installedFile), err)
 	}
-	return Plugin{Manifest: m, Dir: dir, Source: in.Source, SHA256: in.SHA256}, nil
+	engines, err := readEngines(os.DirFS(dir), dir, m)
+	if err != nil {
+		return Plugin{}, err
+	}
+	return Plugin{Manifest: m, Dir: dir, Source: in.Source, SHA256: in.SHA256, Engines: engines}, nil
 }
 
 // Inspect reads the Plugin in the directory src without adding it, and
-// checks that it can be added: that its manifest is valid, that it isn't
-// named like a Plugin built into Laneway, and that its Recipes and
-// Integrations don't take names Laneway's or another installed Plugin's
-// have.
+// checks that it can be added: that its manifest is valid and its Recipes,
+// Integrations and Engines don't take names Laneway's or another installed
+// Plugin's have.
 func (h *Host) Inspect(src string) (Plugin, error) {
 	m, err := LoadManifest(src)
 	if err != nil {
 		return Plugin{}, err
 	}
-	p := Plugin{Manifest: m, Dir: src, Source: src}
-	for _, b := range h.builtin {
-		if b.Name == p.Name {
-			return Plugin{}, fmt.Errorf("Plugin %s has the name of a Plugin built into Laneway; give it another name", p.Name)
-		}
+	engines, err := readEngines(os.DirFS(src), src, m)
+	if err != nil {
+		return Plugin{}, err
+	}
+	p := Plugin{Manifest: m, Dir: src, Source: src, Engines: engines}
+	if err := h.checkEngineNames(p); err != nil {
+		return Plugin{}, err
+	}
+	if _, ok := h.builtins[p.Name]; ok {
+		return Plugin{}, fmt.Errorf("Laneway has a built-in Plugin named %s; give the Plugin another name", p.Name)
 	}
 	if m.needsModule() {
 		data, err := os.ReadFile(filepath.Join(src, filepath.FromSlash(m.module())))
@@ -172,7 +185,7 @@ func (h *Host) Inspect(src string) (Plugin, error) {
 		p.SHA256 = hex.EncodeToString(sum[:])
 	}
 	taken := map[string]string{} // Recipe name → who has it
-	for _, b := range h.builtin {
+	for _, b := range h.builtins {
 		for _, r := range b.Recipes {
 			taken[r.Name] = "Laneway"
 		}
@@ -215,7 +228,7 @@ func (h *Host) Add(src string) (added Plugin, replaced *Plugin, err error) {
 		return Plugin{}, nil, err
 	}
 	defer os.RemoveAll(tmp)
-	files := []string{ManifestFile}
+	files := append([]string{ManifestFile}, p.EngineFiles...)
 	if p.needsModule() {
 		files = append(files, p.module())
 	}
@@ -270,7 +283,7 @@ func (h *Host) List() []Plugin {
 // ships, then those of the Plugins built into Laneway, likewise.
 func (h *Host) Recipes() []recipe.Recipe {
 	var recipes []recipe.Recipe
-	for _, p := range append(h.List(), h.builtin...) {
+	for _, p := range append(h.List(), h.builtinList()...) {
 		for _, r := range p.Recipes {
 			recipes = append(recipes, pluginRecipe{host: h, plugin: p, decl: r})
 		}
@@ -292,6 +305,7 @@ func (h *Host) ResolveDir(dir string, found ...runtimes.Runtime) (recipe.Resolve
 		Dir:          dir,
 		Layers:       layers,
 		Recipes:      h.Recipes(),
+		Engines:      h.Engines(),
 		Integrations: h.Integrations(),
 		Runtimes:     found,
 	})
@@ -301,7 +315,20 @@ func (h *Host) ResolveDir(dir string, found ...runtimes.Runtime) (recipe.Resolve
 // response into res. what names the call in errors, such as "the procfile
 // Recipe (Plugin procfile)".
 func (h *Host) call(p Plugin, what string, req request, dir string, res any) error {
-	out, err := h.runtime.call(p, req, dir)
+	out, err := h.run(p, req, dir)
+	return decode(what, out, err, res)
+}
+
+// callFresh is call without reusing an earlier call's result (see
+// runtime.callFresh).
+func (h *Host) callFresh(p Plugin, what string, req request, dir string, res any) error {
+	out, err := h.runtime.callFresh(p, req, dir)
+	return decode(what, out, err, res)
+}
+
+// decode reads a module's response out (or the error err running it) into
+// res. what names the call, as for Host.call.
+func decode(what string, out []byte, err error, res any) error {
 	if err != nil {
 		return fmt.Errorf("%s: %w", what, err)
 	}

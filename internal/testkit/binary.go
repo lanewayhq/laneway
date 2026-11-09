@@ -50,28 +50,46 @@ func moduleRoot(t testing.TB) string {
 
 // Plugin returns a directory holding the test Plugin
 // internal/testkit/testplugins/<name> as its author would hand it over: its
-// manifest (plugin.json) and its module (plugin.wasm), compiled for wasip1.
-// The directory is the test's own, so it may change the manifest. The module
-// is built once per test binary.
+// manifest (plugin.json) and any other files beside it, such as Engine
+// manifests, and, if it has Go source, its module (plugin.wasm), compiled
+// for wasip1. The directory is the test's own, so it may change the
+// manifest. The module is built once per test binary.
 func Plugin(t testing.TB, name string) string {
 	t.Helper()
 	src := filepath.Join(moduleRoot(t), "internal", "testkit", "testplugins", name)
-	manifest, err := os.ReadFile(filepath.Join(src, "plugin.json"))
+	entries, err := os.ReadDir(src)
 	if err != nil {
 		t.Fatalf("testkit: test Plugin %s: %v", name, err)
+	}
+	dir := filepath.Join(t.TempDir(), name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("testkit: %v", err)
+	}
+	hasCode := false
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if strings.HasSuffix(e.Name(), ".go") {
+			hasCode = true
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(src, e.Name()))
+		if err != nil {
+			t.Fatalf("testkit: test Plugin %s: %v", name, err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, e.Name()), data, 0o644); err != nil {
+			t.Fatalf("testkit: %v", err)
+		}
+	}
+	if !hasCode {
+		return dir
 	}
 	build, _ := pluginBuilds.LoadOrStore(name, sync.OnceValues(func() ([]byte, error) {
 		return buildPlugin(moduleRoot(t), name)
 	}))
 	module, err := build.(func() ([]byte, error))()
 	if err != nil {
-		t.Fatalf("testkit: %v", err)
-	}
-	dir := filepath.Join(t.TempDir(), name)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatalf("testkit: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "plugin.json"), manifest, 0o644); err != nil {
 		t.Fatalf("testkit: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "plugin.wasm"), module, 0o644); err != nil {

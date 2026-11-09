@@ -32,6 +32,10 @@ type Input struct {
 	// Integrations are the candidates; every one that detects the Project
 	// adds its layer over the Recipe's.
 	Integrations []Integration
+	// Engines are the Engines Laneway can run, which the layers' Services,
+	// database engine and Service variables must be among (see
+	// config.Layer.CheckEngines).
+	Engines engine.Set
 	// Runtimes are the Runtimes resolved for Dir (see package runtimes).
 	// If set, they are checked against the Project's declared constraints
 	// into Resolved.RuntimeWarnings; nil skips the check.
@@ -212,7 +216,8 @@ func (m StartMode) String() string {
 
 // Database is the resolved [database] table, merged key by key.
 type Database struct {
-	// Engine is one of config.DatabaseEngines, or "" for no database.
+	// Engine is sqlite or an Engine with database commands
+	// (database.EngineNames), or "" for no database.
 	Engine string
 	// Path is the SQLite file, relative to the Worktree.
 	Path string
@@ -358,6 +363,11 @@ func (r Resolved) WorktreeRootOf(mainDir string) string {
 // Resolve merges the detected Recipe's defaults, then the detected
 // Integrations', then in.Layers.
 func Resolve(in Input) (Resolved, error) {
+	for _, l := range in.Layers {
+		if err := l.CheckEngines(in.Engines); err != nil {
+			return Resolved{}, err
+		}
+	}
 	var res Resolved
 	var layers []config.Layer // the Recipe's, then the Integrations', then in.Layers
 	var answer Result         // the detected Recipe's
@@ -386,6 +396,11 @@ func Resolve(in Input) (Resolved, error) {
 	layers = append(layers, integrations...)
 	// The layers before project are the Recipe's and the Integrations'.
 	project := len(layers)
+	for _, l := range layers {
+		if err := l.CheckEngines(in.Engines); err != nil {
+			return Resolved{}, err
+		}
+	}
 	layers = append(layers, in.Layers...)
 	// Setup steps append, the Recipe's and Integrations' first, unless a
 	// Project layer turns inheriting them off.
@@ -516,7 +531,7 @@ func Resolve(in Input) (Resolved, error) {
 	}
 	// A database in a Service needs the Service: at the version
 	// [services] pins, else the engine's default.
-	e, inService := engine.Lookup(res.Database.Engine)
+	e, inService := in.Engines.Lookup(res.Database.Engine)
 	if inService && services[e.Name] == "" {
 		services[e.Name] = e.DefaultVersion
 	}

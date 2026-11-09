@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/lanewayhq/laneway/internal/config"
-	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/service"
 )
 
@@ -46,7 +45,7 @@ func (d *Daemon) mailUpstream(ctx context.Context) (string, error) {
 	name, ok := d.mailService()
 	if !ok {
 		return "", fmt.Errorf("no Project uses Mailpit yet: declare it in the [services] table of %s (mailpit = %q) and link the Project",
-			config.FileName, mailpitVersion())
+			config.FileName, d.mailpitVersion())
 	}
 	return d.services.Web(ctx, name)
 }
@@ -62,8 +61,8 @@ func (d *Daemon) useMail() func() {
 }
 
 // mailpitVersion is the Mailpit Engine's default version.
-func mailpitVersion() string {
-	if e, ok := engine.Lookup("mailpit"); ok {
+func (d *Daemon) mailpitVersion() string {
+	if e, ok := d.plugins.Engines().Lookup("mailpit"); ok {
 		return e.DefaultVersion
 	}
 	return ""

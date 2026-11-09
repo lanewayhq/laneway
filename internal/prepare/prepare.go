@@ -1,7 +1,7 @@
 // Package prepare is the Preparer: it takes each Worktree from being found
 // to Ready (GLOSSARY.md),
 //
-//	Discovered → Preparing (copy → database → Test Database → env → setup steps) → Ready | Failed
+//	Discovered → Preparing (copy → database → Test Database → env → setup steps → Preparing hooks) → Ready | Failed
 //
 // one Worktree at a time per directory, in the background. What preparing
 // does is a list of Steps the daemon builds (internal/daemon/prepare.go);
@@ -100,6 +100,7 @@ type Preparer struct {
 	running  map[string]*job
 	changed  chan struct{} // closed and replaced on every change
 	closed   bool
+	onReady  func(dir string)
 }
 
 type job struct {
@@ -178,21 +179,53 @@ func (p *Preparer) Begin(dir string, plan Plan, retry bool) {
 		defer close(j.done)
 		defer cancel()
 		st := p.run(ctx, dir, j, plan)
-		p.mu.Lock()
-		defer p.mu.Unlock()
-		if p.running[dir] != j {
-			return // forgotten meanwhile
+		if p.finish(ctx, dir, j, st) && st.State == Ready && p.onReady != nil {
+			p.onReady(dir)
 		}
-		delete(p.running, dir)
-		if ctx.Err() != nil {
-			// Stopped, not failed: it starts again next time.
-			delete(p.statuses, dir)
-			p.notifyLocked()
-			return
-		}
-		p.setLocked(dir, st)
-		p.saveLocked()
 	})
+}
+
+// finish records the outcome st of the setup job j, unless the Worktree
+// was forgotten or the setup stopped meanwhile. It reports whether it
+// recorded it.
+func (p *Preparer) finish(ctx context.Context, dir string, j *job, st Status) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.running[dir] != j {
+		return false // forgotten meanwhile
+	}
+	delete(p.running, dir)
+	if ctx.Err() != nil {
+		// Stopped, not failed: it starts again next time.
+		delete(p.statuses, dir)
+		p.notifyLocked()
+		return false
+	}
+	p.setLocked(dir, st)
+	p.saveLocked()
+	return true
+}
+
+// OnReady sets what is called, in the background, each time a Worktree's
+// setup becomes Ready (not when one recorded Ready is loaded). Set it
+// before the first Begin.
+func (p *Preparer) OnReady(f func(dir string)) {
+	p.onReady = f
+}
+
+// AddWarning adds a warning to the finished setup of the Worktree at dir,
+// for something that went wrong after it, such as a Ready hook that failed.
+// It does nothing unless the setup is Ready or Failed.
+func (p *Preparer) AddWarning(dir, warning string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	st, ok := p.statuses[dir]
+	if !ok || !st.Done() {
+		return
+	}
+	st.Warnings = append(slices.Clone(st.Warnings), warning)
+	p.setLocked(dir, st)
+	p.saveLocked()
 }
 
 // run runs the plan's steps in order and returns the outcome.

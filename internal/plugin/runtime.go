@@ -43,12 +43,17 @@ type request struct {
 	Dir        string `json:"dir"`
 	HostDir    string `json:"host_dir,omitempty"`
 	MainDir    string `json:"main_dir,omitempty"`
+	// Args are a command call's arguments.
+	Args []string `json:"args,omitempty"`
+	// Event is what a hook call is about.
+	Event *Event `json:"event,omitempty"`
 }
 
 // Calls a module answers.
 const (
 	callRecipe      = "recipe"
 	callIntegration = "integration"
+	callHook        = "hook"
 )
 
 // runtime runs Plugins' modules. Compiling a module takes about a second, and
@@ -155,18 +160,9 @@ func (rt *runtime) forget(name string) {
 
 // call runs p's module for req, with the Project in dir mounted (and, if dir
 // is a linked Worktree, the main Worktree), and returns what it wrote to
-// stdout.
+// stdout. The result is reused until a file the module looked at changes.
 func (rt *runtime) call(p Plugin, req request, dir string) ([]byte, error) {
-	req.APIVersion, req.Dir, req.HostDir = APIVersion, projectMount, dir
-	if abs, err := filepath.Abs(dir); err == nil {
-		req.HostDir = abs
-	}
-	mounts := map[string]*recordingFS{projectMount: newRecordingFS(dir)}
-	if main, ok := gitrepo.MainDir(dir); ok {
-		req.MainDir = mainMount
-		mounts[mainMount] = newRecordingFS(main)
-	}
-	in, err := json.Marshal(req)
+	in, mounts, err := encodeRequest(req, dir)
 	if err != nil {
 		return nil, err
 	}
@@ -190,6 +186,33 @@ func (rt *runtime) call(p Plugin, req request, dir string) ([]byte, error) {
 	rt.results[p.Name][key] = result{out: out, err: err, reads: reads}
 	rt.mu.Unlock()
 	return out, err
+}
+
+// callFresh is call without reusing a result, for calls that are about
+// something other than the Project's files, such as an event.
+func (rt *runtime) callFresh(p Plugin, req request, dir string) ([]byte, error) {
+	in, mounts, err := encodeRequest(req, dir)
+	if err != nil {
+		return nil, err
+	}
+	return rt.run(p, in, mounts)
+}
+
+// encodeRequest is req as the module reads it, about the Project in dir, and
+// the directories the module sees, by where it sees them: the Project and,
+// if dir is a linked Worktree, the main Worktree.
+func encodeRequest(req request, dir string) ([]byte, map[string]*recordingFS, error) {
+	req.APIVersion, req.Dir, req.HostDir = APIVersion, projectMount, dir
+	if abs, err := filepath.Abs(dir); err == nil {
+		req.HostDir = abs
+	}
+	mounts := map[string]*recordingFS{projectMount: newRecordingFS(dir)}
+	if main, ok := gitrepo.MainDir(dir); ok {
+		req.MainDir = mainMount
+		mounts[mainMount] = newRecordingFS(main)
+	}
+	in, err := json.Marshal(req)
+	return in, mounts, err
 }
 
 func (rt *runtime) run(p Plugin, in []byte, mounts map[string]*recordingFS) ([]byte, error) {
@@ -250,9 +273,9 @@ func (rt *runtime) compileLocked(p Plugin) (wazero.CompiledModule, error) {
 	}
 	var data []byte
 	var err error
-	if p.embedded != nil {
+	if p.readModule != nil {
 		// Built into Laneway: nothing to check it against.
-		data, err = embeddedModule(p)
+		data, err = p.readModule()
 	} else {
 		data, err = os.ReadFile(filepath.Join(p.Dir, filepath.FromSlash(p.module())))
 	}
@@ -260,7 +283,7 @@ func (rt *runtime) compileLocked(p Plugin) (wazero.CompiledModule, error) {
 		return nil, err
 	}
 	sum := sha256.Sum256(data)
-	if p.embedded == nil && hex.EncodeToString(sum[:]) != p.SHA256 {
+	if p.readModule == nil && hex.EncodeToString(sum[:]) != p.SHA256 {
 		return nil, fmt.Errorf("its module isn't the one it had when added (SHA-256 %s); add it again with `lane plugin add %s`", p.SHA256, p.Source)
 	}
 	mod, err = rt.wasm.CompileModule(context.Background(), data)

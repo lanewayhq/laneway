@@ -40,7 +40,7 @@ func validateIntegrations(integrations []IntegrationDecl) error {
 // and `lane info` know Integrations by name.
 func (h *Host) integrationsTaken(p Plugin) error {
 	taken := map[string]string{} // Integration name → who has it
-	for _, b := range h.builtin {
+	for _, b := range h.builtins {
 		for _, in := range b.Integrations {
 			taken[in.Name] = "Laneway"
 		}
@@ -68,7 +68,7 @@ func (h *Host) integrationsTaken(p Plugin) error {
 // Resolver applies the detected ones by name, whichever Plugin adds them.
 func (h *Host) Integrations() []recipe.Integration {
 	var integrations []recipe.Integration
-	for _, p := range append(h.List(), h.builtin...) {
+	for _, p := range append(h.List(), h.builtinList()...) {
 		for _, in := range p.Integrations {
 			integrations = append(integrations, pluginIntegration{host: h, plugin: p, decl: in})
 		}
@@ -107,7 +107,7 @@ func (in pluginIntegration) Defaults(dir string) (config.Layer, error) {
 	if err := in.host.call(in.plugin, in.source(), request{Call: callIntegration, Name: in.decl.Name}, dir, &res); err != nil {
 		return config.Layer{}, err
 	}
-	l, err := parseLayer(in.source(), res.Layer)
+	l, err := parseLayer(in.source(), res.Layer, in.host.Engines())
 	if err != nil {
 		return config.Layer{}, err
 	}

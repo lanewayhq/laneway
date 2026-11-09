@@ -50,6 +50,7 @@ func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
 		d.log.Info("Worktree removed", "project", p.Name, "worktree", w.Name, "path", w.Path)
 		d.stopWorktree(ctx, worktreeDomain(p, w), w.Path)
 		d.teardown(p, linkedWorktreeRef(p, w))
+		d.worktreeRemoved(p, linkedWorktreeRef(p, w))
 		// A moved Worktree is removed and added again: its databases
 		// stay its own.
 		if !slices.ContainsFunc(changes.Added, func(a registry.Worktree) bool { return a.Name == w.Name }) {

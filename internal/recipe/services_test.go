@@ -24,7 +24,7 @@ func (servicesStack) Defaults(dir string) (recipe.Result, error) {
 }
 
 func TestServicesMergeByEngineLaterLayersPinningTheVersion(t *testing.T) {
-	recipeOnly, err := recipe.Resolve(recipe.Input{Dir: filepath.Join("testdata", "services-layers"), Recipes: []recipe.Recipe{servicesStack{}}})
+	recipeOnly, err := recipe.Resolve(recipe.Input{Engines: builtinEngines(), Dir: filepath.Join("testdata", "services-layers"), Recipes: []recipe.Recipe{servicesStack{}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestServicesConfigWrittenAsALayerResolvesToItself(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading back:\n%s\n%v", buf.String(), err)
 	}
-	again, err := recipe.Resolve(recipe.Input{Dir: filepath.Join("testdata", "services-layers"),
+	again, err := recipe.Resolve(recipe.Input{Engines: builtinEngines(), Dir: filepath.Join("testdata", "services-layers"),
 		Layers: []config.Layer{written}, Recipes: []recipe.Recipe{servicesStack{}}})
 	if err != nil {
 		t.Fatal(err)
@@ -73,7 +73,12 @@ func TestInvalidServicesConfigNamesTheFileAndTheKey(t *testing.T) {
 		{"[services]\nredis = 7", "services.redis"},
 		{`services = "redis"`, "services must be a table"},
 	} {
-		_, err := config.ParseLayer("/code/shop/laneway.toml", []byte(tc.toml))
+		// Whether a Service's Engine exists is checked once the Engines
+		// are known, when the layer is resolved.
+		l, err := config.ParseLayer("/code/shop/laneway.toml", []byte(tc.toml))
+		if err == nil {
+			_, err = recipe.Resolve(recipe.Input{Engines: builtinEngines(), Dir: t.TempDir(), Layers: []config.Layer{l}})
+		}
 		if err == nil || !strings.Contains(err.Error(), "/code/shop/laneway.toml") || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: err = %v, want one naming the file and %q", tc.toml, err, tc.want)
 		}

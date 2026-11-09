@@ -5,16 +5,17 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-
-	"github.com/lanewayhq/laneway/internal/engine"
 )
 
-// Variables are the names a template can use as {name}. Every Worktree has a
-// value for each, except {db}, which only Worktrees of a Project with a
-// database have, {db_host} and the other database connection variables,
-// which only a database in a Service (Postgres) has, {test_db}, which only
-// Worktrees with a Test Database have, and the Service variables.
-var Variables = append([]string{
+// Variables are the names a template can use as {name}, besides the Service
+// variables of the Engines Laneway can run (engine.Set.Variables, such as
+// {redis_port}), which only have values in Worktrees whose config uses the
+// Service. Every Worktree has a value for each, except {db}, which only
+// Worktrees of a Project with a database have, {db_host} and the other
+// database connection variables, which only a database in a Service
+// (Postgres) has, and {test_db}, which only Worktrees with a Test Database
+// have.
+var Variables = []string{
 	"project",  // the Project name
 	"worktree", // git's name for the Worktree; empty for the main Worktree
 	"domain",   // the Worktree's Primary Domain, such as feat-x.shop.localhost or, with the Alias checkout, checkout.shop.localhost
@@ -24,24 +25,28 @@ var Variables = append([]string{
 	// host, port and credentials.
 	"db_host", "db_port", "db_username", "db_password",
 	"test_db", // the Worktree's Test Database's name, when Test Databases are on
-},
-	// Each Service's host, port and credentials, such as {redis_port},
-	// which only have values in Worktrees whose config uses the Service.
-	engine.AllVariables()...)
+}
 
 // placeholder matches what a template treats specially: an escaped brace,
 // or {name}. Any other brace is literal.
 var placeholder = regexp.MustCompile(`\{\{|\}\}|\{([a-z][a-z0-9_]*)\}`)
 
-// CheckTemplate reports whether template only uses known Variables.
-func CheckTemplate(template string) error {
-	_, err := expand(template, nil)
+// CheckTemplate reports whether template only uses Variables and
+// serviceVars, the Service variables of the Engines Laneway can run.
+func CheckTemplate(template string, serviceVars []string) error {
+	_, err := expand(template, func(name string) (string, error) {
+		if !slices.Contains(Variables, name) && !slices.Contains(serviceVars, name) {
+			return "", fmt.Errorf("unknown template variable {%s}; the variables are %s (write {{ for a literal {)",
+				name, variableList(append(slices.Clone(Variables), serviceVars...)))
+		}
+		return "", nil
+	})
 	return err
 }
 
 // Render replaces each {name} in template with vars[name], {{ with { and
-// }} with }. A variable that isn't one of Variables, or has no value in
-// vars, is an error.
+// }} with }. A variable with no value in vars is an error; CheckTemplate has
+// already refused unknown ones.
 func Render(template string, vars map[string]string) (string, error) {
 	return expand(template, func(name string) (string, error) {
 		v, ok := vars[name]
@@ -52,8 +57,7 @@ func Render(template string, vars map[string]string) (string, error) {
 	})
 }
 
-// expand is Render with value looking up variables; with value nil it only
-// checks the template.
+// expand replaces each variable in template with what value says.
 func expand(template string, value func(string) (string, error)) (string, error) {
 	var b strings.Builder
 	last := 0
@@ -67,26 +71,20 @@ func expand(template string, value func(string) (string, error)) (string, error)
 			b.WriteByte('}')
 		default:
 			name := template[m[2]:m[3]]
-			if !slices.Contains(Variables, name) {
-				return "", fmt.Errorf("unknown template variable {%s}; the variables are %s (write {{ for a literal {)",
-					name, variableList())
+			v, err := value(name)
+			if err != nil {
+				return "", err
 			}
-			if value != nil {
-				v, err := value(name)
-				if err != nil {
-					return "", err
-				}
-				b.WriteString(v)
-			}
+			b.WriteString(v)
 		}
 	}
 	b.WriteString(template[last:])
 	return b.String(), nil
 }
 
-func variableList() string {
-	names := make([]string, len(Variables))
-	for i, v := range Variables {
+func variableList(vars []string) string {
+	names := make([]string, len(vars))
+	for i, v := range vars {
 		names[i] = "{" + v + "}"
 	}
 	if len(names) == 1 {
