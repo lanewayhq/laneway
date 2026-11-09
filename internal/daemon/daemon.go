@@ -304,6 +304,7 @@ func Start(cfg Config) (*Daemon, error) {
 		d.serveKnownWorktrees(p)
 	}
 	d.serveOrphans()
+	d.fetchLinkedProjectsPlugins()
 	d.server = &http.Server{
 		Handler:           d.routes(),
 		ReadHeaderTimeout: 10 * time.Second,

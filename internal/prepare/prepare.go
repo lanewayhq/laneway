@@ -55,8 +55,12 @@ type Step struct {
 
 // Plan works out a Worktree's steps when its setup starts, so config (and the
 // environment, such as the Runtimes) is read then. An error fails setup at
-// the step "config". It must stop when ctx is cancelled.
+// the step StepConfig. It must stop when ctx is cancelled.
 type Plan func(ctx context.Context) ([]Step, error)
+
+// StepConfig is the step a setup fails at when its Plan fails: the
+// Worktree's config couldn't be read.
+const StepConfig = "config"
 
 // Status is a Worktree's setup state.
 type Status struct {
@@ -234,7 +238,7 @@ func (p *Preparer) run(ctx context.Context, dir string, j *job, plan Plan) Statu
 	ctx = context.WithValue(ctx, warningsKey{}, warned)
 	steps, err := plan(ctx)
 	if err != nil {
-		return Status{State: Failed, Step: "config", Error: err.Error(), Warnings: warned.list()}
+		return Status{State: Failed, Step: StepConfig, Error: err.Error(), Warnings: warned.list()}
 	}
 	for _, step := range steps {
 		p.mu.Lock()
@@ -345,7 +349,7 @@ func (p *Preparer) Go(what string, plan Plan) {
 	p.jobs.Go(func() {
 		steps, err := plan(p.ctx)
 		if err != nil {
-			p.log.Error(what+" failed", "step", "config", "err", err)
+			p.log.Error(what+" failed", "step", StepConfig, "err", err)
 			return
 		}
 		for _, step := range steps {
