@@ -232,6 +232,14 @@ func (c *Client) UpdatePlugin(ctx context.Context, name string, req api.UpdatePl
 	return res, err
 }
 
+// RemovePlugin removes the installed Plugin called name, unless a Linked
+// Project uses it.
+func (c *Client) RemovePlugin(ctx context.Context, name string) (api.RemovePluginResponse, error) {
+	var res api.RemovePluginResponse
+	err := c.do(ctx, http.MethodDelete, "/v1/plugins/"+url.PathEscape(name), nil, &res)
+	return res, err
+}
+
 // RunPluginCommand runs the Plugin's command in a Worktree and applies the
 // effects it returns.
 func (c *Client) RunPluginCommand(ctx context.Context, plugin, command string, req api.PluginCommandRequest) (api.PluginCommandResult, error) {

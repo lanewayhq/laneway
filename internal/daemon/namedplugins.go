@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/lanewayhq/laneway/internal/api"
@@ -17,7 +16,7 @@ import (
 // namedPlugin is a Plugin a Project's config names that isn't installed.
 type namedPlugin struct {
 	name string
-	file string // the config file naming it, such as laneway.toml
+	file string // the config file naming it
 }
 
 // missingNamedPlugins are the Plugins the config of the Project in dir names
@@ -36,14 +35,14 @@ func (d *Daemon) missingNamedPlugins(dir string) []namedPlugin {
 				continue
 			}
 			seen[name] = true
-			missing = append(missing, namedPlugin{name: name, file: filepath.Base(l.Source)})
+			missing = append(missing, namedPlugin{name: name, file: l.Source})
 		}
 	}
 	return missing
 }
 
 // addByHand is how to add a Plugin outside the Catalog.
-const addByHand = "add it by hand with `lane plugin add github.com/<owner>/<repo>` (or `lane plugin add <dir>`), then run `lane link` again"
+const addByHand = "add it by hand with `lane plugin add github.com/<owner>/<repo>` (or `lane plugin add <dir>`) and run `lane link` again, or remove it from plugins"
 
 // notInCatalogError says that Plugins the Project's config names aren't
 // installed and aren't in the Catalog, so Laneway won't fetch them, and how
@@ -51,9 +50,9 @@ const addByHand = "add it by hand with `lane plugin add github.com/<owner>/<repo
 func notInCatalogError(plugins []namedPlugin) error {
 	var b strings.Builder
 	for _, p := range plugins {
-		fmt.Fprintf(&b, "%s names Plugin %s, which isn't installed and isn't in the Catalog\n", p.file, p.name)
+		fmt.Fprintf(&b, "%s: plugins names %s, but no Plugin %s is installed, and it isn't in the Catalog\n", p.file, p.name, p.name)
 	}
-	b.WriteString("Laneway fetches only Catalog Plugins by itself, so that committed config can never make it run code from just any repository; ")
+	b.WriteString("Laneway fetches only Catalog Plugins by itself, so that config, such as a committed laneway.toml, can never make it run code from just any repository; ")
 	b.WriteString("if you trust the Plugin, " + addByHand)
 	return &api.Error{Code: api.CodeInvalidConfig, Message: b.String()}
 }
@@ -63,7 +62,7 @@ func notInCatalogError(plugins []namedPlugin) error {
 func uncheckedNamedError(plugins []namedPlugin, why error) error {
 	var b strings.Builder
 	for _, p := range plugins {
-		fmt.Fprintf(&b, "%s names Plugin %s, which isn't installed\n", p.file, p.name)
+		fmt.Fprintf(&b, "%s: plugins names %s, but no Plugin %s is installed\n", p.file, p.name, p.name)
 	}
 	fmt.Fprintf(&b, "Laneway couldn't check whether the Catalog has it: %v\n", why)
 	b.WriteString("once Laneway can reach the Catalog, run `lane link` again; if the Plugin isn't in the Catalog, " + addByHand)

@@ -107,8 +107,7 @@ func TestLinkingAProjectWhoseConfigNamesAPluginOutsideTheCatalogSaysToAddItByHan
 		t.Fatalf("Linking a Project naming a Plugin that isn't installed exited 0:\n%s", res.Output())
 	}
 	for _, want := range []string{
-		"laneway.toml names Plugin notify",
-		"isn't in the Catalog",
+		filepath.Join(repo.Dir, "laneway.toml") + ": plugins names notify, but no Plugin notify is installed, and it isn't in the Catalog",
 		"`lane plugin add github.com/<owner>/<repo>`",
 	} {
 		assertContains(t, res.Stderr, want)
@@ -148,7 +147,7 @@ func TestLinkingOfflineAProjectWhoseConfigNamesAPluginNotInstalledSaysHowToGetIt
 		t.Fatalf("Linking offline a Project naming a Plugin that isn't installed exited 0:\n%s", res.Output())
 	}
 	for _, want := range []string{
-		"laneway.toml names Plugin notify, which isn't installed",
+		filepath.Join(repo.Dir, "laneway.toml") + ": plugins names notify, but no Plugin notify is installed",
 		"couldn't check whether the Catalog has it",
 		"run `lane link` again",
 		"`lane plugin add github.com/<owner>/<repo>`",
@@ -184,4 +183,17 @@ func TestAddingAPluginFromAGitHubRepositoryWithoutAReleaseSaysWhatAReleaseNeeds(
 	if got := installedPlugins(t, d); len(got) != 0 {
 		t.Fatalf("installed Plugins = %v, want none", got)
 	}
+}
+
+func TestUpdatingAMachineWidePluginFromGitHubKeepsItMachineWide(t *testing.T) {
+	t.Parallel()
+	gh := testkit.NewGitHub(t)
+	gh.Release(t, "acme/procfile", "v0.1.0", testkit.Plugin(t, "procfile"))
+	d := testkit.StartDaemon(t, gh.Option())
+	d.MustRunCLI(d.Home, "plugin", "add", "--yes", "--global", "github.com/acme/procfile")
+	gh.Release(t, "acme/procfile", "v0.2.0", procfileRelease(t, "0.2.0"))
+
+	d.MustRunCLI(d.Home, "plugin", "update", "--yes", "procfile")
+
+	assertLineWith(t, d.MustRunCLI(d.Home, "plugin", "list").Stdout, "procfile", "(machine-wide)", "0.2.0", "github.com/acme/procfile")
 }

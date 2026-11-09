@@ -5,24 +5,43 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/recipe"
 )
 
 // Lifecycle events a Plugin can hook (see sdk.Event…).
 const (
-	EventPreparing       = "preparing"
-	EventReady           = "ready"
-	EventWorktreeRemoved = "worktree_removed"
+	EventLink                 = "link"
+	EventUnlink               = "unlink"
+	EventPreparing            = "preparing"
+	EventReady                = "ready"
+	EventWorktreeRemoved      = "worktree_removed"
+	EventPrimaryDomainChanged = "primary_domain_changed"
+	EventProcessStarted       = "process_started"
+	EventProcessStopped       = "process_stopped"
+	EventProcessCrashed       = "process_crashed"
+	EventIdle                 = "idle"
+	EventWoken                = "woken"
+	EventServiceStarted       = "service_started"
+	EventServiceStopped       = "service_stopped"
 )
 
 // Events are the events a Plugin can hook, in lifecycle order, each with
 // its name as the developer is shown it. To add one, add it here and fire
 // it from the daemon with Host.Hooking and Host.Hook.
 var Events = []struct{ Name, Title string }{
+	{EventLink, "Link"},
+	{EventUnlink, "Unlink"},
 	{EventPreparing, "Preparing"},
 	{EventReady, "Ready"},
 	{EventWorktreeRemoved, "Worktree removed"},
+	{EventPrimaryDomainChanged, "Primary Domain changed"},
+	{EventProcessStarted, "Process started"},
+	{EventProcessStopped, "Process stopped"},
+	{EventProcessCrashed, "Process crashed"},
+	{EventIdle, "Idle"},
+	{EventWoken, "Woken"},
+	{EventServiceStarted, "Service started"},
+	{EventServiceStopped, "Service stopped"},
 }
 
 // EventTitle is the event's name as the developer is shown it, such as
@@ -54,11 +73,14 @@ func validateHooks(hooks []string) error {
 	return nil
 }
 
-// Event is a lifecycle event as a hook is told it (see sdk.Event).
+// Event is a lifecycle event as a hook is told it (see sdk.Event). Which of
+// Worktree, Process and Service are set depends on the event.
 type Event struct {
 	Name     string         `json:"name"`
 	Project  EventProject   `json:"project"`
 	Worktree *EventWorktree `json:"worktree,omitempty"`
+	Process  *EventProcess  `json:"process,omitempty"`
+	Service  *EventService  `json:"service,omitempty"`
 }
 
 // EventProject is the Project an event happened in.
@@ -74,6 +96,30 @@ type EventWorktree struct {
 	Main   bool   `json:"main"`
 	Domain string `json:"domain"`
 	URL    string `json:"url"`
+	// PreviousDomain is the Primary Domain it had before, for Primary
+	// Domain changed.
+	PreviousDomain string `json:"previous_domain,omitempty"`
+}
+
+// EventProcess is the Process a Process event happened to.
+type EventProcess struct {
+	Name    string `json:"name"`
+	Command string `json:"command"`
+	Port    int    `json:"port,omitempty"`
+	// Exit is how it exited, for Process crashed, such as "exit status 1".
+	Exit string `json:"exit,omitempty"`
+	// Failed is true, for Process crashed, when it has crashed too often
+	// and won't be restarted.
+	Failed bool `json:"failed,omitempty"`
+}
+
+// EventService is the Service a Service event happened to.
+type EventService struct {
+	Name    string `json:"name"`
+	Engine  string `json:"engine"`
+	Version string `json:"version"`
+	Host    string `json:"host"`
+	Port    int    `json:"port"`
 }
 
 // hookResponse is a module's answer to a hook call.
@@ -94,16 +140,10 @@ func (h *Host) Hooking(event string, res recipe.Resolved) []Plugin {
 }
 
 // usedBy reports whether a Project whose config is res uses the Plugin, so
-// its hooks fire there: its Recipe or one of its Integrations detected the
-// Project, or the Project uses one of its Engines. (Recipe, Integration and
-// Engine names are unique across Plugins and Laneway.) Plugins named in
-// config should count too, once config can name them.
+// its hooks fire there (see UsedBy, which also decides whether the Plugin
+// may be removed).
 func (p Plugin) usedBy(res recipe.Resolved) bool {
-	return slices.ContainsFunc(p.Recipes, func(r RecipeDecl) bool { return r.Name == res.Recipe }) ||
-		slices.ContainsFunc(p.Integrations, func(i IntegrationDecl) bool { return slices.Contains(res.Integrations, i.Name) }) ||
-		slices.ContainsFunc(p.Engines, func(e *engine.Manifest) bool {
-			return slices.ContainsFunc(res.Services, func(s recipe.Service) bool { return s.Engine == e.Name })
-		})
+	return len(p.UsedBy(res)) > 0
 }
 
 // HookSource names p's hook for event in errors and warnings, such as
@@ -122,4 +162,10 @@ func (h *Host) Hook(p Plugin, ev Event, dir string) ([]Effect, error) {
 		return nil, err
 	}
 	return res.Effects, nil
+}
+
+// Hooked reports whether any installed Plugin hooks event, wherever it is
+// used.
+func (h *Host) Hooked(event string) bool {
+	return slices.ContainsFunc(h.List(), func(p Plugin) bool { return slices.Contains(p.Hooks, event) })
 }

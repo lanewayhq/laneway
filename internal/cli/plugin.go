@@ -20,11 +20,12 @@ import (
 var pluginCommands = map[string]func(ctx context.Context, env Env, args []string) error{
 	"add":    runPluginAdd,
 	"list":   runPluginList,
+	"remove": runPluginRemove,
 	"test":   runPluginTest,
 	"update": runPluginUpdate,
 }
 
-const pluginUsage = "use `lane plugin add <dir|github.com/<owner>/<repo>>`, `lane plugin list`, `lane plugin update [name]` or `lane plugin test [--update]`"
+const pluginUsage = "use `lane plugin add <dir|github.com/<owner>/<repo>>`, `lane plugin list`, `lane plugin update [name...]`, `lane plugin remove <name>` or `lane plugin test [--update]`"
 
 func runPlugin(ctx context.Context, env Env, args []string) error {
 	if len(args) == 0 {
@@ -40,6 +41,7 @@ func runPlugin(ctx context.Context, env Env, args []string) error {
 func runPluginAdd(ctx context.Context, env Env, args []string) error {
 	fs := newFlags(env, "plugin add <dir|github.com/<owner>/<repo>[@<tag>]>")
 	yes := fs.Bool("yes", false, "add the Plugin without asking to confirm what it may do")
+	global := fs.Bool("global", false, "add a machine-wide Plugin, turned on only by your global config or a Project's laneway.local.toml")
 	// The directory may come before or after the flags.
 	if err := fs.Parse(args); err != nil {
 		return parseFlags(fs, args)
@@ -58,7 +60,7 @@ func runPluginAdd(ctx context.Context, env Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	req := api.AddPluginRequest{Source: src, Preview: true}
+	req := api.AddPluginRequest{Source: src, Preview: true, Global: *global}
 	preview, err := c.AddPlugin(ctx, req)
 	if err != nil {
 		return err
@@ -80,7 +82,18 @@ func runPluginAdd(ctx context.Context, env Env, args []string) error {
 	if *yes {
 		printPlugin(env.Stdout, res)
 	}
-	fmt.Fprintf(env.Stdout, "Added Plugin %s %s\n", res.Plugin.Name, res.Plugin.Version)
+	if !res.Plugin.Global {
+		fmt.Fprintf(env.Stdout, "Added Plugin %s %s\n", res.Plugin.Name, res.Plugin.Version)
+		printPinned(env.Stdout, res.Plugin)
+		return nil
+	}
+	fmt.Fprintf(env.Stdout, "Added machine-wide Plugin %s %s\n", res.Plugin.Name, res.Plugin.Version)
+	configFile := "your global config"
+	if p, err := paths.FromEnv(env.Getenv); err == nil && p.GlobalConfig() != "" {
+		configFile = p.GlobalConfig()
+	}
+	fmt.Fprintf(env.Stdout, "Turn it on in every Project with plugins = [%q] in %s, or in one Project with it in that Project's laneway.local.toml\n",
+		res.Plugin.Name, configFile)
 	printPinned(env.Stdout, res.Plugin)
 	return nil
 }
@@ -107,6 +120,9 @@ func checkPluginName(p api.Plugin) error {
 func printPlugin(w io.Writer, res api.AddPluginResponse) {
 	p := res.Plugin
 	fmt.Fprintf(w, "Plugin %s %s, from %s\n", p.Name, p.Version, p.Source)
+	if p.Global {
+		fmt.Fprintln(w, "  machine-wide: only your global config or a Project's laneway.local.toml turns it on, never a committed laneway.toml")
+	}
 	if res.Replaces != nil {
 		fmt.Fprintf(w, "  replaces the installed %s %s, from %s\n", res.Replaces.Name, res.Replaces.Version, res.Replaces.Source)
 	}
@@ -130,7 +146,11 @@ func printPlugin(w io.Writer, res api.AddPluginResponse) {
 		for i, h := range p.Hooks {
 			titles[i] = plugin.EventTitle(h)
 		}
-		fmt.Fprintf(w, "  hooks %s, in Projects that use it\n", andList(titles))
+		where := "in Projects that use it"
+		if p.Global {
+			where = "in Projects that turn it on"
+		}
+		fmt.Fprintf(w, "  hooks %s, %s\n", andList(titles), where)
 	}
 	if len(p.Effects) == 0 && (len(p.Recipes) > 0 || len(p.Integrations) > 0 || len(p.Commands) > 0 || len(p.Generators) > 0) {
 		fmt.Fprintln(w, "  may only return config for the Projects it detects")
@@ -180,7 +200,11 @@ func runPluginList(ctx context.Context, env Env, args []string) error {
 		for _, g := range p.Generators {
 			adds = append(adds, "Generator "+g)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", p.Name, p.Version, p.Source, strings.Join(adds, ", "))
+		name := p.Name
+		if p.Global {
+			name += " (machine-wide)"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", name, p.Version, p.Source, strings.Join(adds, ", "))
 	}
 	return tw.Flush()
 }
@@ -200,5 +224,5 @@ func openPlugins(env Env) (*plugin.Host, error) {
 	if err != nil {
 		return nil, err
 	}
-	return plugin.Open(plugin.Options{Dir: p.Plugins(), CacheDir: p.PluginCache(), Builtin: builtin.Plugins()})
+	return plugin.Open(plugin.Options{Dir: p.Plugins(), CacheDir: p.PluginCache(), Builtin: builtin.Plugins(), GlobalConfig: p.GlobalConfig()})
 }

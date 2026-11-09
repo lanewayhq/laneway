@@ -38,7 +38,7 @@ func (d *Daemon) updatePlugin(ctx context.Context, name string, req api.UpdatePl
 		return api.UpdatePluginResponse{}, &api.Error{Code: api.CodeInvalidPlugin,
 			Message: fmt.Sprintf("%s now has Plugin %s, not %s; add it with `lane plugin add %s` if you want it", was.Source, p.Name, name, was.Source)}
 	}
-	p.Source = source
+	p.Source, p.Global = source, was.Global
 	res := api.UpdatePluginResponse{Plugin: apiPlugin(p), Was: apiPlugin(was)}
 	if p.Version == was.Version && p.SHA256 == was.SHA256 {
 		res.UpToDate = true
@@ -47,7 +47,11 @@ func (d *Daemon) updatePlugin(ctx context.Context, name string, req api.UpdatePl
 	if req.Preview {
 		return res, nil
 	}
-	p, _, err = d.plugins.AddFrom(src, source)
+	add := d.plugins.AddFrom
+	if was.Global {
+		add = d.plugins.AddGlobal // it stays machine-wide
+	}
+	p, _, err = add(src, source)
 	if err != nil {
 		return api.UpdatePluginResponse{}, &api.Error{Code: api.CodeInvalidPlugin, Message: err.Error()}
 	}

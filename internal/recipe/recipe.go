@@ -105,6 +105,11 @@ type Resolved struct {
 	// people, such as "package.json depends on vite"; nil with
 	// Integrations.
 	IntegrationRules map[string]string
+	// Plugins are the Plugins the Project's config files (and the global
+	// config) turn on by name, sorted, so their hooks fire in it. The
+	// Resolver doesn't know which Plugins are installed or machine-wide:
+	// plugin.Host.ResolveDir checks the names and sets this.
+	Plugins []string
 	// Name is the configured Project name; "" means use the directory name.
 	Name string
 	// Processes are the enabled Processes, sorted by name.

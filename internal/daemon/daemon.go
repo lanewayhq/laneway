@@ -222,22 +222,24 @@ func Start(cfg Config) (*Daemon, error) {
 		Log:      log,
 		Timeout:  cfg.PluginTimeout,
 		Builtin:  builtin.Plugins(),
+		// The global config may turn on machine-wide Plugins.
+		GlobalConfig: cfg.Paths.GlobalConfig(),
 	})
 	if err != nil {
 		ln.Close()
 		return nil, err
 	}
-	sup := supervisor.New(log, supervisor.Options{Clock: cfg.Clock, LogMaxBytes: cfg.LogFileMaxBytes})
 	d := &Daemon{
-		cfg:        cfg,
-		log:        log,
-		registry:   reg,
-		listener:   ln,
-		supervisor: sup,
-		served:     map[string]*served{},
-		closing:    make(chan struct{}),
-		done:       make(chan struct{}),
+		cfg:      cfg,
+		log:      log,
+		registry: reg,
+		listener: ln,
+		served:   map[string]*served{},
+		closing:  make(chan struct{}),
+		done:     make(chan struct{}),
 	}
+	d.supervisor = supervisor.New(log, supervisor.Options{Clock: cfg.Clock, LogMaxBytes: cfg.LogFileMaxBytes,
+		OnEvent: d.processEvent})
 	d.preparer = prov
 	prov.OnReady(d.worktreeBecameReady)
 	d.plugins = plugins
@@ -251,6 +253,8 @@ func Start(cfg Config) (*Daemon, error) {
 		Prefix:      cfg.ContainerPrefix,
 		IdleTimeout: d.serviceIdleTimeout,
 		PortHolders: d.portHolders,
+		OnStarted:   func(st service.Status) { d.serviceEvent(plugin.EventServiceStarted, st) },
+		OnStopped:   func(st service.Status) { d.serviceEvent(plugin.EventServiceStopped, st) },
 	})
 	d.serveRecordedServices()
 	d.stopping, d.stop = context.WithCancel(context.Background())
