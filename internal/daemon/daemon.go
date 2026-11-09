@@ -5,6 +5,7 @@
 package daemon
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -85,6 +86,10 @@ type Config struct {
 	// PluginTimeout is how long one call to a Plugin's module may take;
 	// plugin.DefaultTimeout if 0.
 	PluginTimeout time.Duration
+	// PluginCacheDir is where Plugins' compiled modules are kept,
+	// Paths.PluginCache() if empty. Test daemons share one, since compiling
+	// a module takes about a second.
+	PluginCacheDir string
 }
 
 // DefaultServiceHosts are where Services listen: loopback only, IPv4 and
@@ -194,7 +199,7 @@ func Start(cfg Config) (*Daemon, error) {
 	}
 	plugins, err := plugin.Open(plugin.Options{
 		Dir:      cfg.Paths.Plugins(),
-		CacheDir: cfg.Paths.PluginCache(),
+		CacheDir: cmp.Or(cfg.PluginCacheDir, cfg.Paths.PluginCache()),
 		Log:      log,
 		Timeout:  cfg.PluginTimeout,
 	})
