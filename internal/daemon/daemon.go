@@ -221,6 +221,7 @@ func Start(cfg Config) (*Daemon, error) {
 		done:       make(chan struct{}),
 	}
 	d.preparer = prov
+	prov.OnReady(d.worktreeBecameReady)
 	d.plugins = plugins
 	d.services = service.New(service.Options{
 		Engine:      cfg.ContainerEngine,

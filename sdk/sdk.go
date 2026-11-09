@@ -53,6 +53,8 @@ type Request struct {
 	Dir string `json:"dir"`
 	// Args are a CallCommand's arguments, after the command's name.
 	Args []string `json:"args,omitempty"`
+	// Event describes the event a CallHook is about.
+	Event *Event `json:"event,omitempty"`
 }
 
 // Response is what a Plugin's module writes on stdout.
@@ -68,6 +70,8 @@ type Response struct {
 	*CommandResult
 	// GeneratorResult answers a CallGenerator.
 	*GeneratorResult
+	// HookResult answers a CallHook.
+	*HookResult
 }
 
 // MarshalJSON writes the Error alone, or the one result that is set. (Two
@@ -87,6 +91,8 @@ func (r Response) MarshalJSON() ([]byte, error) {
 		return json.Marshal(r.CommandResult)
 	case r.GeneratorResult != nil:
 		return json.Marshal(r.GeneratorResult)
+	case r.HookResult != nil:
+		return json.Marshal(r.HookResult)
 	}
 	return []byte("{}"), nil
 }
@@ -191,6 +197,8 @@ type Plugin struct {
 	Integrations map[string]Integration
 	Commands     map[string]Command
 	Generators   map[string]Generator
+	// Hooks are by event, such as EventReady.
+	Hooks map[string]Hook
 }
 
 // Run answers the request on stdin and exits: it is a Plugin module's whole
@@ -233,6 +241,16 @@ func handle(p Plugin, req Request) (Response, error) {
 			return Response{}, err
 		}
 		return Response{RecipeResult: &res}, nil
+	case CallHook:
+		hook, ok := p.Hooks[req.Name]
+		if !ok || req.Event == nil {
+			return Response{}, fmt.Errorf("this Plugin doesn't hook %q", req.Name)
+		}
+		effects, err := hook(project, *req.Event)
+		if err != nil {
+			return Response{}, err
+		}
+		return Response{HookResult: &HookResult{Effects: effects}}, nil
 	case CallIntegration:
 		integration, ok := p.Integrations[req.Name]
 		if !ok {

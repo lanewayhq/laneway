@@ -3,17 +3,10 @@ package daemon
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
-	"os/exec"
-	"strings"
-	"syscall"
-	"time"
 
 	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/plugin"
-	"github.com/lanewayhq/laneway/internal/registry"
-	"github.com/lanewayhq/laneway/internal/runtimes"
 )
 
 // maxCommandOutput is how much of an exec effect's output a Plugin command's
@@ -58,85 +51,21 @@ func (d *Daemon) runPluginCommand(ctx context.Context, name, command string, req
 		res.Error = err.Error()
 		return res, nil
 	}
-	a := commandApplier{d: d, plugin: p, project: project, worktree: w}
-	for _, e := range effects {
-		if err := a.apply(ctx, e, &res); err != nil {
+	// The CLI says which Plugin warnings are from (lane <plugin>: warning:).
+	t := &effectTarget{plugin: p, project: project, worktree: w, dir: w.dir, source: "Plugin " + p.Name}
+	warn := func(w string) { res.Warnings = append(res.Warnings, w) }
+	for _, e := range checkEffects(t, effects, warn) {
+		out := &cappedBuffer{max: maxCommandOutput}
+		err := d.applyEffect(ctx, t, e, out, warn)
+		if e.Kind == plugin.EffectExec {
+			res.Effects = append(res.Effects, api.AppliedEffect{Kind: e.Kind, Command: e.Command, Output: out.String()})
+		}
+		if err != nil {
 			res.Error = err.Error()
 			break
 		}
 	}
 	return res, nil
-}
-
-// commandApplier applies the effects a Plugin's command returns in a
-// Worktree. It applies exec and warning effects; Plugin hooks (#59) bring the
-// others.
-type commandApplier struct {
-	d        *Daemon
-	plugin   plugin.Plugin
-	project  registry.Project
-	worktree worktreeRef
-	env      []string // for exec effects, once one runs
-}
-
-// apply applies e, adding what it did to res. An effect of a kind the
-// Plugin's manifest doesn't declare is refused with a warning, not applied.
-func (a *commandApplier) apply(ctx context.Context, e plugin.Effect, res *api.PluginCommandResult) error {
-	if _, ok := plugin.EffectKinds[e.Kind]; !ok {
-		res.Warnings = append(res.Warnings, fmt.Sprintf("Plugin %s returned an effect of kind %q, which isn't an effect kind; it was ignored", a.plugin.Name, e.Kind))
-		return nil
-	}
-	if !a.plugin.Declares(e.Kind) {
-		res.Warnings = append(res.Warnings, fmt.Sprintf("Plugin %s returned an %s effect, but its manifest doesn't declare it may %s, so Laneway refused it",
-			a.plugin.Name, e.Kind, plugin.EffectKinds[e.Kind]))
-		return nil
-	}
-	switch e.Kind {
-	case plugin.EffectWarning:
-		res.Warnings = append(res.Warnings, e.Message)
-		return nil
-	case plugin.EffectExec:
-		return a.exec(ctx, e.Command, res)
-	}
-	res.Warnings = append(res.Warnings, fmt.Sprintf("Plugin %s returned an %s effect, but Laneway doesn't apply %s effects from commands yet, so it was skipped",
-		a.plugin.Name, e.Kind, e.Kind))
-	return nil
-}
-
-// exec runs command in the Worktree as setup steps run: with its Runtimes
-// and the LANEWAY_* variables (see setupEnv).
-func (a *commandApplier) exec(ctx context.Context, command []string, res *api.PluginCommandResult) error {
-	if len(command) == 0 {
-		return fmt.Errorf("Plugin %s returned an exec effect without a command", a.plugin.Name)
-	}
-	dir := a.worktree.dir
-	if a.env == nil {
-		cfg, err := a.d.plugins.ResolveDir(dir)
-		if err != nil {
-			return err
-		}
-		a.env = a.d.setupEnv(ctx, a.project, a.worktree, dir, cfg)
-	}
-	path, err := runtimes.Environment{Dir: dir, Vars: a.env}.LookPath(command[0])
-	if err != nil {
-		return runtimes.NotFound(dir, command[0])
-	}
-	out := &cappedBuffer{max: maxCommandOutput}
-	cmd := exec.CommandContext(ctx, path, command[1:]...)
-	cmd.Args[0] = command[0]
-	cmd.Dir = dir
-	cmd.Env = a.env
-	cmd.Stdout, cmd.Stderr = out, out
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
-	cmd.WaitDelay = time.Second
-	err = cmd.Run()
-	res.Effects = append(res.Effects, api.AppliedEffect{Kind: plugin.EffectExec, Command: command, Output: out.String()})
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		return fmt.Errorf("`%s` exited with status %d", strings.Join(command, " "), exitErr.ExitCode())
-	}
-	return err
 }
 
 // cappedBuffer keeps the first max bytes written to it, and says if it

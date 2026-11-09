@@ -24,7 +24,8 @@ type Effect struct {
 	Command []string `json:"command,omitempty"`
 	// Message is a warning effect's warning, said for the developer.
 	Message string `json:"message,omitempty"`
-	// Env is an env effect's keys and values for the Worktree's env file.
+	// Env is an env effect's keys and values for the Worktree's .env. Keys
+	// the Env Patch sets are left to it, with a warning.
 	Env map[string]string `json:"env,omitempty"`
 	// File is a file effect's block, merged into the Worktree's files.
 	File *FileBlock `json:"file,omitempty"`

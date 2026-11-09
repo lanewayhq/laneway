@@ -36,12 +36,15 @@ type request struct {
 	Dir        string `json:"dir"`
 	// Args are a command call's arguments.
 	Args []string `json:"args,omitempty"`
+	// Event is what a hook call is about.
+	Event *Event `json:"event,omitempty"`
 }
 
 // Calls a module answers.
 const (
 	callRecipe      = "recipe"
 	callIntegration = "integration"
+	callHook        = "hook"
 )
 
 // runtime runs Plugins' modules. Compiling a module takes about a second, and
@@ -96,10 +99,10 @@ func (rt *runtime) forget(name string) {
 }
 
 // call runs p's module for req, with the Project in dir mounted, and returns
-// what it wrote to stdout.
+// what it wrote to stdout. The result is reused until a file the module
+// looked at changes.
 func (rt *runtime) call(p Plugin, req request, dir string) ([]byte, error) {
-	req.APIVersion, req.Dir = APIVersion, projectMount
-	in, err := json.Marshal(req)
+	in, err := encodeRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -120,6 +123,21 @@ func (rt *runtime) call(p Plugin, req request, dir string) ([]byte, error) {
 	rt.results[p.Name][key] = result{out: out, err: err, reads: project.recorded()}
 	rt.mu.Unlock()
 	return out, err
+}
+
+// callFresh is call without reusing a result, for calls that are about
+// something other than the Project's files, such as an event.
+func (rt *runtime) callFresh(p Plugin, req request, dir string) ([]byte, error) {
+	in, err := encodeRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	return rt.run(p, in, os.DirFS(dir))
+}
+
+func encodeRequest(req request) ([]byte, error) {
+	req.APIVersion, req.Dir = APIVersion, projectMount
+	return json.Marshal(req)
 }
 
 func (rt *runtime) run(p Plugin, in []byte, project fs.FS) ([]byte, error) {

@@ -311,6 +311,13 @@ func (h *Host) call(p Plugin, what string, req request, dir string, res any) err
 	return decode(what, out, err, res)
 }
 
+// callFresh is call without reusing an earlier call's result (see
+// runtime.callFresh).
+func (h *Host) callFresh(p Plugin, what string, req request, dir string, res any) error {
+	out, err := h.runtime.callFresh(p, req, dir)
+	return decode(what, out, err, res)
+}
+
 // decode reads a module's response out (or the error err running it) into
 // res. what names the call, as for Host.call.
 func decode(what string, out []byte, err error, res any) error {
