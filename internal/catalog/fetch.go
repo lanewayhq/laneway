@@ -13,11 +13,13 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
 	"path/filepath"
+	"syscall"
 	"time"
 )
 
@@ -51,11 +53,30 @@ const (
 	maxRelease = 128 << 20
 )
 
-// Timeouts for downloads: Linking waits for them.
+// Timeouts for downloads, every attempt included: Linking waits for them.
 const (
-	catalogTimeout = 15 * time.Second
-	releaseTimeout = 2 * time.Minute
+	catalogTimeout = 20 * time.Second
+	releaseTimeout = 3 * time.Minute
 )
+
+// retryPolicy is how many times, and how patiently, a download is tried
+// when it fails temporarily, such as with a 5xx status (see temporary).
+type retryPolicy struct {
+	// attempts is how many times a download is tried at most.
+	attempts int
+	// backoff is the wait before the second attempt, doubled before each
+	// one after.
+	backoff time.Duration
+	// catalogAttempt and releaseAttempt are how long one attempt at
+	// downloading the Catalog (or its signature) and a release may take,
+	// so a hung attempt leaves time for another.
+	catalogAttempt, releaseAttempt time.Duration
+}
+
+// defaultRetry tries a download three times, over about three seconds when
+// it fails fast, as GitHub's intermittent 504s do. A hung attempt takes
+// longer, but catalogTimeout and releaseTimeout still bound the whole.
+var defaultRetry = retryPolicy{attempts: 3, backoff: time.Second, catalogAttempt: 5 * time.Second, releaseAttempt: 2 * time.Minute}
 
 // Location is where the Catalog is fetched from, the key it must be signed
 // with, and the snapshot of it to fall back on. The zero Location is
@@ -78,6 +99,7 @@ type Source struct {
 	loc    Location
 	dir    string
 	client *http.Client
+	retry  retryPolicy
 }
 
 // cacheFile is the copy of the last Catalog verified, and its signature
@@ -97,7 +119,7 @@ func NewSource(loc Location, dir string) *Source {
 	if loc.Key == nil {
 		loc.Key = DefaultKey
 	}
-	return &Source{loc: loc, dir: dir, client: &http.Client{}}
+	return &Source{loc: loc, dir: dir, client: &http.Client{}, retry: defaultRetry}
 }
 
 // URL is where the Catalog is fetched from.
@@ -131,11 +153,11 @@ func (s *Source) Load(ctx context.Context) (cat *Catalog, err error) {
 func (s *Source) fetch(ctx context.Context) (*Catalog, []byte, []byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, catalogTimeout)
 	defer cancel()
-	data, err := s.get(ctx, s.loc.URL, maxCatalog)
+	data, err := s.get(ctx, s.loc.URL, maxCatalog, s.retry.catalogAttempt)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	sig, err := s.get(ctx, s.loc.URL+SignatureSuffix, 4<<10)
+	sig, err := s.get(ctx, s.loc.URL+SignatureSuffix, 4<<10, s.retry.catalogAttempt)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -189,7 +211,7 @@ func (s *Source) Fetch(ctx context.Context, r Release, dir string) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, releaseTimeout)
 	defer cancel()
-	data, err := s.get(ctx, u, maxRelease)
+	data, err := s.get(ctx, u, maxRelease, s.retry.releaseAttempt)
 	if err != nil {
 		return err
 	}
@@ -215,28 +237,90 @@ func (s *Source) resolve(ref string) (string, error) {
 	return base.ResolveReference(r).String(), nil
 }
 
-// get downloads u, refusing more than limit bytes.
-func (s *Source) get(ctx context.Context, u string, limit int64) ([]byte, error) {
+// get downloads u, refusing more than limit bytes. A temporary failure is
+// tried again, as the Source's retry policy says, each attempt taking at
+// most timeout; any other failure, or ctx ending, stops it at once.
+func (s *Source) get(ctx context.Context, u string, limit int64, timeout time.Duration) ([]byte, error) {
+	wait := s.retry.backoff
+	for attempt := 1; ; attempt++ {
+		data, err := s.getOnce(ctx, u, limit, timeout)
+		if err == nil || ctx.Err() != nil || !temporary(err) {
+			return data, err
+		}
+		if attempt >= s.retry.attempts {
+			return nil, fmt.Errorf("%w (tried %d times)", err, attempt)
+		}
+		t := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			t.Stop()
+			return nil, err
+		case <-t.C:
+		}
+		wait *= 2
+	}
+}
+
+// getOnce is one attempt at get.
+func (s *Source) getOnce(ctx context.Context, u string, limit int64, timeout time.Duration) ([]byte, error) {
+	ctx, cancel := context.WithTimeoutCause(ctx, timeout, errAttemptTimedOut)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
 	}
 	res, err := s.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, failed(ctx, u, timeout, err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GET %s: %s", u, res.Status)
+		err := fmt.Errorf("GET %s: %s", u, res.Status)
+		if res.StatusCode >= 500 {
+			err = temporaryError{err}
+		}
+		return nil, err
 	}
 	data, err := io.ReadAll(io.LimitReader(res.Body, limit+1))
 	if err != nil {
-		return nil, fmt.Errorf("GET %s: %w", u, err)
+		return nil, failed(ctx, u, timeout, fmt.Errorf("GET %s: %w", u, err))
 	}
 	if int64(len(data)) > limit {
 		return nil, fmt.Errorf("GET %s: it is larger than the %d bytes Laneway accepts", u, limit)
 	}
 	return data, nil
+}
+
+// errAttemptTimedOut ends an attempt at a download that took too long.
+var errAttemptTimedOut = errors.New("the attempt timed out")
+
+// failed is err, from an attempt at downloading u that may take timeout, in
+// ctx, marked as temporary if the attempt timed out or its connection was
+// dropped: closed before the whole response came, or reset.
+func failed(ctx context.Context, u string, timeout time.Duration, err error) error {
+	if context.Cause(ctx) == errAttemptTimedOut {
+		return temporaryError{fmt.Errorf("GET %s: it took longer than %s", u, timeout)}
+	}
+	if ne, ok := errors.AsType[net.Error](err); ok && ne.Timeout() {
+		return temporaryError{err}
+	}
+	for _, d := range []error{io.EOF, io.ErrUnexpectedEOF, syscall.ECONNRESET, syscall.ECONNABORTED, syscall.EPIPE} {
+		if errors.Is(err, d) {
+			return temporaryError{err}
+		}
+	}
+	return err
+}
+
+// temporaryError marks a failed download as worth trying again.
+type temporaryError struct{ error }
+
+func (e temporaryError) Unwrap() error { return e.error }
+
+// temporary is whether a failed download may succeed if tried again.
+func temporary(err error) bool {
+	_, ok := errors.AsType[temporaryError](err)
+	return ok
 }
 
 // Unpack writes the Plugin in a release archive (as Pack makes) into dir,
