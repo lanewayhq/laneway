@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -74,6 +75,29 @@ func TestAWorktreeWhoseSetupFailedForAMissingPluginIsPreparedAgainOnceTheDaemonF
 
 	eventually(t, "the new Worktree to be Ready", func() bool { return setupState(t, d, wt.Dir) == api.SetupReady })
 	assertContains(t, readFile(t, filepath.Join(wt.Dir, ".env")), "KV_PORT=7379\n")
+}
+
+func TestAlwaysProcessesStartOnceTheDaemonFetchesThePluginsTheirConfigNeeds(t *testing.T) {
+	t.Parallel()
+	cat := testkit.NewCatalog(t)
+	cat.Publish(testkit.Plugin(t, "kv"))
+	d := catalogDaemon(t, cat)
+	pid := filepath.Join(gitfixture.TempDir(t), "worker.pid")
+	repo := gitfixture.New(t, "kv-always").
+		WriteFile("laneway.toml", fmt.Sprintf("[services]\nkv = \"1\"\n"+
+			"[processes.worker]\ncommand = %q\nstart_mode = \"always\"\n", "echo $$ > "+pid+"; exec sleep 600")).
+		Commit("an always Process using kv")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	waitForPID(t, pid)
+	d.Stop()
+	if err := os.Remove(pid); err != nil {
+		t.Fatal(err)
+	}
+
+	upgrade(t, d)
+
+	waitForPID(t, pid)
 }
 
 // kvEnvProject is a repo whose config declares a kv Service and puts its
