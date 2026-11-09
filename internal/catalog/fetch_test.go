@@ -20,10 +20,10 @@ import (
 // Downloads through Source.Fetch and Source.Load, from a test server whose
 // responses each test scripts.
 
-// noWait is the default retry policy without the waits between attempts, so
+// noWait is the default download policy without the waits between attempts, so
 // tests don't sleep through real backoff.
-var noWait = func() retryPolicy {
-	p := defaultRetry
+var noWait = func() downloadPolicy {
+	p := defaultDownloads
 	p.backoff = 0
 	return p
 }()
@@ -71,11 +71,11 @@ func testKey(t *testing.T) (ed25519.PublicKey, ed25519.PrivateKey) {
 	return pub, key
 }
 
-// testSource is a Source fetching from s, retrying with policy.
-func testSource(t *testing.T, s *testServer, key ed25519.PublicKey, policy retryPolicy) *Source {
+// testSource is a Source fetching from s, downloading as policy says.
+func testSource(t *testing.T, s *testServer, key ed25519.PublicKey, policy downloadPolicy) *Source {
 	t.Helper()
 	src := NewSource(Location{URL: s.URL + "/catalog.json", Key: key}, t.TempDir())
-	src.retry = policy
+	src.downloads = policy
 	return src
 }
 
@@ -162,7 +162,7 @@ func TestAReleaseIsFetchedWhenAnAttemptAtItHangs(t *testing.T) {
 		w.Write(archive)
 	})
 	policy := noWait
-	policy.releaseAttempt = 100 * time.Millisecond
+	policy.release.attempt = 100 * time.Millisecond
 
 	err := testSource(t, s, nil, policy).Fetch(context.Background(), r, t.TempDir())
 
@@ -186,7 +186,7 @@ func TestEndingTheContextStopsFetchingAReleaseAtOnce(t *testing.T) {
 			s := server(t, func(_ int, w http.ResponseWriter, req *http.Request) {
 				tc.respond(w, req)
 			})
-			policy := defaultRetry
+			policy := defaultDownloads
 			policy.backoff = time.Hour
 			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 			defer cancel()
@@ -194,8 +194,8 @@ func TestEndingTheContextStopsFetchingAReleaseAtOnce(t *testing.T) {
 
 			err := testSource(t, s, nil, policy).Fetch(ctx, r, t.TempDir())
 
-			if err == nil {
-				t.Fatal("Fetch succeeded")
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("Fetch = %v, want the context's error", err)
 			}
 			if took := time.Since(start); took > 5*time.Second {
 				t.Fatalf("Fetch took %s after its context ended", took)
@@ -286,6 +286,97 @@ func TestAReleaseDownloadThatKeepsFailingTemporarilyIsGivenUpOnAfterAFewAttempts
 	}
 	if got := s.Requests(); got != 3 {
 		t.Fatalf("downloaded %d times, want 3", got)
+	}
+}
+
+func TestADownloadThatKeepsHangingIsGivenUpOnWhenItsTimeRunsOut(t *testing.T) {
+	_, r := testRelease(t)
+	s := server(t, func(_ int, _ http.ResponseWriter, req *http.Request) {
+		<-req.Context().Done()
+	})
+	policy := noWait
+	policy.release.attempt = 200 * time.Millisecond
+	policy.release.budget = 300 * time.Millisecond
+	start := time.Now()
+
+	err := testSource(t, s, nil, policy).Fetch(context.Background(), r, t.TempDir())
+
+	if took := time.Since(start); took > 2*time.Second {
+		t.Fatalf("Fetch took %s, though its download may take 300ms", took)
+	}
+	if err == nil || !strings.Contains(err.Error(), "it took longer than 300ms (tried 2 times)") {
+		t.Fatalf("Fetch = %v, want an error saying it took longer than 300ms, over 2 attempts", err)
+	}
+	if got := s.Requests(); got != 2 {
+		t.Fatalf("downloaded %d times, want 2: the second attempt cut short when the time ran out", got)
+	}
+}
+
+func TestADownloadWhoseTimeRunsOutWhileWaitingToTryAgainSaysSo(t *testing.T) {
+	_, r := testRelease(t)
+	s := server(t, func(_ int, w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	})
+	policy := defaultDownloads
+	policy.backoff = time.Hour
+	policy.release.budget = 200 * time.Millisecond
+
+	err := testSource(t, s, nil, policy).Fetch(context.Background(), r, t.TempDir())
+
+	want := "503 Service Unavailable (tried once, until it took longer than 200ms)"
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("Fetch = %v, want an error saying %q", err, want)
+	}
+}
+
+func TestTheSignatureIsGivenItsOwnTimeAfterTheCatalogTookMostOfIts(t *testing.T) {
+	pub, key := testKey(t)
+	data := []byte(`{"format": 1, "plugins": []}`)
+	var catalogRequests, sigRequests atomic.Int32
+	s := server(t, func(_ int, w http.ResponseWriter, req *http.Request) {
+		switch req.URL.Path {
+		case "/catalog.json":
+			if catalogRequests.Add(1) == 1 {
+				<-req.Context().Done()
+				return
+			}
+			w.Write(data)
+		case "/catalog.json" + SignatureSuffix:
+			if sigRequests.Add(1) == 1 {
+				<-req.Context().Done()
+				return
+			}
+			w.Write(Sign(data, key))
+		}
+	})
+	policy := noWait
+	policy.catalog.attempt, policy.catalog.budget = 300*time.Millisecond, 500*time.Millisecond
+	policy.signature.attempt, policy.signature.budget = 300*time.Millisecond, 500*time.Millisecond
+
+	_, err := testSource(t, s, pub, policy).Load(context.Background())
+
+	if err != nil {
+		t.Fatalf("Load after an attempt at both the Catalog and its signature hung: %v", err)
+	}
+}
+
+func TestTheFirstAttemptAtADownloadMayTakeAsLongAsTheWholeDownloadCouldBefore(t *testing.T) {
+	// Before Laneway tried a download again, the Catalog (with its
+	// signature) could take 15 seconds and a release 2 minutes.
+	for _, tc := range []struct {
+		name   string
+		dl     download
+		before time.Duration
+	}{
+		{"Catalog", defaultDownloads.catalog, 15 * time.Second},
+		{"release", defaultDownloads.release, 2 * time.Minute},
+	} {
+		if tc.dl.attempt < tc.before {
+			t.Errorf("the first attempt at a %s may take %s, want at least %s", tc.name, tc.dl.attempt, tc.before)
+		}
+		if tc.dl.budget <= tc.dl.attempt {
+			t.Errorf("a %s download may take %s, leaving no time to try again after an attempt that takes %s", tc.name, tc.dl.budget, tc.dl.attempt)
+		}
 	}
 }
 

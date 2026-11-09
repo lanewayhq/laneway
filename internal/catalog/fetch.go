@@ -46,37 +46,41 @@ var DefaultKey = func() ed25519.PublicKey {
 	return key
 }()
 
-// Limits on what is downloaded, so a misbehaving server can't fill the disk
-// or memory.
-const (
-	maxCatalog = 8 << 20
-	maxRelease = 128 << 20
-)
+// download is how Laneway downloads one kind of file: at most limit bytes,
+// so a misbehaving server can't fill the disk or memory, each attempt
+// taking at most attempt, and every attempt and the waits between them
+// together at most budget. Linking waits for them.
+type download struct {
+	limit   int64
+	attempt time.Duration
+	budget  time.Duration
+}
 
-// Timeouts for downloads, every attempt included: Linking waits for them.
-const (
-	catalogTimeout = 20 * time.Second
-	releaseTimeout = 3 * time.Minute
-)
-
-// retryPolicy is how many times, and how patiently, a download is tried
-// when it fails temporarily, such as with a 5xx status (see temporary).
-type retryPolicy struct {
+// downloadPolicy is how Laneway downloads the Catalog, its signature and
+// releases, and how many times, and how patiently, it tries one again when
+// it fails temporarily, such as with a 5xx status (see temporary).
+type downloadPolicy struct {
 	// attempts is how many times a download is tried at most.
 	attempts int
 	// backoff is the wait before the second attempt, doubled before each
 	// one after.
 	backoff time.Duration
-	// catalogAttempt and releaseAttempt are how long one attempt at
-	// downloading the Catalog (or its signature) and a release may take,
-	// so a hung attempt leaves time for another.
-	catalogAttempt, releaseAttempt time.Duration
+
+	catalog, signature, release download
 }
 
-// defaultRetry tries a download three times, over about three seconds when
-// it fails fast, as GitHub's intermittent 504s do. A hung attempt takes
-// longer, but catalogTimeout and releaseTimeout still bound the whole.
-var defaultRetry = retryPolicy{attempts: 3, backoff: time.Second, catalogAttempt: 5 * time.Second, releaseAttempt: 2 * time.Minute}
+// defaultDownloads tries a download three times, over about three seconds
+// when it fails fast, as GitHub's intermittent 504s do. The first attempt at
+// the Catalog or a release may take as long as the whole download could
+// before Laneway tried one again, and its budget leaves time for another
+// attempt after one that hangs.
+var defaultDownloads = downloadPolicy{
+	attempts:  3,
+	backoff:   time.Second,
+	catalog:   download{limit: 8 << 20, attempt: 15 * time.Second, budget: 30 * time.Second},
+	signature: download{limit: 4 << 10, attempt: 5 * time.Second, budget: 15 * time.Second},
+	release:   download{limit: 128 << 20, attempt: 2 * time.Minute, budget: 3 * time.Minute},
+}
 
 // Location is where the Catalog is fetched from, the key it must be signed
 // with, and the snapshot of it to fall back on. The zero Location is
@@ -96,10 +100,10 @@ type Location struct {
 // Catalog it verified in a directory, so that Laneway still knows what a
 // Project needs when it can't reach the Catalog.
 type Source struct {
-	loc    Location
-	dir    string
-	client *http.Client
-	retry  retryPolicy
+	loc       Location
+	dir       string
+	client    *http.Client
+	downloads downloadPolicy
 }
 
 // cacheFile is the copy of the last Catalog verified, and its signature
@@ -119,7 +123,7 @@ func NewSource(loc Location, dir string) *Source {
 	if loc.Key == nil {
 		loc.Key = DefaultKey
 	}
-	return &Source{loc: loc, dir: dir, client: &http.Client{}, retry: defaultRetry}
+	return &Source{loc: loc, dir: dir, client: &http.Client{}, downloads: defaultDownloads}
 }
 
 // URL is where the Catalog is fetched from.
@@ -151,13 +155,11 @@ func (s *Source) Load(ctx context.Context) (cat *Catalog, err error) {
 }
 
 func (s *Source) fetch(ctx context.Context) (*Catalog, []byte, []byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, catalogTimeout)
-	defer cancel()
-	data, err := s.get(ctx, s.loc.URL, maxCatalog, s.retry.catalogAttempt)
+	data, err := s.get(ctx, s.loc.URL, s.downloads.catalog)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	sig, err := s.get(ctx, s.loc.URL+SignatureSuffix, 4<<10, s.retry.catalogAttempt)
+	sig, err := s.get(ctx, s.loc.URL+SignatureSuffix, s.downloads.signature)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -209,9 +211,7 @@ func (s *Source) Fetch(ctx context.Context, r Release, dir string) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, releaseTimeout)
-	defer cancel()
-	data, err := s.get(ctx, u, maxRelease, s.retry.releaseAttempt)
+	data, err := s.get(ctx, u, s.downloads.release)
 	if err != nil {
 		return err
 	}
@@ -237,33 +237,48 @@ func (s *Source) resolve(ref string) (string, error) {
 	return base.ResolveReference(r).String(), nil
 }
 
-// get downloads u, refusing more than limit bytes. A temporary failure is
-// tried again, as the Source's retry policy says, each attempt taking at
-// most timeout; any other failure, or ctx ending, stops it at once.
-func (s *Source) get(ctx context.Context, u string, limit int64, timeout time.Duration) ([]byte, error) {
-	wait := s.retry.backoff
+// get downloads u as dl says. A temporary failure is tried again, as the
+// Source's policy says, until dl's budget runs out; any other failure, or
+// ctx ending, stops it at once.
+func (s *Source) get(ctx context.Context, u string, dl download) ([]byte, error) {
+	budget, cancel := context.WithTimeoutCause(ctx, dl.budget, errBudgetSpent)
+	defer cancel()
+	wait := s.downloads.backoff
 	for attempt := 1; ; attempt++ {
-		data, err := s.getOnce(ctx, u, limit, timeout)
+		data, err := s.getOnce(budget, u, dl)
 		if err == nil || ctx.Err() != nil || !temporary(err) {
 			return data, err
 		}
-		if attempt >= s.retry.attempts {
-			return nil, fmt.Errorf("%w (tried %d times)", err, attempt)
+		if attempt >= s.downloads.attempts || budget.Err() != nil {
+			return nil, fmt.Errorf("%w (tried %s)", err, times(attempt))
 		}
 		t := time.NewTimer(wait)
 		select {
-		case <-ctx.Done():
+		case <-budget.Done():
 			t.Stop()
-			return nil, err
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return nil, fmt.Errorf("%w (tried %s, until it took longer than %s)", err, times(attempt), dl.budget)
 		case <-t.C:
 		}
 		wait *= 2
 	}
 }
 
-// getOnce is one attempt at get.
-func (s *Source) getOnce(ctx context.Context, u string, limit int64, timeout time.Duration) ([]byte, error) {
-	ctx, cancel := context.WithTimeoutCause(ctx, timeout, errAttemptTimedOut)
+// times is how a give-up error counts n attempts.
+func times(n int) string {
+	if n == 1 {
+		return "once"
+	}
+	return fmt.Sprintf("%d times", n)
+}
+
+// getOnce is one attempt at get. Within ctx, it takes at most dl.attempt,
+// or the time left in dl's budget if that is less: a timeout inside a
+// context ending sooner is that context.
+func (s *Source) getOnce(ctx context.Context, u string, dl download) ([]byte, error) {
+	ctx, cancel := context.WithTimeoutCause(ctx, dl.attempt, errAttemptTimedOut)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
@@ -271,7 +286,7 @@ func (s *Source) getOnce(ctx context.Context, u string, limit int64, timeout tim
 	}
 	res, err := s.client.Do(req)
 	if err != nil {
-		return nil, markIfTemporary(ctx, u, timeout, err)
+		return nil, markIfTemporary(ctx, u, dl, err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
@@ -281,26 +296,33 @@ func (s *Source) getOnce(ctx context.Context, u string, limit int64, timeout tim
 		}
 		return nil, err
 	}
-	data, err := io.ReadAll(io.LimitReader(res.Body, limit+1))
+	data, err := io.ReadAll(io.LimitReader(res.Body, dl.limit+1))
 	if err != nil {
-		return nil, markIfTemporary(ctx, u, timeout, fmt.Errorf("GET %s: %w", u, err))
+		return nil, markIfTemporary(ctx, u, dl, fmt.Errorf("GET %s: %w", u, err))
 	}
-	if int64(len(data)) > limit {
-		return nil, fmt.Errorf("GET %s: it is larger than the %d bytes Laneway accepts", u, limit)
+	if int64(len(data)) > dl.limit {
+		return nil, fmt.Errorf("GET %s: it is larger than the %d bytes Laneway accepts", u, dl.limit)
 	}
 	return data, nil
 }
 
-// errAttemptTimedOut ends an attempt at a download that took too long.
-var errAttemptTimedOut = errors.New("the attempt timed out")
+// errAttemptTimedOut ends an attempt at a download that took too long, and
+// errBudgetSpent a download whose attempts together did.
+var (
+	errAttemptTimedOut = errors.New("the attempt timed out")
+	errBudgetSpent     = errors.New("the download timed out")
+)
 
-// markIfTemporary decides whether err, from an attempt at downloading u
-// that may take timeout, in ctx, is temporary, and marks it so if it is:
-// when the attempt timed out or its connection was dropped (closed before
-// the whole response came, or reset).
-func markIfTemporary(ctx context.Context, u string, timeout time.Duration, err error) error {
-	if context.Cause(ctx) == errAttemptTimedOut {
-		return temporaryError{fmt.Errorf("GET %s: it took longer than %s", u, timeout)}
+// markIfTemporary decides whether err, from an attempt in ctx at
+// downloading u as dl says, is temporary, and marks it so if it is: when
+// the attempt or the whole download timed out, or the attempt's connection
+// was dropped (closed before the whole response came, or reset).
+func markIfTemporary(ctx context.Context, u string, dl download, err error) error {
+	switch context.Cause(ctx) {
+	case errAttemptTimedOut:
+		return temporaryError{fmt.Errorf("GET %s: it took longer than %s", u, dl.attempt)}
+	case errBudgetSpent:
+		return temporaryError{fmt.Errorf("GET %s: it took longer than %s", u, dl.budget)}
 	}
 	if ne, ok := errors.AsType[net.Error](err); ok && ne.Timeout() {
 		return temporaryError{err}
