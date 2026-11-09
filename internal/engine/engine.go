@@ -45,8 +45,11 @@ type Manifest struct {
 	// derived port (see Ports).
 	DefaultVersion string `toml:"default_version" json:"default_version"`
 	// Image is the image repository, fully qualified; the version is its
-	// tag.
-	Image string `toml:"image" json:"image"`
+	// tag. It is "" when Versions maps each version to an image instead.
+	Image string `toml:"image" json:"image,omitempty"`
+	// Versions, if set instead of Image, are the only versions a Service of
+	// the Engine may be at, each with the image it runs (see ImageRef).
+	Versions map[string]Version `toml:"versions" json:"versions,omitempty"`
 	// Port is the Engine's standard TCP port, which is also the port it
 	// listens on inside its container.
 	Port int `toml:"port" json:"port"`
@@ -276,8 +279,12 @@ func (m *Manifest) check() error {
 		return fmt.Errorf("name must be lowercase letters, digits and _, starting with a letter, not %q", m.Name)
 	case m.DefaultVersion == "":
 		return fmt.Errorf("default_version is missing")
-	case m.Image == "":
-		return fmt.Errorf("image is missing: give the image repository, fully qualified, such as \"docker.io/library/redis\"")
+	case m.Image == "" && len(m.Versions) == 0:
+		return fmt.Errorf("image is missing: give the image repository, fully qualified, such as \"docker.io/library/redis\", " +
+			"or map each version to an image in [versions]")
+	case m.Image != "" && len(m.Versions) > 0:
+		return fmt.Errorf("image and [versions] are both set: give either the image repository, whose tags are the versions, " +
+			"or [versions], mapping each version to an image")
 	case m.Port < 1 || m.Port > 65535:
 		return fmt.Errorf("port must be the Engine's TCP port, 1 to 65535, not %d", m.Port)
 	case m.WebPort < 0 || m.WebPort > 65535:
@@ -286,6 +293,9 @@ func (m *Manifest) check() error {
 		return fmt.Errorf("data_dir must be an absolute path in the container, not %q", m.DataDir)
 	case len(m.Ready) == 0:
 		return fmt.Errorf("ready is missing: add a [[ready]] probe saying when the Engine is ready for clients")
+	}
+	if err := m.checkVersions(); err != nil {
+		return err
 	}
 	for _, k := range slices.Sorted(maps.Keys(m.Env)) {
 		if err := checkPlaceholders("env."+k, []string{m.Env[k]}, containerPlaceholders); err != nil {
