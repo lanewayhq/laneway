@@ -28,9 +28,7 @@ const ManifestFile = "plugin.json"
 const DefaultModule = "plugin.wasm"
 
 // Manifest is what a Plugin declares in plugin.json: who it is, the Plugin
-// API it targets, what it adds and what it may do. Later Plugin API versions
-// add what Plugins can add (Integrations, Engines, Generators, commands,
-// hooked events) as more fields here.
+// API it targets, what it adds and what it may do.
 type Manifest struct {
 	// Name identifies the Plugin, such as "procfile": lowercase letters,
 	// digits and dashes, starting with a letter.

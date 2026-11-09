@@ -80,7 +80,7 @@ func (h *Host) Generated(name, root string) ([]fileblock.File, error) {
 func (h *Host) generate(name, root string) ([]fileblock.Block, []string, error) {
 	p, ok := h.lookup(name)
 	if !ok {
-		return nil, nil, fmt.Errorf("%w %s: add it with `lane plugin add <dir>`", ErrUnknownPlugin, name)
+		return nil, nil, fmt.Errorf("%w %s: add it with `lane plugin add <dir|github.com/<owner>/<repo>>`", ErrUnknownPlugin, name)
 	}
 	if len(p.Generators) == 0 {
 		return nil, nil, fmt.Errorf("Plugin %s has no Generators, so there is nothing to generate", name)

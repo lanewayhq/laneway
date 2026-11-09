@@ -34,7 +34,7 @@ func (h *Host) turnedOn(layers []config.Layer) ([]string, error) {
 		p, ok := h.lookup(name)
 		switch {
 		case !ok:
-			return nil, fmt.Errorf("%s: plugins names %s, but no Plugin %s is installed; add it with `lane plugin add --global <dir>`, or remove it from plugins",
+			return nil, fmt.Errorf("%s: plugins names %s, but no Plugin %s is installed; add it with `lane plugin add --global <dir|github.com/<owner>/<repo>>`, or remove it from plugins",
 				h.opts.GlobalConfig, name, name)
 		case !p.Global:
 			return nil, fmt.Errorf("%s: plugins names %s, but Plugin %s wasn't added with --global, so it can't be turned on in every Project; "+

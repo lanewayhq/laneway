@@ -15,7 +15,7 @@ func (h *Host) Remove(name string) (Plugin, error) {
 	defer h.mu.Unlock()
 	p, ok := h.plugins[name]
 	if !ok {
-		return Plugin{}, fmt.Errorf("no Plugin %s is installed", name)
+		return Plugin{}, fmt.Errorf("no Plugin named %s is installed", name)
 	}
 	// Move it aside first, so a failure part way through never leaves a
 	// half-removed Plugin where Open would load it.
