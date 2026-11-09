@@ -20,10 +20,26 @@ type worktreeConfig struct {
 }
 
 // resolveWorktree resolves the Runtimes and the config of the Worktree in
-// dir (through mise, else PATH; see package runtimes) and logs any Runtime
-// and Test Database warnings.
+// dir (see resolveRuntimes) and logs any Runtime and Test Database
+// warnings.
 // Like the config, Runtimes are resolved on every start.
 func (d *Daemon) resolveWorktree(ctx context.Context, dir string) (worktreeConfig, error) {
+	w, err := d.resolveRuntimes(ctx, dir)
+	if err != nil {
+		return worktreeConfig{}, err
+	}
+	for _, warning := range w.TestDatabaseWarnings {
+		d.log.Warn("Test Database", "dir", dir, "warning", warning)
+		w.notes = append(w.notes, "Test Database warning: "+warning)
+	}
+	return w, nil
+}
+
+// resolveRuntimes resolves the Runtimes and the config of the Worktree in
+// dir (through mise, else PATH; see package runtimes) and logs any Runtime
+// warnings, such as a PHP without the PDO extension for the Project's
+// database engine. Its notes are only those Runtime warnings.
+func (d *Daemon) resolveRuntimes(ctx context.Context, dir string) (worktreeConfig, error) {
 	env := runtimes.Environ(ctx, dir, d.cfg.Env)
 	res, err := d.plugins.ResolveDir(dir, env.Find(ctx)...)
 	if err != nil {
@@ -33,10 +49,6 @@ func (d *Daemon) resolveWorktree(ctx context.Context, dir string) (worktreeConfi
 	for _, warning := range append(env.Warnings, res.RuntimeWarnings...) {
 		d.log.Warn("Runtime", "dir", dir, "warning", warning)
 		w.notes = append(w.notes, "Runtime warning: "+warning.String())
-	}
-	for _, warning := range res.TestDatabaseWarnings {
-		d.log.Warn("Test Database", "dir", dir, "warning", warning)
-		w.notes = append(w.notes, "Test Database warning: "+warning)
 	}
 	return w, nil
 }

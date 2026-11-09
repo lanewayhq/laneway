@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/lanewayhq/laneway/internal/gitfixture"
@@ -200,6 +201,31 @@ func TestGenerateNamesAPluginThatIsntInstalled(t *testing.T) {
 	}
 	assertContains(t, res.Stderr, "cursor")
 	assertContains(t, res.Stderr, "lane plugin add")
+}
+
+func TestGenerateNamesTheUnknownFlagOrExtraArgumentAfterThePlugin(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	repo := gitfixture.New(t, "generate-after-name")
+
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"generate", "claude", "--yes"}, "flag provided but not defined: -yes"},
+		{[]string{"generate", "claude", "-bogus"}, "flag provided but not defined: -bogus"},
+		{[]string{"generate", "claude", "t3"}, `unexpected argument "t3"`},
+		{[]string{"generate"}, "name one Plugin"},
+	} {
+		res := d.RunCLI(repo.Dir, tc.args...)
+		if res.ExitCode != 2 {
+			t.Errorf("lane %s exited %d, want 2:\n%s", strings.Join(tc.args, " "), res.ExitCode, res.Output())
+		}
+		assertContains(t, res.Stderr, tc.want)
+	}
+	if out := repo.Git("status", "--porcelain"); out != "" {
+		t.Errorf("usage errors changed files:\n%s", out)
+	}
 }
 
 func TestGenerateRunsTheHarnessGeneratorsLikeHarnessAdd(t *testing.T) {

@@ -32,6 +32,7 @@ func TestDoctorReportsAHealthySetup(t *testing.T) {
 	assertCheck(t, res.Stdout, "ok", "CA in "+platformtest.LinuxStore, "trusted")
 	assertCheck(t, res.Stdout, "ok", "container engine", "podman")
 	assertCheck(t, res.Stdout, "ok", "mise", "2026.10.4")
+	assertNotContains(t, res.Stdout, "database driver")
 }
 
 func TestDoctorFailsWhenTheDaemonIsNotRunning(t *testing.T) {
@@ -188,4 +189,35 @@ func TestDoctorChecksEveryServicePortIsLaneways(t *testing.T) {
 
 	assertCheck(t, res.Stdout, "FAIL", "port 6379 (redis:7)", "in use by redis-server (pid 4545)")
 	assertCheck(t, res.Stdout, "ok", "port 1025 (mailpit:v1)", "bound by Laneway")
+}
+
+func TestDoctorWarnsWhenPHPLacksTheDriverForTheProjectsDatabase(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	php := testkit.StubPHP(t, d.Bin, "8.5.0", "Core", "PDO")
+	repo := gitfixture.New(t, "doctor-driver").
+		WriteFile("composer.json", `{"require": {"php": "^8.2"}}`).
+		WriteFile("laneway.toml", "[database]\nengine = \"sqlite\"\npath = \"database/database.sqlite\"\n").
+		Commit("a PHP Project on SQLite")
+
+	res := d.RunCLI(repo.Dir, "doctor")
+
+	assertCheck(t, res.Stdout, "warn", "php", "the Project's database is sqlite, but PHP 8.5.0 ("+php+") doesn't load pdo_sqlite")
+	assertContains(t, res.Stdout, "fix: install or enable the pdo_sqlite extension for that PHP")
+	assertNotContains(t, res.Stdout, "database driver")
+}
+
+func TestDoctorSaysItSkippedTheDatabaseDriverCheckWhenTheConfigCannotBeResolved(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	testkit.StubPHP(t, d.Bin, "8.5.0", "Core", "PDO")
+	repo := gitfixture.New(t, "doctor-driver-skipped").
+		WriteFile("composer.json", `{"require": {"php": "^8.2"}}`).
+		WriteFile("laneway.toml", "[database]\nengine = \"sqlite\"\npath = 42\n").
+		Commit("a PHP Project whose config is broken")
+
+	res := d.RunCLI(repo.Dir, "doctor")
+
+	assertCheck(t, res.Stdout, "warn", "database driver", "skipped: can't resolve the Project's config")
+	assertContains(t, res.Stdout, "laneway.toml")
 }

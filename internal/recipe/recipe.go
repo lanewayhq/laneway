@@ -629,7 +629,7 @@ func Resolve(in Input) (Resolved, error) {
 		res.Services = append(res.Services, Service{Engine: engine, Version: services[engine]})
 	}
 	if in.Runtimes != nil {
-		res.RuntimeWarnings = runtimes.Check(in.Dir, in.Runtimes)
+		res.RuntimeWarnings = runtimes.Check(in.Dir, in.Runtimes, res.Database.Engine)
 	}
 	return res, nil
 }
