@@ -53,10 +53,12 @@ func realEngineDaemon(t *testing.T, engine *container.Docker, opts ...testkit.Op
 }
 
 // removeContainer removes a Service's container and volume when the test
-// ends (after the daemon has stopped it).
+// ends (after the daemon has stopped it). The minute leaves room for all of
+// Remove's attempts when rootless Podman can't stop the container (about 15s
+// each).
 func removeContainer(t *testing.T, engine *container.Docker, name string) {
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
 		if err := engine.Remove(ctx, name, name); err != nil {
 			t.Errorf("removing container %s: %v", name, err)

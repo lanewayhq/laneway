@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -28,7 +30,7 @@ func (f *fakeAPI) seen() []string {
 
 func startFakeAPI(t *testing.T, handle func(w http.ResponseWriter, call string)) (*Docker, *fakeAPI) {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "engine")
+	dir, err := os.MkdirTemp("", "laneway-test-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,10 +72,12 @@ func fastRemoveRetries(t *testing.T) {
 	t.Cleanup(func() { removeRetryDelay = old })
 }
 
-func TestRemoveKillsAndRetriesWhenTheContainerCouldNotBeStopped(t *testing.T) {
-	fastRemoveRetries(t)
+// stopFailsOnce is an engine whose first delete of container svc fails
+// because Podman couldn't stop it, whose kill of svc answers killStatus, and
+// which answers everything else with 204.
+func stopFailsOnce(killStatus int) func(w http.ResponseWriter, call string) {
 	deletes := 0
-	engine, api := startFakeAPI(t, func(w http.ResponseWriter, call string) {
+	return func(w http.ResponseWriter, call string) {
 		switch call {
 		case "DELETE /containers/svc":
 			deletes++
@@ -82,42 +86,36 @@ func TestRemoveKillsAndRetriesWhenTheContainerCouldNotBeStopped(t *testing.T) {
 				return
 			}
 			answer(w, http.StatusNoContent, "")
+		case "POST /containers/svc/kill":
+			answer(w, killStatus, "")
 		default:
 			answer(w, http.StatusNoContent, "")
 		}
-	})
+	}
+}
+
+func TestRemoveKillsAndRetriesWhenTheContainerCouldNotBeStopped(t *testing.T) {
+	fastRemoveRetries(t)
+	engine, api := startFakeAPI(t, stopFailsOnce(http.StatusNoContent))
 
 	if err := engine.Remove(context.Background(), "svc", "vol"); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
 	want := []string{"DELETE /containers/svc", "POST /containers/svc/kill", "DELETE /containers/svc", "DELETE /volumes/vol"}
-	if got := api.seen(); strings.Join(got, "\n") != strings.Join(want, "\n") {
+	if got := api.seen(); !slices.Equal(got, want) {
 		t.Fatalf("requests = %q, want %q", got, want)
 	}
 }
 
 func TestRemoveIgnoresAKillOfAContainerThatIsNoLongerRunning(t *testing.T) {
 	fastRemoveRetries(t)
-	for _, kill := range []int{http.StatusNotFound, http.StatusConflict} {
-		deletes := 0
-		engine, _ := startFakeAPI(t, func(w http.ResponseWriter, call string) {
-			switch call {
-			case "DELETE /containers/svc":
-				deletes++
-				if deletes == 1 {
-					answer(w, http.StatusInternalServerError, podmanStuckStop)
-					return
-				}
-				answer(w, http.StatusNoContent, "")
-			case "POST /containers/svc/kill":
-				answer(w, kill, "container svc is not running")
-			default:
-				answer(w, http.StatusNoContent, "")
+	for _, killStatus := range []int{http.StatusNotFound, http.StatusConflict} {
+		t.Run(strconv.Itoa(killStatus), func(t *testing.T) {
+			engine, _ := startFakeAPI(t, stopFailsOnce(killStatus))
+			if err := engine.Remove(context.Background(), "svc", ""); err != nil {
+				t.Errorf("Remove with kill answering HTTP %d: %v", killStatus, err)
 			}
 		})
-		if err := engine.Remove(context.Background(), "svc", ""); err != nil {
-			t.Errorf("Remove with kill answering HTTP %d: %v", kill, err)
-		}
 	}
 }
 
