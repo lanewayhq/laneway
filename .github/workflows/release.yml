@@ -40,7 +40,7 @@ jobs:
             CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath \
               -ldflags "-s -w -X github.com/lanewayhq/laneway/internal/cli.version=$GITHUB_REF_NAME" \
               -o "$dir/lane" ./cmd/lane
-            cp README.md "$dir/"
+            cp README.md LICENSE "$dir/"
             tar -czf "dist/$dir.tar.gz" "$dir"
           done
           (cd dist && sha256sum *.tar.gz > SHA256SUMS)

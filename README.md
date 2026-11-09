@@ -72,3 +72,7 @@ LANEWAY_SLOW=1 go test ./e2e -run RealContainerEngine      # slow tier: real Doc
 ```
 
 Issues and pull requests: [github.com/lanewayhq/laneway](https://github.com/lanewayhq/laneway).
+
+## License
+
+Laneway is licensed under the [Apache License 2.0](LICENSE).
