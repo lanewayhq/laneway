@@ -35,7 +35,11 @@ func runInit(ctx context.Context, env Env, args []string) error {
 	}
 	path := filepath.Join(checkout.Dir, config.FileName)
 
-	daemon, err := fetchProjectPlugins(ctx, env, checkout.Dir)
+	command := "lane init"
+	if *force {
+		command += " --force"
+	}
+	daemon, err := fetchProjectPlugins(ctx, env, checkout.Dir, command)
 	if err != nil {
 		return err
 	}

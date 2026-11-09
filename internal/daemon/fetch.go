@@ -28,7 +28,11 @@ func (d *Daemon) fetchPlugins(ctx context.Context, req api.FetchPluginsRequest) 
 	if req.Name != "" {
 		return d.fetchNamedPlugin(ctx, req.Name, checkout.MainDir)
 	}
-	fetched, err := d.fetchCatalogPlugins(ctx, checkout.MainDir, remedyLink)
+	remedy := remedyLink
+	if req.Command != "" {
+		remedy = "run `" + req.Command + "` again"
+	}
+	fetched, err := d.fetchCatalogPlugins(ctx, checkout.MainDir, remedy)
 	if err != nil {
 		return api.FetchPluginsResponse{}, err
 	}

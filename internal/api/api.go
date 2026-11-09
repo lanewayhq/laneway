@@ -572,6 +572,10 @@ type FetchPluginsRequest struct {
 	// config's version pins apply.
 	Dir  string `json:"dir"`
 	Name string `json:"name,omitempty"`
+	// Command is the command asking, such as `lane doctor`: what Laneway
+	// couldn't fetch says to run it again once Laneway can reach the
+	// Catalog. "" is `lane link`.
+	Command string `json:"command,omitempty"`
 }
 
 // FetchPluginsResponse is what POST /v1/plugins/fetch fetched.

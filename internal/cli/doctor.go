@@ -179,13 +179,15 @@ func checkProjectPlugins(ctx context.Context, r *report, env Env, dir string) {
 	if err != nil {
 		return
 	}
-	res, err := c.FetchPlugins(ctx, api.FetchPluginsRequest{Dir: dir})
+	res, err := c.FetchPlugins(ctx, api.FetchPluginsRequest{Dir: dir, Command: "lane doctor"})
 	var apiErr *api.Error
 	switch {
 	case errors.Is(err, client.ErrDaemonNotRunning), errors.As(err, &apiErr) && apiErr.Code == api.CodeNotGitRepo:
 		return
 	case err != nil:
-		r.check(statusWarn, "Plugins", err.Error(), "once Laneway can reach the Catalog, run `lane doctor` again")
+		// It says what to do, such as to run `lane doctor` again once
+		// Laneway can reach the Catalog.
+		r.check(statusWarn, "Plugins", err.Error(), "")
 		return
 	}
 	for _, w := range res.Warnings {

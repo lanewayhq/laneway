@@ -321,3 +321,22 @@ func TestLinkingOfflineOnAFreshInstallFailsNamingThePluginsTheCatalogSnapshotInL
 		t.Fatalf("the Project was Linked anyway:\n%s", out)
 	}
 }
+
+func TestLaneDoctorAndLaneInitOfflineSayToRunThemAgainNotLaneLink(t *testing.T) {
+	t.Parallel()
+	cat := testkit.NewCatalog(t)
+	cat.Publish(testkit.Plugin(t, "kv"))
+	d := catalogDaemon(t, cat, cat.SnapshotOption()) // never fetched the Catalog
+	cat.Offline()
+	repo := serviceProject(t, "kv-offline-commands", `kv = "1"`, "")
+
+	doctor := d.RunCLI(repo.Dir, "doctor").Stdout
+	initForce := d.RunCLI(repo.Dir, "init", "--force").Stderr
+
+	assertContains(t, doctor, "this Project needs Plugins from the Catalog that Laneway couldn't fetch: kv")
+	assertContains(t, doctor, "run `lane doctor` again")
+	assertNotContains(t, doctor, "run `lane link` again")
+	assertContains(t, initForce, "this Project needs Plugins from the Catalog that Laneway couldn't fetch: kv")
+	assertContains(t, initForce, "run `lane init --force` again")
+	assertNotContains(t, initForce, "run `lane link` again")
+}

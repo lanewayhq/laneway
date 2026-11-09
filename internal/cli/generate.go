@@ -112,13 +112,14 @@ func printFetched(env Env, res api.FetchPluginsResponse) {
 // fetchProjectPlugins asks the daemon to install the Catalog Plugins the
 // Project in dir needs and doesn't have yet, as Linking it would, and shows
 // what it fetched. It reports whether the daemon was there to ask: without
-// it, commands go on with the Plugins installed.
-func fetchProjectPlugins(ctx context.Context, env Env, dir string) (bool, error) {
+// it, commands go on with the Plugins installed. command is the command
+// asking, which what Laneway couldn't fetch says to run again.
+func fetchProjectPlugins(ctx context.Context, env Env, dir, command string) (bool, error) {
 	c, err := apiClient(env)
 	if err != nil {
 		return false, err
 	}
-	res, err := c.FetchPlugins(ctx, api.FetchPluginsRequest{Dir: dir})
+	res, err := c.FetchPlugins(ctx, api.FetchPluginsRequest{Dir: dir, Command: command})
 	if errors.Is(err, client.ErrDaemonNotRunning) {
 		return false, nil
 	}
