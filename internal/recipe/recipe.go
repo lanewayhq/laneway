@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/detect"
 	"github.com/lanewayhq/laneway/internal/runtimes"
 	"github.com/lanewayhq/laneway/internal/service"
 )
@@ -40,8 +41,8 @@ type Input struct {
 type Recipe interface {
 	// Name identifies the Recipe, such as "laravel".
 	Name() string
-	// Detect reports whether the Project in dir is this Recipe's kind.
-	Detect(dir string) bool
+	// Detection is the rule a Project of this Recipe's kind matches.
+	Detection() detect.Rule
 	// Defaults is the bottom config layer for the Project in dir.
 	Defaults(dir string) (config.Layer, error)
 }
@@ -70,9 +71,18 @@ type Resolved struct {
 	// Recipe is the name of the Recipe that detected the Project; "" if
 	// none did.
 	Recipe string
+	// RecipeRule is the part of the Recipe's detection rule the Project
+	// matched, described for people, such as "artisan exists"; "" with
+	// Recipe.
+	RecipeRule string
 	// Integrations are the names of the Integrations that detected the
 	// Project, in the order their layers apply (by name); nil if none did.
 	Integrations []string
+	// IntegrationRules are, by Integration name, the part of each detected
+	// Integration's detection rule the Project matched, described for
+	// people, such as "package.json depends on vite"; nil with
+	// Integrations.
+	IntegrationRules map[string]string
 	// Name is the configured Project name; "" means use the directory name.
 	Name string
 	// Processes are the enabled Processes, sorted by name.
@@ -345,23 +355,24 @@ func Resolve(in Input) (Resolved, error) {
 	var layers []config.Layer // the Recipe's, then the Integrations', then in.Layers
 	var detected Recipe
 	for _, r := range in.Recipes {
-		if !r.Detect(in.Dir) {
+		matched, ok := r.Detection().Match(in.Dir)
+		if !ok {
 			continue
 		}
 		defaults, err := r.Defaults(in.Dir)
 		if err != nil {
 			return Resolved{}, err
 		}
-		res.Recipe, detected = r.Name(), r
+		res.Recipe, res.RecipeRule, detected = r.Name(), matched, r
 		layers = append(layers, defaults)
 		break
 	}
 	recipeLayers := len(layers)
-	integrations, names, err := detectIntegrations(in.Dir, in.Integrations)
+	integrations, names, rules, err := detectIntegrations(in.Dir, in.Integrations)
 	if err != nil {
 		return Resolved{}, err
 	}
-	res.Integrations = names
+	res.Integrations, res.IntegrationRules = names, rules
 	if err := checkIntegrations(integrations, in.Layers); err != nil {
 		return Resolved{}, err
 	}

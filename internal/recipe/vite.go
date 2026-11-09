@@ -1,11 +1,8 @@
 package recipe
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
-
 	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/detect"
 )
 
 // Vite is the vite Integration: a Project whose package.json depends on
@@ -16,14 +13,13 @@ type Vite struct{}
 
 func (Vite) Name() string { return "vite" }
 
-func (Vite) Detect(dir string) bool {
-	deps := packageDependencies(dir)
-	return deps["vite"] || deps["laravel-vite-plugin"]
+func (Vite) Detection() detect.Rule {
+	return detect.Rule{Any: []detect.Rule{{Package: "vite"}, {Package: "laravel-vite-plugin"}}}
 }
 
 func (Vite) Defaults(dir string) (config.Layer, error) {
 	command := viteCommand
-	if packageDependencies(dir)["laravel-vite-plugin"] {
+	if detect.Packages(dir)["laravel-vite-plugin"] {
 		command = laravelViteCommand
 	}
 	return config.Layer{Source: "the vite Integration", Processes: map[string]config.ProcessLayer{
@@ -47,27 +43,3 @@ const viteCommand = "node_modules/.bin/vite --config {vite_config} --host 127.0.
 //   - rm -f public/hot: the plugin deletes it on a normal exit only; one a
 //     killed Vite left behind would point pages at a dead server.
 const laravelViteCommand = "rm -f public/hot; LARAVEL_BYPASS_ENV_CHECK=1 " + viteCommand
-
-// packageDependencies are the packages dir's package.json depends on, in
-// dependencies or devDependencies; none without a readable package.json.
-func packageDependencies(dir string) map[string]bool {
-	data, err := os.ReadFile(filepath.Join(dir, "package.json"))
-	if err != nil {
-		return nil
-	}
-	var pkg struct {
-		Dependencies    map[string]any `json:"dependencies"`
-		DevDependencies map[string]any `json:"devDependencies"`
-	}
-	if json.Unmarshal(data, &pkg) != nil {
-		return nil
-	}
-	deps := map[string]bool{}
-	for name := range pkg.Dependencies {
-		deps[name] = true
-	}
-	for name := range pkg.DevDependencies {
-		deps[name] = true
-	}
-	return deps
-}

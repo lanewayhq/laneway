@@ -51,9 +51,16 @@ type Info struct {
 	// Recipe is the name of the Recipe that recognised the Project, such
 	// as "laravel"; "" if none did.
 	Recipe string `json:"recipe"`
+	// RecipeRule is the part of the Recipe's detection rule the Project
+	// matched, described for people, such as "artisan exists"; "" with
+	// Recipe.
+	RecipeRule string `json:"recipeRule"`
 	// Integrations are the names of the Integrations the Project uses, such
 	// as "vite", in the order their config applies.
 	Integrations []string `json:"integrations"`
+	// IntegrationRules are, in Integrations' order, each Integration with
+	// the part of its detection rule the Project matched.
+	IntegrationRules []InfoIntegrationRule `json:"integrationRules"`
 	// ConfigError is why the Worktree's laneway.toml or laneway.local.toml
 	// can't be used, naming the file and key; "" if they can. While it is
 	// set, Processes and Services are empty.
@@ -159,4 +166,14 @@ type InfoService struct {
 	// Error says why the Service can't be used (Laneway can't listen on
 	// its port, or its last start failed); else "".
 	Error string `json:"error"`
+}
+
+// InfoIntegrationRule is an Integration the Project uses with why: the part
+// of the Integration's detection rule the Project matched.
+type InfoIntegrationRule struct {
+	// Name is the Integration's name, such as "vite".
+	Name string `json:"name"`
+	// Rule is the part of its detection rule the Project matched,
+	// described for people, such as "package.json depends on vite".
+	Rule string `json:"rule"`
 }

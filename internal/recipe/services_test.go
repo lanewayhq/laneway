@@ -1,13 +1,13 @@
 package recipe_test
 
 import (
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/detect"
 	"github.com/lanewayhq/laneway/internal/recipe"
 )
 
@@ -17,10 +17,7 @@ type servicesStack struct{}
 
 func (servicesStack) Name() string { return "services-stack" }
 
-func (servicesStack) Detect(dir string) bool {
-	_, err := os.Stat(filepath.Join(dir, "services-stack"))
-	return err == nil
-}
+func (servicesStack) Detection() detect.Rule { return detect.Rule{File: "services-stack"} }
 
 func (servicesStack) Defaults(dir string) (config.Layer, error) {
 	return config.ParseLayer("the services-stack Recipe", []byte("[services]\nredis = \"7\"\n"))

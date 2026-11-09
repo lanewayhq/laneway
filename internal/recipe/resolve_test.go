@@ -1,7 +1,6 @@
 package recipe_test
 
 import (
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -9,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/config"
+	"github.com/lanewayhq/laneway/internal/detect"
 	"github.com/lanewayhq/laneway/internal/recipe"
 )
 
@@ -31,10 +31,7 @@ type fixtureStack struct{}
 
 func (fixtureStack) Name() string { return "fixture-stack" }
 
-func (fixtureStack) Detect(dir string) bool {
-	_, err := os.Stat(filepath.Join(dir, "fixture-stack"))
-	return err == nil
-}
+func (fixtureStack) Detection() detect.Rule { return detect.Rule{File: "fixture-stack"} }
 
 func (fixtureStack) Defaults(dir string) (config.Layer, error) {
 	return config.ParseLayer("the fixture-stack Recipe", []byte(`
@@ -338,7 +335,7 @@ func TestTheResolvedConfigWrittenAsALayerResolvesToItself(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				again.Recipe, again.Warnings = res.Recipe, res.Warnings
+				again.Recipe, again.RecipeRule, again.Warnings = res.Recipe, res.RecipeRule, res.Warnings
 				if !reflect.DeepEqual(again, res) {
 					t.Errorf("with Recipes %v, the written config\n%s\nresolves to\n  %+v\nwant\n  %+v", recipes, buf.String(), again, res)
 				}
