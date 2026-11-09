@@ -224,10 +224,10 @@ func (c *Client) AddPlugin(ctx context.Context, req api.AddPluginRequest) (api.A
 	return res, err
 }
 
-// UpdatePlugin installs what the installed Plugin's source has now, or with
-// req.Preview shows what that would change.
-func (c *Client) UpdatePlugin(ctx context.Context, name string, req api.UpdatePluginRequest) (api.UpdatePluginResponse, error) {
-	var res api.UpdatePluginResponse
+// UpdateHandAdded installs what the source of the Plugin name, added by
+// hand, has now, or with req.Preview shows what that would change.
+func (c *Client) UpdateHandAdded(ctx context.Context, name string, req api.UpdateHandAddedRequest) (api.UpdateHandAddedResponse, error) {
+	var res api.UpdateHandAddedResponse
 	err := c.do(ctx, http.MethodPost, "/v1/plugins/"+url.PathEscape(name)+"/update", req, &res)
 	return res, err
 }

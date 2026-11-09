@@ -496,6 +496,9 @@ type Plugin struct {
 	// Global is true for a machine-wide Plugin (`lane plugin add
 	// --global`), which only personal config turns on.
 	Global bool `json:"global,omitempty"`
+	// Update is the release `lane plugin update` would update it to, if
+	// the Catalog lists a newer one.
+	Update *PluginUpdate `json:"update,omitempty"`
 }
 
 // PluginRecipe is a Recipe a Plugin adds.
@@ -567,18 +570,19 @@ type AddPluginResponse struct {
 	Replaces *Plugin `json:"replaces,omitempty"`
 }
 
-// UpdatePluginRequest is the body of POST /v1/plugins/{plugin}/update:
-// install what the installed Plugin's source has now, such as its GitHub
-// repository's latest release.
-type UpdatePluginRequest struct {
+// UpdateHandAddedRequest is the body of POST /v1/plugins/{plugin}/update:
+// install what the source of a Plugin added by hand (a directory or GitHub
+// repository) has now, such as the repository's latest release. Catalog
+// Plugins are updated with POST /v1/plugins/update instead.
+type UpdateHandAddedRequest struct {
 	// Preview only reads and checks what's there, changing nothing, so the
 	// developer can confirm it first.
 	Preview bool `json:"preview,omitempty"`
 }
 
-// UpdatePluginResponse is the Plugin as updated (or, previewing, as it would
-// be), and as it was.
-type UpdatePluginResponse struct {
+// UpdateHandAddedResponse is the Plugin as updated (or, previewing, as it
+// would be), and as it was.
+type UpdateHandAddedResponse struct {
 	Plugin Plugin `json:"plugin"`
 	Was    Plugin `json:"was"`
 	// UpToDate is true when the source has the version and hash already

@@ -168,24 +168,6 @@ func (c *Catalog) validate() error {
 	return nil
 }
 
-// Latest returns, for each Plugin listed, its latest release that targets
-// apiVersion, the Plugin API version this Laneway speaks, by Plugin name.
-// A Plugin with no such release is left out.
-func (c *Catalog) Latest(apiVersion int) map[string]Release {
-	latest := map[string]Release{}
-	for _, p := range c.Plugins {
-		for _, r := range p.Releases {
-			if r.APIVersion != apiVersion {
-				continue
-			}
-			if best, ok := latest[p.Name]; !ok || compareVersions(r.Version, best.Version) > 0 {
-				latest[p.Name] = r
-			}
-		}
-	}
-	return latest
-}
-
 // version is a release version: dot-separated numbers, maybe with a
 // "-suffix" pre-release, which sorts before the release itself.
 type version struct {

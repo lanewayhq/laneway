@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/lanewayhq/laneway/internal/gitfixture"
@@ -76,7 +77,7 @@ func TestANewGitHubReleaseIsntPickedUpUntilPluginUpdateWhichShowsItsNewHash(t *t
 	for _, want := range []string{
 		"Plugin procfile 0.2.0, from github.com/acme/procfile",
 		"replaces the installed procfile 0.1.0",
-		"SHA-256 " + moduleSHA256(t, old) + " becomes " + moduleSHA256(t, newer),
+		"SHA-256 " + moduleSHA256(t, old) + " → " + moduleSHA256(t, newer),
 		"Update it? [y/N]",
 	} {
 		assertContains(t, declined.Output(), want)
@@ -84,7 +85,7 @@ func TestANewGitHubReleaseIsntPickedUpUntilPluginUpdateWhichShowsItsNewHash(t *t
 	assertLineWith(t, d.MustRunCLI(d.Home, "plugin", "list").Stdout, "procfile", "0.1.0")
 
 	out := d.MustRunCLI(d.Home, "plugin", "update", "--yes", "procfile").Stdout
-	assertContains(t, out, "Updated Plugin procfile to 0.2.0, pinned to SHA-256 "+moduleSHA256(t, newer))
+	assertContains(t, out, "Updated Plugin procfile 0.1.0 → 0.2.0, pinned to SHA-256 "+moduleSHA256(t, newer))
 	assertLineWith(t, d.MustRunCLI(d.Home, "plugin", "list").Stdout, "procfile", "0.2.0", "github.com/acme/procfile")
 	assertContains(t, d.MustRunCLI(d.Home, "plugin", "update", "procfile").Stdout,
 		"Plugin procfile is up to date: 0.2.0, SHA-256 "+moduleSHA256(t, newer))
@@ -196,4 +197,22 @@ func TestUpdatingAMachineWidePluginFromGitHubKeepsItMachineWide(t *testing.T) {
 	d.MustRunCLI(d.Home, "plugin", "update", "--yes", "procfile")
 
 	assertLineWith(t, d.MustRunCLI(d.Home, "plugin", "list").Stdout, "procfile", "(machine-wide)", "0.2.0", "github.com/acme/procfile")
+}
+
+func TestConfigNamingACatalogPluginItsPinsAllowNoReleaseOfSaysSoRatherThanToAddItByHand(t *testing.T) {
+	t.Parallel()
+	d := catalogDaemon(t, fullCatalog(t))
+	repo := gitfixture.New(t, "names-pinned").
+		WriteFile("laneway.toml", "plugins = [\"layers\"]\n\n[plugin_versions]\nlayers = \"^2\"\n").
+		Commit("name a pinned Plugin")
+
+	res := d.RunCLI(repo.Dir, "link", "--yes")
+
+	if res.ExitCode == 0 {
+		t.Fatalf("Linking exited 0:\n%s", res.Output())
+	}
+	assertContains(t, res.Stderr, "layers: no release in the Catalog is allowed by its version pins")
+	if strings.Contains(res.Stderr, "isn't in the Catalog") {
+		t.Errorf("Linking says layers isn't in the Catalog:\n%s", res.Stderr)
+	}
 }

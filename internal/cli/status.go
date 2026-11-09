@@ -23,6 +23,7 @@ func runStatus(ctx context.Context, env Env, args []string) error {
 	}
 	if len(projects) == 0 {
 		fmt.Fprintln(env.Stdout, "No Projects linked yet. Run `lane link` inside a git repository.")
+		printPluginUpdates(ctx, env, c)
 		return nil
 	}
 	tw := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
@@ -50,5 +51,9 @@ func runStatus(ctx context.Context, env Env, args []string) error {
 			fmt.Fprintln(tw)
 		}
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	printPluginUpdates(ctx, env, c)
+	return nil
 }

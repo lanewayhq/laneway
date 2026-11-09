@@ -2,90 +2,177 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/client"
 	"github.com/lanewayhq/laneway/internal/plugin"
 )
 
-// runPluginUpdate installs what the source of a Plugin added by hand has
-// now, such as its GitHub repository's latest release, after showing the
-// new version and hash and what it may do. Without a name, it does so for
-// every Plugin added by hand.
-//
-// A Plugin added by hand is pinned to the hash it had when added: nothing
-// else picks up a change to its source.
+// runPluginUpdate is `lane plugin update [name] [--yes]`: it updates the
+// installed Catalog Plugins (or only name) to the latest release the
+// Catalog lists that every version pin allows. An update that asks for
+// capabilities the installed version doesn't have needs confirming first.
+// Plugins added by hand are updated from where they were added instead (see
+// updateByHand).
 func runPluginUpdate(ctx context.Context, env Env, args []string) error {
-	fs := newFlags(env, "plugin update [name...]")
-	yes := fs.Bool("yes", false, "update without asking to confirm the new version")
-	// The names may come before or after the flags.
+	fs := newFlags(env, "plugin update [name]")
+	yes := fs.Bool("yes", false, "update without asking to confirm new capabilities")
+	// The name may come before or after the flags.
 	if err := fs.Parse(args); err != nil {
 		return parseFlags(fs, args)
 	}
-	var names []string
-	rest := fs.Args()
-	for len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
-		names, rest = append(names, rest[0]), rest[1:]
+	var name string
+	if fs.NArg() > 0 {
+		name = fs.Arg(0)
+		if err := parseFlags(fs, fs.Args()[1:]); err != nil {
+			return err
+		}
 	}
-	if err := parseFlags(fs, rest); err != nil {
-		return err
+	if fs.NArg() > 0 {
+		return usageError{"name at most one Plugin: `lane plugin update [name]`"}
 	}
 	c, err := apiClient(env)
 	if err != nil {
 		return err
 	}
-	if names == nil {
-		plugins, err := c.Plugins(ctx)
-		if err != nil {
-			return err
-		}
-		for _, p := range plugins {
-			if p.Source != plugin.CatalogSource {
-				names = append(names, p.Name)
-			}
-		}
-		if len(names) == 0 {
-			fmt.Fprintln(env.Stdout, "No Plugins added by hand are installed.")
-			return nil
-		}
+	plugins, err := c.Plugins(ctx)
+	if err != nil {
+		return err
 	}
-	var declined []string
-	for _, name := range names {
-		preview, err := c.UpdatePlugin(ctx, name, api.UpdatePluginRequest{Preview: true})
-		if err != nil {
-			return err
-		}
-		if preview.UpToDate {
-			fmt.Fprintf(env.Stdout, "Plugin %s is up to date: %s, SHA-256 %s\n", name, preview.Plugin.Version, orNone(preview.Plugin.SHA256))
+	var fromCatalog, byHand []string
+	for _, p := range plugins {
+		if name != "" && p.Name != name {
 			continue
 		}
-		if err := checkPluginName(preview.Plugin); err != nil {
+		if p.Source == plugin.CatalogSource {
+			fromCatalog = append(fromCatalog, p.Name)
+		} else {
+			byHand = append(byHand, p.Name)
+		}
+	}
+	// A Plugin added by hand is updated from where it was added; the
+	// Catalog is only asked when a Catalog Plugin is installed, or about
+	// a name that isn't, which it refuses.
+	if len(fromCatalog) > 0 || len(byHand) == 0 {
+		if err := updateFromCatalog(ctx, env, c, name, *yes); err != nil {
 			return err
 		}
-		printPlugin(env.Stdout, api.AddPluginResponse{Plugin: preview.Plugin, Replaces: &preview.Was})
-		fmt.Fprintf(env.Stdout, "  SHA-256 %s becomes %s\n", orNone(preview.Was.SHA256), orNone(preview.Plugin.SHA256))
-		if !*yes && !confirm(env, "Update it? [y/N] ") {
-			declined = append(declined, name)
-			continue
-		}
-		res, err := c.UpdatePlugin(ctx, name, api.UpdatePluginRequest{})
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(env.Stdout, "Updated Plugin %s to %s, pinned to SHA-256 %s\n", name, res.Plugin.Version, orNone(res.Plugin.SHA256))
 	}
-	if len(declined) > 0 {
-		return fmt.Errorf("%s wasn't updated; run `lane plugin update --yes %s` to update without asking",
-			andList(declined), strings.Join(declined, " "))
+	return updateByHand(ctx, env, c, byHand, *yes)
+}
+
+// updateFromCatalog updates the installed Catalog Plugins (or only name).
+func updateFromCatalog(ctx context.Context, env Env, c *client.Client, name string, yes bool) error {
+	preview, err := c.UpdatePlugins(ctx, api.UpdatePluginsRequest{Name: name, Preview: true})
+	if err != nil {
+		return err
 	}
+	printUpdateWarnings(env, preview.Warnings)
+	if len(preview.Updates) == 0 {
+		if name != "" {
+			fmt.Fprintf(env.Stdout, "Plugin %s is up to date.\n", name)
+		} else {
+			fmt.Fprintln(env.Stdout, "Every Plugin from the Catalog is up to date.")
+		}
+		return nil
+	}
+	if needsConfirming(preview.Updates) && !yes {
+		printUpdates(env.Stdout, preview.Updates)
+		if !confirm(env, "Update? [y/N] ") {
+			return errors.New("nothing was updated; run `lane plugin update --yes` to update without asking")
+		}
+	}
+	res, err := c.UpdatePlugins(ctx, api.UpdatePluginsRequest{Name: name, Confirmed: preview.Updates})
+	if err != nil {
+		return err
+	}
+	printUpdateWarnings(env, res.Warnings)
+	for _, u := range res.Updates {
+		fmt.Fprintf(env.Stdout, "Updated Plugin %s %s → %s\n", u.Name, u.From, u.To)
+	}
+	printOutOfDate(env.Stdout, res.OutOfDate)
 	return nil
 }
 
-// orNone is sum, a hash, or "(none)" for a Plugin without a module.
-func orNone(sum string) string {
-	if sum == "" {
-		return "(none)"
+// printOutOfDate tells the developer which generated files an update left
+// out of date, and how to update them, one line per Worktree and Plugin.
+func printOutOfDate(w io.Writer, files []api.OutOfDateFile) {
+	if len(files) == 0 {
+		return
 	}
-	return sum
+	fmt.Fprintln(w, "Generated files are out of date; Laneway doesn't change them itself.")
+	type key struct{ worktree, plugin string }
+	var order []key
+	paths := map[key][]string{}
+	for _, f := range files {
+		k := key{f.Worktree, f.Plugin}
+		if _, ok := paths[k]; !ok {
+			order = append(order, k)
+		}
+		paths[k] = append(paths[k], f.Path)
+	}
+	for _, k := range order {
+		fmt.Fprintf(w, "  In %s, run `lane generate %s` to update %s\n", k.worktree, k.plugin, andList(paths[k]))
+	}
+}
+
+// needsConfirming reports whether any update asks for new capabilities.
+func needsConfirming(updates []api.PluginUpdate) bool {
+	for _, u := range updates {
+		if len(u.NewEffects) > 0 || len(u.NewHTTPHosts) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// printUpdates shows each update and the capabilities it adds, for the
+// developer to confirm.
+func printUpdates(w io.Writer, updates []api.PluginUpdate) {
+	for _, u := range updates {
+		fmt.Fprintf(w, "Plugin %s %s → %s\n", u.Name, u.From, u.To)
+		for _, e := range u.NewEffects {
+			if e.Kind == "http" && len(u.NewHTTPHosts) > 0 {
+				continue // shown with its hosts below
+			}
+			fmt.Fprintf(w, "  may now %s\n", e.Description)
+		}
+		if len(u.NewHTTPHosts) > 0 {
+			fmt.Fprintf(w, "  may now send HTTP requests to %s\n", strings.Join(u.NewHTTPHosts, ", "))
+		}
+	}
+}
+
+// printUpdateWarnings shows the daemon's warnings on stderr.
+func printUpdateWarnings(env Env, warnings []string) {
+	for _, w := range warnings {
+		fmt.Fprintf(env.Stderr, "warning: %s\n", w)
+	}
+}
+
+// printPluginUpdates shows the installed Plugins' available updates, for
+// `lane status`. Status doesn't fail when they can't be listed.
+func printPluginUpdates(ctx context.Context, env Env, c *client.Client) {
+	plugins, err := c.Plugins(ctx)
+	if err != nil {
+		return
+	}
+	var updates []api.PluginUpdate
+	for _, p := range plugins {
+		if p.Update != nil {
+			updates = append(updates, *p.Update)
+		}
+	}
+	if len(updates) == 0 {
+		return
+	}
+	fmt.Fprintln(env.Stdout)
+	fmt.Fprintln(env.Stdout, "Plugin updates are available; run `lane plugin update`:")
+	for _, u := range updates {
+		fmt.Fprintf(env.Stdout, "  %s %s → %s\n", u.Name, u.From, u.To)
+	}
 }

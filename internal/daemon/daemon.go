@@ -145,8 +145,11 @@ type Daemon struct {
 	plugins  *plugin.Host      // installed Plugins, see plugins.go
 	// catalog is where Catalog Plugins are fetched from, see catalog.go.
 	catalog   *catalog.Source
-	catalogMu sync.Mutex       // serialises fetches from the Catalog
-	services  *service.Manager // shared Services, see services.go
+	catalogMu sync.Mutex // serialises fetches from the Catalog
+	// checked is the Catalog last loaded, for Plugin updates, see
+	// updates.go. Guarded by catalogMu.
+	checked  checkedCatalog
+	services *service.Manager // shared Services, see services.go
 
 	// github is where Plugins added from GitHub are downloaded from, see
 	// github.go.
