@@ -171,6 +171,23 @@ kind = "http"
 	return m.Ports(version)
 }
 
+// checkPorts checks that version of an Engine whose standard port is port
+// gets first, then the rest of first's block of 100.
+func checkPorts(t *testing.T, port int, version string, first int) {
+	t.Helper()
+	got := enginePorts(t, port, version)
+	if len(got) != 100 || got[0] != first {
+		t.Errorf("port %d, version %s: ports start %v (%d of them), want %d then the rest of its block of 100", port, version, got[:min(len(got), 3)], len(got), first)
+		return
+	}
+	block := first / 100 * 100
+	for _, p := range got {
+		if p < block || p > block+99 {
+			t.Errorf("port %d, version %s: port %d is outside %d–%d", port, version, p, block, block+99)
+		}
+	}
+}
+
 func TestAnotherVersionOfAnEngineWithALowPortGetsAPortFromTheFirstThreeDigitsOfIt(t *testing.T) {
 	tests := []struct {
 		port    int
@@ -183,17 +200,7 @@ func TestAnotherVersionOfAnEngineWithALowPortGetsAPortFromTheFirstThreeDigitsOfI
 		{6549, "2", 65402},
 	}
 	for _, tt := range tests {
-		got := enginePorts(t, tt.port, tt.version)
-		if len(got) != 100 || got[0] != tt.first {
-			t.Errorf("port %d, version %s: ports start %v (%d of them), want %d then the rest of its block of 100", tt.port, tt.version, got[:min(len(got), 3)], len(got), tt.first)
-			continue
-		}
-		block := tt.first / 100 * 100
-		for _, p := range got {
-			if p < block || p > block+99 {
-				t.Errorf("port %d, version %s: port %d is outside %d–%d", tt.port, tt.version, p, block, block+99)
-			}
-		}
+		checkPorts(t, tt.port, tt.version, tt.first)
 	}
 }
 
@@ -210,17 +217,7 @@ func TestAnotherVersionOfAnEngineWithAHighPortGetsAPortFrom50000AndTheFirstTwoDi
 		{27017, "7", 52707}, // a 5-digit port
 	}
 	for _, tt := range tests {
-		got := enginePorts(t, tt.port, tt.version)
-		if len(got) != 100 || got[0] != tt.first {
-			t.Errorf("port %d, version %s: ports start %v (%d of them), want %d then the rest of its block of 100", tt.port, tt.version, got[:min(len(got), 3)], len(got), tt.first)
-			continue
-		}
-		block := tt.first / 100 * 100
-		for _, p := range got {
-			if p < block || p > block+99 {
-				t.Errorf("port %d, version %s: port %d is outside %d–%d", tt.port, tt.version, p, block, block+99)
-			}
-		}
+		checkPorts(t, tt.port, tt.version, tt.first)
 	}
 	// The default version still gets the standard port.
 	if got := enginePorts(t, 9000, "1"); !slices.Equal(got, []int{9000}) {
