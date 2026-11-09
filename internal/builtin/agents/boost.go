@@ -1,4 +1,4 @@
-package builtin
+package agents
 
 import (
 	"encoding/json"
@@ -12,12 +12,6 @@ import (
 // for (AGENTS.md, CLAUDE.md…) itself, inside its own block, and includes
 // every file in .ai/guidelines when it does.
 const boostGuideline = ".ai/guidelines/laneway.md"
-
-// boost is the Laravel Boost Generator: it gives Boost the agent
-// instructions (see boostEffects).
-func boost(p sdk.Project) (sdk.GeneratorResult, error) {
-	return sdk.GeneratorResult{Effects: boostEffects(p)}, nil
-}
 
 // usesBoost reports whether the Project requires Laravel Boost. It reads
 // composer.json, which is committed, rather than boost.json, which Boost
@@ -39,11 +33,11 @@ func usesBoost(p sdk.Project) bool {
 	return req || dev
 }
 
-// boostEffects put the agent instructions in Boost's custom guidelines, and
+// BoostEffects put the agent instructions in Boost's custom guidelines, and
 // take out the blocks an earlier run put in AGENTS.md and CLAUDE.md: Boost
 // adds the guideline to those files, so they would say it twice, and
 // CLAUDE.md importing AGENTS.md would repeat all of Boost's guidelines.
-func boostEffects(p sdk.Project) []sdk.Effect {
+func BoostEffects(p sdk.Project) []sdk.Effect {
 	guideline := sdk.Markdown(boostGuideline, agentsBlock)
 	guideline.Warning = fmt.Sprintf("this Project uses Laravel Boost, so the agent instructions are in %s; "+
 		"run `php artisan boost:update` to add them to the guideline files of the agents Boost is set up for", boostGuideline)

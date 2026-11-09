@@ -86,9 +86,7 @@ type Plugin struct {
 	// if its source still has what was previewed. "" once installed.
 	Digest string
 
-	// serve answers a built-in Plugin's calls in Laneway's process, and
 	// readModule reads a built-in Plugin's module (see Builtin).
-	serve      func([]byte) ([]byte, error)
 	readModule func() ([]byte, error)
 }
 
@@ -386,7 +384,7 @@ func (h *Host) ResolveDir(dir string, found ...runtimes.Runtime) (recipe.Resolve
 // response into res. what names the call in errors, such as "the procfile
 // Recipe (Plugin procfile)".
 func (h *Host) call(p Plugin, what string, req request, dir string, res any) error {
-	out, err := h.run(p, req, dir)
+	out, err := h.runtime.call(p, req, dir)
 	return decode(what, out, err, res)
 }
 

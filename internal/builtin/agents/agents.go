@@ -1,4 +1,8 @@
-package builtin
+// Package agents is what the built-in Harness Generators (claude, t3) and
+// the boost Generator share: the agent instructions, where a Project's
+// agents read them, and the command Harness hooks run. Each Generator is a
+// WASM command of its own that imports it.
+package agents
 
 import (
 	"os"
@@ -13,6 +17,20 @@ const (
 	agentsFile = "AGENTS.md"
 	claudeFile = "CLAUDE.md"
 )
+
+// ReadyCommand is the shell command Harness hooks run: `lane worktree
+// ready`, guarded so that it succeeds quietly when `lane` isn't installed
+// or there is nothing to wait for (exit 3: not a Linked repository, or no
+// daemon). It still fails when setup Failed (1) or waiting gave up (4).
+// It runs under `sh` because T3 Code types its scripts into the developer's
+// interactive shell, which may not be POSIX and where `exit` would close the
+// terminal.
+const ReadyCommand = `sh -c 'command -v lane >/dev/null 2>&1 || exit 0; lane worktree ready || [ $? -eq 3 ]'`
+
+// ReadyTimeout is how long a Harness may let ReadyCommand run, in seconds.
+// It is longer than `lane worktree ready`'s own 10 minute timeout, so that
+// Laneway gives up first and says why.
+const ReadyTimeout = 660
 
 // agentsBlock is what every generator puts between the markers in AGENTS.md.
 // It is static: the Worktree's own details come from `lane info --json`.
@@ -34,12 +52,12 @@ const claudeImport = "@" + agentsFile + "\n"
 // importsAgents matches an existing import of AGENTS.md in CLAUDE.md.
 var importsAgents = regexp.MustCompile(`(^|\s)@(\./)?AGENTS\.md(\s|$)`)
 
-// instructionEffects add the agent instructions where the Project's agents
+// InstructionEffects add the agent instructions where the Project's agents
 // read them: Laravel Boost's guidelines if the Project uses Boost, else
 // AGENTS.md, imported into CLAUDE.md if importIntoClaude.
-func instructionEffects(p sdk.Project, importIntoClaude bool) ([]sdk.Effect, error) {
+func InstructionEffects(p sdk.Project, importIntoClaude bool) ([]sdk.Effect, error) {
 	if usesBoost(p) {
-		return boostEffects(p), nil
+		return BoostEffects(p), nil
 	}
 	effects := []sdk.Effect{sdk.File(sdk.Markdown(agentsFile, agentsBlock))}
 	if importIntoClaude && needsClaudeImport(p) {

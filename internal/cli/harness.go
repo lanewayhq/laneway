@@ -5,15 +5,14 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-)
 
-// harnesses are the Harnesses `lane harness add` knows, each the name of
-// the built-in Plugin whose Generator sets it up.
-var harnesses = []string{"claude", "t3"}
+	"github.com/lanewayhq/laneway/internal/builtin"
+)
 
 // runHarness is `lane harness add <harness>`, a shortcut for `lane generate
 // <harness>` kept for the Harness Generators built into Laneway.
 func runHarness(ctx context.Context, env Env, args []string) error {
+	harnesses := builtin.Harnesses() // each the built-in Plugin whose Generator sets it up
 	names := strings.Join(harnesses, "|")
 	if len(args) == 0 || args[0] != "add" {
 		return usageError{fmt.Sprintf("use `lane harness add <%s>`", names)}

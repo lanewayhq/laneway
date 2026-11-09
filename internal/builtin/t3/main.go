@@ -1,12 +1,19 @@
-package builtin
+// Command t3 is the t3 Plugin, built into Laneway: the T3 Code Generator
+// behind `lane harness add t3`.
+package main
 
 import (
 	"encoding/json"
 	"fmt"
 	"strings"
 
+	"github.com/lanewayhq/laneway/internal/builtin/agents"
 	"github.com/lanewayhq/laneway/sdk"
 )
+
+func main() {
+	sdk.Run(sdk.Plugin{Generators: map[string]sdk.Generator{"t3": t3}})
+}
 
 // t3File is T3 Code's committed project file.
 const t3File = "t3.json"
@@ -34,7 +41,7 @@ type t3Script struct {
 // instructions to AGENTS.md, which the agents T3 Code runs read (or, with
 // Laravel Boost, to Boost's guidelines).
 func t3(p sdk.Project) (sdk.GeneratorResult, error) {
-	script := t3Script{Name: t3ScriptName, Command: ReadyCommand, Icon: "configure", RunOnWorktreeCreate: true}
+	script := t3Script{Name: t3ScriptName, Command: agents.ReadyCommand, Icon: "configure", RunOnWorktreeCreate: true}
 	effects := []sdk.Effect{sdk.File(sdk.FileBlock{Path: t3File, JSON: &sdk.JSONBlock{
 		New: map[string]any{"$schema": t3Schema},
 		Entries: []sdk.JSONEntry{{
@@ -49,7 +56,7 @@ func t3(p sdk.Project) (sdk.GeneratorResult, error) {
 				"run `lane worktree ready` at the end of yours instead, or turn runOnWorktreeCreate off on all but one",
 			t3File, strings.Join(others, ", "), plural(len(others), "has it", "have it"))))
 	}
-	instructions, err := instructionEffects(p, false)
+	instructions, err := agents.InstructionEffects(p, false)
 	if err != nil {
 		return sdk.GeneratorResult{}, err
 	}

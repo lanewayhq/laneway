@@ -1,19 +1,19 @@
 // Package builtin holds the first-party Plugins built into Laneway (ADR-0007,
-// spec #48 phase 3): the laravel and rails Recipes and the vite Integration,
-// and the Claude Code, T3 Code and Laravel Boost Generators behind `lane
+// spec #48 phase 3): the laravel and rails Recipes, the vite Integration, and
+// the Claude Code, T3 Code and Laravel Boost Generators behind `lane
 // generate <plugin>` and `lane harness add`.
 //
 // Each is a Plugin like any other, written with the SDK against the Plugin
-// API, with its manifest in <plugin>/plugin.json. The Recipes and the
-// Integration are WASM modules, each a command in <plugin>/ built by `go
-// generate` and embedded gzipped (see generate.go), run in the Plugin host's
-// sandbox like any installed Plugin's. The Generators run in Laneway's
-// process instead. All of them move to lanewayhq/plugins, and out of the
-// binary, with the Catalog.
+// API, with its manifest in <plugin>/plugin.json and its source a command in
+// <plugin>/, built into a WASM module by `go generate` and embedded gzipped
+// (see generate.go). Laneway runs each in the Plugin host's sandbox, with
+// the Project mounted read-only, like any installed Plugin's. All of them
+// move to lanewayhq/plugins, and out of the binary, with the Catalog.
 //
 // Generated files are committed, so everything generated must be harmless
-// for teammates without Laneway (see ReadyCommand), and Laneway merges it
-// into the developer's files without overwriting their own (see fileblock).
+// for teammates without Laneway (see agents.ReadyCommand), and Laneway
+// merges it into the developer's files without overwriting their own (see
+// fileblock).
 package builtin
 
 import (
@@ -22,12 +22,13 @@ import (
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"io/fs"
 	"path"
+	"slices"
 
 	"github.com/lanewayhq/laneway/internal/plugin"
-	"github.com/lanewayhq/laneway/sdk"
 )
 
 //go:embed */plugin.json
@@ -35,49 +36,41 @@ var manifests embed.FS
 
 //go:generate go run generate.go
 
-// modules are the WASM modules of the built-in Plugins that have one,
-// gzipped, by Plugin: <plugin>/plugin.wasm.gz.
+// modules are the built-in Plugins' WASM modules, gzipped, by Plugin:
+// <plugin>/plugin.wasm.gz.
 //
 //go:embed */plugin.wasm.gz
 var modules embed.FS
 
-// handlers are the built-in Plugins' handlers, by Plugin name.
-var handlers = map[string]sdk.Plugin{
-	"claude": {Generators: map[string]sdk.Generator{"claude": claude}},
-	"t3":     {Generators: map[string]sdk.Generator{"t3": t3}},
-	"boost":  {Generators: map[string]sdk.Generator{"boost": boost}},
-}
-
 // Plugins are the built-in Plugins, for plugin.Options.Builtin.
 func Plugins() []plugin.Builtin {
-	builtins := wasmPlugins()
-	for name, p := range handlers {
-		manifest, err := manifests.ReadFile(name + "/plugin.json")
-		if err != nil {
-			panic(err) // embedded
-		}
-		builtins = append(builtins, plugin.Builtin{Manifest: manifest, Serve: func(req []byte) ([]byte, error) {
-			var out bytes.Buffer
-			err := sdk.Serve(p, bytes.NewReader(req), &out)
-			return out.Bytes(), err
-		}})
-	}
-	return builtins
+	return wasmPlugins()
 }
 
-// ReadyCommand is the shell command Harness hooks run: `lane worktree
-// ready`, guarded so that it succeeds quietly when `lane` isn't installed
-// or there is nothing to wait for (exit 3: not a Linked repository, or no
-// daemon). It still fails when setup Failed (1) or waiting gave up (4).
-// It runs under `sh` because T3 Code types its scripts into the developer's
-// interactive shell, which may not be POSIX and where `exit` would close the
-// terminal.
-const ReadyCommand = `sh -c 'command -v lane >/dev/null 2>&1 || exit 0; lane worktree ready || [ $? -eq 3 ]'`
+// notHarnesses are the built-in Plugins whose Generators set up something
+// other than a Harness: boost's, a Laravel package's guidelines.
+var notHarnesses = []string{"boost"}
 
-// readyTimeout is how long a Harness may let ReadyCommand run, in seconds.
-// It is longer than `lane worktree ready`'s own 10 minute timeout, so that
-// Laneway gives up first and says why.
-const readyTimeout = 660
+// Harnesses are the Harnesses `lane harness add` sets up, sorted: the
+// built-in Plugins with Generators, other than notHarnesses, each named
+// after its Plugin.
+func Harnesses() []string {
+	var names []string
+	for _, b := range Plugins() {
+		var m struct {
+			Name       string            `json:"name"`
+			Generators []json.RawMessage `json:"generators"`
+		}
+		if err := json.Unmarshal(b.Manifest, &m); err != nil {
+			panic(err) // embedded, and checked by plugin.Open
+		}
+		if len(m.Generators) > 0 && !slices.Contains(notHarnesses, m.Name) {
+			names = append(names, m.Name)
+		}
+	}
+	slices.Sort(names)
+	return names
+}
 
 // wasmPlugins are the built-in Plugins that run as WASM modules.
 func wasmPlugins() []plugin.Builtin {

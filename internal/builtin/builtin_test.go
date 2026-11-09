@@ -135,3 +135,23 @@ func TestTheEmbeddedModulesAreWhatTheirSourceBuildsTo(t *testing.T) {
 		t.Fatalf("%v\n%s", err, out)
 	}
 }
+
+func TestEveryBuiltInPluginRunsAsAWASMModuleInTheSandbox(t *testing.T) {
+	for _, b := range builtin.Plugins() {
+		var m struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(b.Manifest, &m); err != nil {
+			t.Fatal(err)
+		}
+		if b.Module == nil || b.ModuleID == "" {
+			t.Errorf("built-in Plugin %s has no WASM module", m.Name)
+		}
+	}
+}
+
+func TestTheHarnessesAreTheBuiltInHarnessGenerators(t *testing.T) {
+	if got, want := builtin.Harnesses(), []string{"claude", "t3"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Harnesses() = %q, want %q", got, want)
+	}
+}
