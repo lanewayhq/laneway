@@ -573,7 +573,7 @@ Laravel's `s3` disk needs Flysystem's S3 adapter, which the starter kit doesn't 
 lane exec composer require league/flysystem-aws-s3-v3 "^3.0"
 ```
 
-Without it, `Storage::disk('s3')` fails with `Class "League\Flysystem\AwsS3V3\PortableVisibilityConverter" not found`. The Laravel Recipe warns about it, naming `composer.json`, when `lane init` writes `laneway.toml` for a Project that declares RustFS.
+Without it, `Storage::disk('s3')` fails with `Class "League\Flysystem\AwsS3V3\PortableVisibilityConverter" not found`. The Laravel Recipe warns about it, naming `composer.json`, for a Project that declares RustFS: `lane link` shows the warning (`lane link: warning: composer.json doesn't require league/flysystem-aws-s3-v3, …`), and so do `lane doctor` and `lane init`.
 
 Then add `rustfs` to the `[services]` table of `laneway.toml`:
 
