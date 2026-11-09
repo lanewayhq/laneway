@@ -21,11 +21,11 @@ The set of env file keys Laneway owns and writes for each Worktree, such as its 
 _Avoid_: Env override, env template, env sync
 
 **Ready**:
-A Worktree is Ready once its own database exists and its env file has been patched, so an agent or developer can start work in it.
+A Worktree is Ready once its own database and Buckets exist and its env file has been patched, so an agent or developer can start work in it.
 _Avoid_: Provisioned, set up, initialised
 
 **Preparing**:
-A Worktree is Preparing from when Laneway finds it until it is Ready: the files config says to copy are copied from the main Worktree, its database is being made, its env file patched and its Project's steps run.
+A Worktree is Preparing from when Laneway finds it until it is Ready: the files config says to copy are copied from the main Worktree, its database and Buckets are being made, its env file patched and its Project's steps run.
 _Avoid_: Provisioning, setting up, initialising
 
 **Test Database**:
@@ -75,7 +75,7 @@ Shared backing infrastructure, such as a database or cache, that many Projects u
 _Avoid_: Container, dependency, add-on
 
 **Service Domain**:
-A Domain under the Dashboard's at which Laneway serves something a Service offers browsers, such as Mailpit's inbox or RustFS's S3 API. It serves the Service of its Engine's default version, starting it on the first request.
+A Domain under the Dashboard's at which Laneway serves something a Service offers browsers, such as Mailpit's inbox or RustFS's S3 API. It serves one of its Engine's Services, the default version's when a Project uses that one, starting it on the first request.
 _Avoid_: Service URL, mail domain, console domain
 
 **Engine**:
