@@ -16,6 +16,7 @@ import (
 	"github.com/lanewayhq/laneway/internal/client"
 	"github.com/lanewayhq/laneway/internal/paths"
 	"github.com/lanewayhq/laneway/internal/platform"
+	"github.com/lanewayhq/laneway/internal/plugin"
 )
 
 // Env is everything a CLI invocation reads from or writes to the outside
@@ -96,12 +97,20 @@ func (e exitCode) Error() string { return fmt.Sprintf("exit status %d: %s", e.co
 func Run(ctx context.Context, env Env) int {
 	if len(env.Args) == 0 || env.Args[0] == "help" || env.Args[0] == "-h" || env.Args[0] == "--help" {
 		printUsage(env.Stdout)
+		printPluginsUsage(env.Stdout, env)
 		return exitOK
 	}
 	cmd, ok := commands[env.Args[0]]
 	if !ok {
+		var p plugin.Plugin
+		if p, ok = installedPlugin(env, env.Args[0]); ok {
+			cmd = command{run: pluginCommand(p)}
+		}
+	}
+	if !ok {
 		fmt.Fprintf(env.Stderr, "lane: unknown command %q\n\n", env.Args[0])
 		printUsage(env.Stderr)
+		printPluginsUsage(env.Stderr, env)
 		return exitUsage
 	}
 	err := cmd.run(ctx, env, env.Args[1:])

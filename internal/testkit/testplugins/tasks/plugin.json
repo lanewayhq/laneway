@@ -1,0 +1,15 @@
+{
+  "name": "tasks",
+  "version": "0.1.0",
+  "api_version": 1,
+  "commands": [
+    {"name": "greet", "summary": "Say hello to each argument"},
+    {"name": "marker", "summary": "Print the Worktree's marker file"},
+    {"name": "where", "summary": "Print the directory commands run in"},
+    {"name": "warn", "summary": "Warn with the arguments"},
+    {"name": "stop", "summary": "Run a command that fails, then one that doesn't"},
+    {"name": "fail", "summary": "Fail without effects"},
+    {"name": "env", "summary": "Return an env effect"}
+  ],
+  "capabilities": {"effects": ["exec", "warning"]}
+}

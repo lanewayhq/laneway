@@ -34,11 +34,14 @@ type request struct {
 	Call       string `json:"call"`
 	Name       string `json:"name"`
 	Dir        string `json:"dir"`
+	// Args are a command call's arguments.
+	Args []string `json:"args,omitempty"`
 }
 
 // Calls a module answers.
 const (
-	callRecipe = "recipe"
+	callRecipe      = "recipe"
+	callIntegration = "integration"
 )
 
 // runtime runs Plugins' modules. Compiling a module takes about a second, and
