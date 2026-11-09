@@ -29,9 +29,20 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 	if err != nil {
 		return api.LinkResponse{}, err
 	}
+	res := api.LinkResponse{}
+	// The Catalog Plugins the Project needs come first: its config can't be
+	// resolved without them.
+	catalogRes, err := d.fetchCatalogPlugins(ctx, checkout.MainDir)
+	if err != nil {
+		return api.LinkResponse{}, err
+	}
+	for _, p := range catalogRes.fetched {
+		res.Fetched = append(res.Fetched, apiPlugin(p))
+	}
+	res.Warnings = catalogRes.warnings
 	cfg, err := d.plugins.ResolveDir(checkout.MainDir)
 	if err != nil {
-		return api.LinkResponse{}, &api.Error{Code: api.CodeInvalidConfig, Message: err.Error()}
+		return api.LinkResponse{}, &api.Error{Code: api.CodeInvalidConfig, Message: catalogRes.explain(err)}
 	}
 	name := req.Name
 	if name == "" {
@@ -40,7 +51,6 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 	if name == "" {
 		name = filepath.Base(checkout.MainDir)
 	}
-	res := api.LinkResponse{}
 	project := registry.Project{Name: name, Path: checkout.MainDir}
 	if existing, ok := d.registry.ProjectAt(checkout.MainDir); ok {
 		project = existing
