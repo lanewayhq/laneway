@@ -95,9 +95,11 @@ func (d *Daemon) setUnfetched(path, why string) {
 // unfetchedWarnings are the warnings about Catalog Plugins Laneway couldn't
 // fetch for the Project with a Worktree at dir, its main one's included.
 func (d *Daemon) unfetchedWarnings(dir string) []string {
+	// A copy, so the registry isn't asked with unfetchedMu held.
 	d.unfetchedMu.Lock()
-	defer d.unfetchedMu.Unlock()
-	for path, why := range d.unfetched {
+	unfetched := maps.Clone(d.unfetched)
+	d.unfetchedMu.Unlock()
+	for path, why := range unfetched {
 		if path == dir || slices.ContainsFunc(d.registry.Worktrees(path), func(w registry.Worktree) bool { return w.Path == dir }) {
 			return []string{why}
 		}
