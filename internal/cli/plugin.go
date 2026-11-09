@@ -89,6 +89,13 @@ func printPlugin(w io.Writer, res api.AddPluginResponse) {
 	for _, r := range p.Recipes {
 		fmt.Fprintf(w, "  adds the Recipe %s, for Projects where %s\n", r.Name, r.Detects)
 	}
+	if len(p.Hooks) > 0 {
+		titles := make([]string, len(p.Hooks))
+		for i, h := range p.Hooks {
+			titles[i] = plugin.EventTitle(h)
+		}
+		fmt.Fprintf(w, "  hooks %s, in Projects that use it\n", andList(titles))
+	}
 	if len(p.Effects) == 0 {
 		fmt.Fprintln(w, "  may only return config for the Projects it detects")
 	}
@@ -128,6 +135,14 @@ func runPluginList(ctx context.Context, env Env, args []string) error {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", p.Name, p.Version, p.Source, strings.Join(adds, ", "))
 	}
 	return tw.Flush()
+}
+
+// andList joins items as "a, b and c".
+func andList(items []string) string {
+	if len(items) < 2 {
+		return strings.Join(items, "")
+	}
+	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
 }
 
 // openPlugins opens the installed Plugins, for commands that resolve a

@@ -448,6 +448,9 @@ type Plugin struct {
 	SHA256 string `json:"sha256,omitempty"`
 	// Recipes are the Recipes it adds.
 	Recipes []PluginRecipe `json:"recipes"`
+	// Hooks are the lifecycle events it hooks, such as "ready", in
+	// lifecycle order.
+	Hooks []string `json:"hooks"`
 	// Effects are the kinds of effect it may return, each with what it
 	// lets the Plugin do; empty if it only returns config.
 	Effects []PluginEffect `json:"effects"`

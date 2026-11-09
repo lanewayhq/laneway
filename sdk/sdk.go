@@ -47,6 +47,8 @@ type Request struct {
 	// Dir is the Project's directory as the module sees it: mounted
 	// read-only, and the module's working directory.
 	Dir string `json:"dir"`
+	// Event describes the event a CallHook is about.
+	Event *Event `json:"event,omitempty"`
 }
 
 // Response is what a Plugin's module writes on stdout.
@@ -56,6 +58,9 @@ type Response struct {
 	Error string `json:"error,omitempty"`
 	// RecipeResult answers a CallRecipe.
 	*RecipeResult
+	// Effects answer a CallHook: what Laneway does for the Plugin, in
+	// order.
+	Effects []Effect `json:"effects,omitempty"`
 }
 
 // RecipeResult is what a Recipe returns for a Project it detected.
@@ -137,6 +142,8 @@ type Recipe func(Project) (RecipeResult, error)
 // declares.
 type Plugin struct {
 	Recipes map[string]Recipe
+	// Hooks are by event, such as EventReady.
+	Hooks map[string]Hook
 }
 
 // Run answers the request on stdin and exits: it is a Plugin module's whole
@@ -179,6 +186,16 @@ func handle(p Plugin, req Request) (Response, error) {
 			return Response{}, err
 		}
 		return Response{RecipeResult: &res}, nil
+	case CallHook:
+		hook, ok := p.Hooks[req.Name]
+		if !ok || req.Event == nil {
+			return Response{}, fmt.Errorf("this Plugin doesn't hook %q", req.Name)
+		}
+		effects, err := hook(project, *req.Event)
+		if err != nil {
+			return Response{}, err
+		}
+		return Response{Effects: effects}, nil
 	}
 	return Response{}, errors.New("this Plugin doesn't answer " + req.Call + " calls")
 }

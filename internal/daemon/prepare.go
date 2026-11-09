@@ -20,7 +20,7 @@ import (
 
 // setupPlan is what preparing the Worktree w does, in the spec's order:
 //
-//	copy → database → Test Database → env → setup steps (on_create)
+//	copy → database → Test Database → env → setup steps (on_create) → Preparing hooks
 //
 // It runs when the Worktree's setup starts, so config is read then.
 //
@@ -74,6 +74,7 @@ func (d *Daemon) setupPlan(p registry.Project, w worktreeRef) prepare.Plan {
 		for _, command := range cfg.OnCreate {
 			steps = append(steps, prepare.Shell("on_create: "+command, command, w.dir, env))
 		}
+		steps = append(steps, d.preparingHookSteps(p, w, cfg)...)
 		return steps, nil
 	}
 }

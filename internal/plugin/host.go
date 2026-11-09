@@ -276,6 +276,19 @@ func (h *Host) ResolveDir(dir string, found ...runtimes.Runtime) (recipe.Resolve
 // Recipe (Plugin procfile)".
 func (h *Host) call(p Plugin, what string, req request, dir string, res any) error {
 	out, err := h.runtime.call(p, req, dir)
+	return decodeResponse(what, out, err, res)
+}
+
+// callFresh is call without reusing an earlier call's result (see
+// runtime.callFresh).
+func (h *Host) callFresh(p Plugin, what string, req request, dir string, res any) error {
+	out, err := h.runtime.callFresh(p, req, dir)
+	return decodeResponse(what, out, err, res)
+}
+
+// decodeResponse decodes a module's response out into res, or returns the
+// call's error, naming the call with what.
+func decodeResponse(what string, out []byte, err error, res any) error {
 	if err != nil {
 		return fmt.Errorf("%s: %w", what, err)
 	}
