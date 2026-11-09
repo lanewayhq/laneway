@@ -2,11 +2,13 @@ package database
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/lanewayhq/laneway/internal/mysqlwire"
 	"github.com/lanewayhq/laneway/internal/naming"
 )
 
@@ -39,252 +41,180 @@ func (MySQL) TestDatabase(project, worktree, _ string) string {
 }
 
 func (m MySQL) Exists(ctx context.Context, db string) (bool, error) {
-	var exists bool
-	err := m.admin(ctx, func(c *mysqlwire.Conn) error {
-		var err error
-		exists, err = schemaExists(ctx, c, db)
-		if err != nil || !exists {
-			return err
-		}
-		unfinished, err := isUnfinishedCopy(ctx, c, db)
-		exists = !unfinished
-		return err
-	})
-	return exists, err
+	exists, err := m.schemaExists(ctx, db)
+	if err != nil || !exists {
+		return false, err
+	}
+	unfinished, err := m.isUnfinishedCopy(ctx, db)
+	return !unfinished, err
 }
 
 // Create creates db, empty.
 func (m MySQL) Create(ctx context.Context, db string) error {
-	return m.admin(ctx, func(c *mysqlwire.Conn) error {
-		if err := dropUnfinishedCopy(ctx, c, db); err != nil {
-			return err
-		}
-		return c.Exec(ctx, "CREATE DATABASE "+mysqlwire.Ident(db))
-	})
+	if err := m.dropUnfinishedCopy(ctx, db); err != nil {
+		return err
+	}
+	_, err := m.mysql(ctx, "CREATE DATABASE "+myIdent(db))
+	return err
 }
 
-// Clone creates to as a copy of from by dump and restore, done by the server
-// itself rather than through Laneway: every table's definition (SHOW CREATE
-// TABLE) and rows (INSERT … SELECT), then its routines, views and triggers,
-// like mysqldump --routines (events aren't copied: they would run on the
-// copy too). Each table is read as one consistent snapshot without locking
-// it, so the main Worktree's app, queue worker or GUI client carry on; a
-// write landing during the copy may be in some tables and not others. If
-// the copy fails or ctx ends, to is dropped.
+// dumpAndRestore is the shell script Clone runs in the Service's container
+// with the user, from and to as $1, $2 and $3: mysqldump's dump of from,
+// read as one consistent snapshot without locking its tables (so the main
+// Worktree's app, queue worker or GUI client carry on), piped straight into
+// mysql restoring it into to, so the dump never leaves the container. It
+// carries what mysqldump --routines does: tables with their rows, routines,
+// views and triggers. Events aren't copied: they would run on the copy too.
+// pipefail makes a failed dump fail the script, not only a failed restore.
+// The password is in MYSQL_PWD.
+const dumpAndRestore = `set -o pipefail; ` +
+	`mysqldump --user="$1" --single-transaction --routines --triggers --skip-events --no-tablespaces --set-gtid-purged=OFF "$2" | ` +
+	`mysql --user="$1" --database="$3"`
+
+// Clone creates to as a copy of from with mysqldump and mysql, run inside
+// the Service's container (see dumpAndRestore). A write landing during the
+// copy may be in some tables and not others. If the copy fails or ctx ends,
+// to is dropped.
 func (m MySQL) Clone(ctx context.Context, from, to string) error {
-	created := false
-	err := m.admin(ctx, func(c *mysqlwire.Conn) error {
-		if err := dropUnfinishedCopy(ctx, c, to); err != nil {
-			return err
-		}
-		rows, err := c.Query(ctx, schemaQuery(from))
-		if err != nil {
-			return err
-		}
-		if len(rows) == 0 {
-			return fmt.Errorf("the database %s doesn't exist", from)
-		}
-		if err := c.Exec(ctx, "CREATE DATABASE "+mysqlwire.Ident(to)+
-			" CHARACTER SET "+rows[0][0]+" COLLATE "+rows[0][1]); err != nil {
-			return err
-		}
-		created = true
-		if err := c.Exec(ctx, "CREATE TABLE "+mysqlwire.Ident(to)+"."+copyMarker+" (id int)"); err != nil {
-			return err
-		}
-		if err := copyDatabase(ctx, c, from, to); err != nil {
-			return err
-		}
-		return c.Exec(ctx, "DROP TABLE "+mysqlwire.Ident(to)+"."+copyMarker)
-	})
-	if err != nil && created {
-		// The connection may be gone with ctx: drop it on a new one.
+	if err := m.dropUnfinishedCopy(ctx, to); err != nil {
+		return err
+	}
+	rows, err := m.mysql(ctx, schemaQuery(from))
+	if err != nil {
+		return err
+	}
+	if len(rows) == 0 || len(rows[0]) < 2 {
+		return fmt.Errorf("the database %s doesn't exist", from)
+	}
+	if _, err := m.mysql(ctx, "CREATE DATABASE "+myIdent(to)+
+		" CHARACTER SET "+rows[0][0]+" COLLATE "+rows[0][1]); err != nil {
+		return err
+	}
+	err = m.copyInto(ctx, from, to)
+	if err != nil {
+		// ctx may be over: drop it all the same. A restore still
+		// running in the container then fails on the missing database.
 		dropCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
-		if dropErr := m.admin(dropCtx, func(c *mysqlwire.Conn) error {
-			return c.Exec(dropCtx, "DROP DATABASE IF EXISTS "+mysqlwire.Ident(to))
-		}); dropErr != nil {
+		if _, dropErr := m.mysql(dropCtx, "DROP DATABASE IF EXISTS "+myIdent(to)); dropErr != nil {
 			return fmt.Errorf("%w (and dropping the unfinished copy failed: %v)", err, dropErr)
 		}
 	}
 	return err
 }
 
-// copySQLMode is the session's sql_mode while copying: none of the strict
-// modes, so every row the main database holds goes in as it is, and
-// NO_AUTO_VALUE_ON_ZERO, so a 0 in an AUTO_INCREMENT column stays 0 (as
-// mysqldump does).
-const copySQLMode = "NO_AUTO_VALUE_ON_ZERO"
-
-// copyDatabase copies from's contents into to, which is empty.
-func copyDatabase(ctx context.Context, c *mysqlwire.Conn, from, to string) error {
-	for _, set := range []string{
-		"SET SESSION foreign_key_checks = 0",
-		"SET SESSION sql_mode = " + mysqlwire.Literal(copySQLMode),
-		"SET SESSION time_zone = '+00:00'", // TIMESTAMPs go across unconverted
-		"SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED",
-		"USE " + mysqlwire.Ident(to),
-	} {
-		if err := c.Exec(ctx, set); err != nil {
-			return err
-		}
-	}
-	objects, err := c.Query(ctx, "SELECT TABLE_NAME, TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA = "+
-		mysqlwire.Literal(from)+" ORDER BY TABLE_NAME")
-	if err != nil {
+// copyInto copies from into to, which was just created, marking it
+// unfinished (copyMarker) until it is done.
+func (m MySQL) copyInto(ctx context.Context, from, to string) error {
+	if _, err := m.mysql(ctx, "CREATE TABLE "+myIdent(to)+"."+copyMarker+" (id int)"); err != nil {
 		return err
 	}
-	var tables, views []string
-	for _, o := range objects {
-		switch o[1] {
-		case "BASE TABLE":
-			tables = append(tables, o[0])
-		case "VIEW":
-			views = append(views, o[0])
-		}
-	}
-	src := func(name string) string { return mysqlwire.Ident(from) + "." + mysqlwire.Ident(name) }
-	for _, t := range tables {
-		rows, err := c.Query(ctx, "SHOW CREATE TABLE "+src(t))
-		if err != nil {
-			return err
-		}
-		if err := c.Exec(ctx, rows[0][1]); err != nil {
-			return fmt.Errorf("creating the table %s: %w", t, err)
-		}
-	}
-	for _, t := range tables {
-		// Generated columns can't be written; invisible ones (which
-		// SELECT * leaves out) must be.
-		rows, err := c.Query(ctx, "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = "+
-			mysqlwire.Literal(from)+" AND TABLE_NAME = "+mysqlwire.Literal(t)+
-			" AND GENERATION_EXPRESSION = '' ORDER BY ORDINAL_POSITION")
-		if err != nil {
-			return err
-		}
-		var columns []string
-		for _, r := range rows {
-			columns = append(columns, mysqlwire.Ident(r[0]))
-		}
-		list := strings.Join(columns, ", ")
-		if err := c.Exec(ctx, "INSERT INTO "+mysqlwire.Ident(t)+" ("+list+") SELECT "+list+" FROM "+src(t)); err != nil {
-			return fmt.Errorf("copying the rows of %s: %w", t, err)
-		}
-	}
-	// Routines first: a view may call a function, and a trigger a
-	// procedure.
-	routines, err := c.Query(ctx, "SELECT ROUTINE_NAME, ROUTINE_TYPE FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = "+
-		mysqlwire.Literal(from)+" ORDER BY ROUTINE_NAME")
-	if err != nil {
+	if _, err := m.run(ctx, "mysqldump", "sh", "-c", dumpAndRestore, "sh", m.Server.User, from, to); err != nil {
 		return err
 	}
-	for _, r := range routines {
-		if err := recreate(ctx, c, "SHOW CREATE "+r[1]+" "+src(r[0])); err != nil {
-			return fmt.Errorf("creating the %s %s: %w", strings.ToLower(r[1]), r[0], err)
-		}
-	}
-	if err := copyViews(ctx, c, from, to, views); err != nil {
-		return err
-	}
-	triggers, err := c.Query(ctx, "SELECT TRIGGER_NAME FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = "+
-		mysqlwire.Literal(from)+" ORDER BY EVENT_OBJECT_TABLE, ACTION_TIMING, EVENT_MANIPULATION, ACTION_ORDER")
-	if err != nil {
-		return err
-	}
-	for _, tr := range triggers {
-		if err := recreate(ctx, c, "SHOW CREATE TRIGGER "+src(tr[0])); err != nil {
-			return fmt.Errorf("creating the trigger %s: %w", tr[0], err)
-		}
-	}
-	return nil
-}
-
-// recreate runs the CREATE statement a SHOW CREATE TRIGGER / PROCEDURE /
-// FUNCTION gives (its third column) under the sql_mode it was created with
-// (its second), which the object keeps.
-func recreate(ctx context.Context, c *mysqlwire.Conn, show string) error {
-	rows, err := c.Query(ctx, show)
-	if err != nil {
-		return err
-	}
-	if len(rows) == 0 || len(rows[0]) < 3 {
-		return fmt.Errorf("%s gave nothing", show)
-	}
-	if err := c.Exec(ctx, "SET SESSION sql_mode = "+mysqlwire.Literal(rows[0][1])); err != nil {
-		return err
-	}
-	if err := c.Exec(ctx, rows[0][2]); err != nil {
-		return err
-	}
-	return c.Exec(ctx, "SET SESSION sql_mode = "+mysqlwire.Literal(copySQLMode))
-}
-
-// copyViews creates from's views in to. A view's definition names its
-// tables with their database, so from is replaced with to. A view may use
-// another view, so they are created in rounds until none is left or a round
-// creates none (the error of a view that can't be created).
-func copyViews(ctx context.Context, c *mysqlwire.Conn, from, to string, views []string) error {
-	for len(views) > 0 {
-		var left []string
-		var lastErr error
-		for _, v := range views {
-			rows, err := c.Query(ctx, "SHOW CREATE VIEW "+mysqlwire.Ident(from)+"."+mysqlwire.Ident(v))
-			if err != nil {
-				return err
-			}
-			create := strings.ReplaceAll(rows[0][1], mysqlwire.Ident(from)+".", mysqlwire.Ident(to)+".")
-			if err := c.Exec(ctx, create); err != nil {
-				if !mysqlwire.HasCode(err, mysqlwire.NoSuchTable) {
-					return fmt.Errorf("creating the view %s: %w", v, err)
-				}
-				left, lastErr = append(left, v), fmt.Errorf("creating the view %s: %w", v, err)
-			}
-		}
-		if len(left) == len(views) {
-			return lastErr
-		}
-		views = left
-	}
-	return nil
+	_, err := m.mysql(ctx, "DROP TABLE "+myIdent(to)+"."+copyMarker)
+	return err
 }
 
 func schemaQuery(db string) string {
 	return "SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = " +
-		mysqlwire.Literal(db)
+		myLiteral(db)
 }
 
-func schemaExists(ctx context.Context, c *mysqlwire.Conn, db string) (bool, error) {
-	rows, err := c.Query(ctx, schemaQuery(db))
+func (m MySQL) schemaExists(ctx context.Context, db string) (bool, error) {
+	rows, err := m.mysql(ctx, schemaQuery(db))
 	return len(rows) > 0, err
 }
 
 // isUnfinishedCopy reports whether db, which exists, is a copy cut short.
-func isUnfinishedCopy(ctx context.Context, c *mysqlwire.Conn, db string) (bool, error) {
-	rows, err := c.Query(ctx, "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = "+
-		mysqlwire.Literal(db)+" AND TABLE_NAME = "+mysqlwire.Literal(copyMarker))
+func (m MySQL) isUnfinishedCopy(ctx context.Context, db string) (bool, error) {
+	rows, err := m.mysql(ctx, "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = "+
+		myLiteral(db)+" AND TABLE_NAME = "+myLiteral(copyMarker))
 	return len(rows) > 0, err
 }
 
 // dropUnfinishedCopy drops db if it is a copy cut short.
-func dropUnfinishedCopy(ctx context.Context, c *mysqlwire.Conn, db string) error {
-	exists, err := schemaExists(ctx, c, db)
+func (m MySQL) dropUnfinishedCopy(ctx context.Context, db string) error {
+	exists, err := m.schemaExists(ctx, db)
 	if err != nil || !exists {
 		return err
 	}
-	unfinished, err := isUnfinishedCopy(ctx, c, db)
+	unfinished, err := m.isUnfinishedCopy(ctx, db)
 	if err != nil || !unfinished {
 		return err
 	}
-	return c.Exec(ctx, "DROP DATABASE "+mysqlwire.Ident(db))
+	_, err = m.mysql(ctx, "DROP DATABASE "+myIdent(db))
+	return err
 }
 
-// admin runs f on a connection to the server, with no default database.
-func (m MySQL) admin(ctx context.Context, f func(*mysqlwire.Conn) error) error {
-	c, err := mysqlwire.Connect(ctx, mysqlwire.Config{
-		Addr: m.Server.Addr, User: m.Server.User, Password: m.Server.Password})
+// mysqlError is a statement the mysql client ran and MySQL refused, or a
+// client that couldn't log in or run.
+type mysqlError struct {
+	// Client is the program that failed: mysql or mysqldump.
+	Client string
+	// Code is MySQL's error number, such as 1094; 0 if the client didn't
+	// print one.
+	Code     int
+	ExitCode int
+	// Message is what the client printed on stderr.
+	Message string
+}
+
+func (e *mysqlError) Error() string {
+	return fmt.Sprintf("%s exited with status %d: %s", e.Client, e.ExitCode, e.Message)
+}
+
+// mysqlCode finds MySQL's error number in what mysql printed
+// ("ERROR 1094 (HY000) at line 1: …") or mysqldump did ("mysqldump: Got
+// error: 1049: …").
+var mysqlCode = regexp.MustCompile(`(?m)(?:^ERROR |Got error: )(\d+)`)
+
+// mysql runs statements (separated by ";") in one session of the mysql
+// client inside the Service's container, with no default database, and
+// returns the rows they gave: their values, as --batch prints them. The
+// statements are an argument, not shell input, so they need no quoting
+// beyond SQL's.
+func (m MySQL) mysql(ctx context.Context, sql string) ([][]string, error) {
+	out, err := m.run(ctx, "mysql", "mysql", "--user="+m.Server.User, "--batch", "--skip-column-names", "--execute="+sql)
 	if err != nil {
-		return fmt.Errorf("connecting to MySQL at %s: %w", m.Server.Addr, err)
+		return nil, err
 	}
-	defer c.Close()
-	return f(c)
+	var rows [][]string
+	for line := range strings.Lines(out) {
+		rows = append(rows, strings.Split(strings.TrimSuffix(line, "\n"), "\t"))
+	}
+	return rows, nil
+}
+
+// run runs cmd inside the Service's container, logged in as the Server's
+// User with its Password (in MYSQL_PWD, so the clients don't warn about a
+// password on their command line), and returns its stdout. client names it
+// in errors.
+func (m MySQL) run(ctx context.Context, client string, cmd ...string) (string, error) {
+	if m.Server.Exec == nil {
+		return "", errors.New("the MySQL Service isn't running")
+	}
+	out, err := m.Server.Exec(ctx, append([]string{"env", "MYSQL_PWD=" + m.Server.Password}, cmd...))
+	if err != nil {
+		return "", fmt.Errorf("running %s in the MySQL Service: %w", client, err)
+	}
+	if out.ExitCode != 0 {
+		merr := &mysqlError{Client: client, ExitCode: out.ExitCode, Message: strings.TrimSpace(string(out.Stderr))}
+		if c := mysqlCode.FindStringSubmatch(merr.Message); c != nil {
+			merr.Code, _ = strconv.Atoi(c[1])
+		}
+		return "", merr
+	}
+	return string(out.Stdout), nil
+}
+
+// myIdent quotes name as an identifier: `name`, with ` doubled.
+func myIdent(name string) string {
+	return "`" + strings.ReplaceAll(name, "`", "``") + "`"
+}
+
+// myLiteral quotes s as a string literal: 's', with ' doubled and \
+// escaped (MySQL treats \ as an escape in literals by default).
+func myLiteral(s string) string {
+	return "'" + strings.NewReplacer(`\`, `\\`, "'", "''").Replace(s) + "'"
 }

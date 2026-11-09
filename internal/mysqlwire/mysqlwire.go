@@ -1,13 +1,15 @@
 // Package mysqlwire is a small MySQL client: just enough of the client/server
-// protocol for Laneway to manage databases in its MySQL Service. It logs in
+// protocol for the tests to read and change databases in Laneway's MySQL
+// Service, as an app would. Laneway itself manages them with the mysql
+// client inside the Service's container (see database.MySQL). It logs in
 // (caching_sha2_password, including the RSA exchange a plain-TCP connection
 // needs the first time, and mysql_native_password) and runs text queries,
 // whose results come back as text.
 //
 // It is written here rather than taken from a driver for the reasons pgwire
-// is: Laneway sends a few statements, all on one session whose settings
-// (USE, foreign_key_checks) must stick, which database/sql's pool works
-// against. The fake MySQL in containertest has to speak the protocol anyway.
+// is: a few statements, all on one session whose settings (USE) must stick,
+// which database/sql's pool works against. The fake MySQL in containertest
+// has to speak the protocol anyway.
 package mysqlwire
 
 import (
