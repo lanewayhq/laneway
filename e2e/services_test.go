@@ -531,6 +531,28 @@ func TestAServiceWhosePortIsTakenSaysSo(t *testing.T) {
 	assertContains(t, out, "in use by redis-server (pid 4545)")
 }
 
+// A port is often in use for a moment after its listener closes: a program
+// starting holds a copy of every socket of the process that starts it,
+// until it runs. When the daemon restarts, its Services' ports can be held
+// so by a program the old daemon (or another in-process test) was starting.
+func TestAServiceWhosePortIsFreedMomentsLaterIsServed(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	ln, err := net.Listen("tcp", net.JoinHostPort(d.ServiceHost(), "6379"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.AfterFunc(100*time.Millisecond, func() { ln.Close() })
+
+	d.MustRunCLI(serviceProject(t, "svc-port-freed", `redis = "7"`, "").Dir, "link")
+
+	c := dialRedis(t, d, 6379)
+	c.do("AUTH", "laneway")
+	if got := c.do("PING"); got != "+PONG" {
+		t.Fatalf("PING = %q, want +PONG", got)
+	}
+}
+
 func TestAServiceStoppedBehindLanewaysBackStartsOnTheNextConnection(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
