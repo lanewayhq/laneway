@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/builtin"
+	"github.com/lanewayhq/laneway/internal/catalog"
 	"github.com/lanewayhq/laneway/internal/clock"
 	"github.com/lanewayhq/laneway/internal/container"
 	"github.com/lanewayhq/laneway/internal/dashboard"
@@ -38,9 +39,10 @@ import (
 // Config is everything the daemon needs from the outside world. Tests build
 // it through testkit; `lane daemon` builds it from the environment.
 //
-// The spec's Seam 1 swaps exactly two things in tests: the clock and the
-// container engine. Both are interface-typed fields with real defaults filled
-// in by Start, so tests can inject fakes.
+// The spec's Seam 1 swaps exactly three things in tests: the clock, the
+// container engine and the Catalog. Each has a real default filled in by
+// Start, so tests can inject fakes, or their own Catalog signed with a test
+// key.
 type Config struct {
 	Paths  paths.Paths
 	Logger *slog.Logger
@@ -91,6 +93,10 @@ type Config struct {
 	// Paths.PluginCache() if empty. Test daemons share one, since compiling
 	// a module takes about a second.
 	PluginCacheDir string
+	// Catalog is where the Catalog is fetched from and the key it must be
+	// signed with; the zero value is Laneway's own (catalog.DefaultURL,
+	// catalog.DefaultKey).
+	Catalog catalog.Location
 }
 
 // DefaultServiceHosts are where Services listen: loopback only, IPv4 and
@@ -132,7 +138,10 @@ type Daemon struct {
 
 	preparer *prepare.Preparer // Preparing Worktrees, see prepare.go
 	plugins  *plugin.Host      // installed Plugins, see plugins.go
-	services *service.Manager  // shared Services, see services.go
+	// catalog is where Catalog Plugins are fetched from, see catalog.go.
+	catalog   *catalog.Source
+	catalogMu sync.Mutex       // serialises fetches from the Catalog
+	services  *service.Manager // shared Services, see services.go
 
 	orphanMu      sync.Mutex // serialises changes to Orphans, see orphans.go
 	orphanTimer   clock.Timer
@@ -223,6 +232,7 @@ func Start(cfg Config) (*Daemon, error) {
 	d.preparer = prov
 	prov.OnReady(d.worktreeBecameReady)
 	d.plugins = plugins
+	d.catalog = catalog.NewSource(cfg.Catalog, cfg.Paths.Catalog())
 	d.services = service.New(service.Options{
 		Engine:      cfg.ContainerEngine,
 		Clock:       cfg.Clock,
