@@ -258,7 +258,7 @@ func TestAfterAnUpdateLanewayReportsOutOfDateGeneratedFilesAndLeavesThemAlone(t 
 	assertContains(t, readFile(t, generated.Dir+"/NOTES.md"), "Use lane exec and lane logs.")
 }
 
-func TestAPluginAddedByHandIsntUpdatedFromTheCatalog(t *testing.T) {
+func TestAPluginAddedByHandIsUpdatedFromWhereItWasAddedNotFromTheCatalog(t *testing.T) {
 	t.Parallel()
 	cat := testkit.NewCatalog(t)
 	cat.Publish(kvRelease(t, "9.0.0", 1))
@@ -270,12 +270,11 @@ func TestAPluginAddedByHandIsntUpdatedFromTheCatalog(t *testing.T) {
 	named := d.RunCLI(d.Home, "plugin", "update", "kv")
 	unknown := d.RunCLI(d.Home, "plugin", "update", "nope")
 
-	assertContains(t, all, "Every Plugin from the Catalog is up to date.")
-	if named.ExitCode == 0 {
-		t.Fatalf("updating a hand-added Plugin exited 0:\n%s", named.Output())
+	assertContains(t, all, "Plugin kv is up to date: 0.1.0")
+	if named.ExitCode != 0 {
+		t.Fatalf("updating a hand-added Plugin exited %d:\n%s", named.ExitCode, named.Output())
 	}
-	assertContains(t, named.Stderr, "Plugin kv was added by hand from "+local)
-	assertContains(t, named.Stderr, "lane plugin add")
+	assertContains(t, named.Stdout, "Plugin kv is up to date: 0.1.0")
 	if unknown.ExitCode == 0 {
 		t.Fatalf("updating an unknown Plugin exited 0:\n%s", unknown.Output())
 	}

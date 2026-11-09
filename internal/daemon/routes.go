@@ -34,6 +34,7 @@ func (d *Daemon) routes() http.Handler {
 	mux.HandleFunc("DELETE /v1/plugins/{plugin}", d.handleRemovePlugin)
 	mux.HandleFunc("POST /v1/plugins/{plugin}/commands/{command}", d.handleRunPluginCommand)
 	mux.HandleFunc("POST /v1/plugins/update", d.handleUpdatePlugins)
+	mux.HandleFunc("POST /v1/plugins/{plugin}/update", d.handleUpdateHandAdded)
 	return mux
 }
 
@@ -276,7 +277,7 @@ func (d *Daemon) handleAddPlugin(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	res, err := d.addPlugin(req)
+	res, err := d.addPlugin(r.Context(), req)
 	if err != nil {
 		d.writeError(w, err)
 		return
@@ -299,6 +300,19 @@ func (d *Daemon) handleRunPluginCommand(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	res, err := d.runPluginCommand(r.Context(), r.PathValue("plugin"), r.PathValue("command"), req)
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (d *Daemon) handleUpdateHandAdded(w http.ResponseWriter, r *http.Request) {
+	var req api.UpdateHandAddedRequest
+	if !readJSON(w, r, &req) {
+		return
+	}
+	res, err := d.updateHandAdded(r.Context(), r.PathValue("plugin"), req)
 	if err != nil {
 		d.writeError(w, err)
 		return

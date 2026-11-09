@@ -83,3 +83,10 @@ func (h *Host) lookup(name string) (Plugin, bool) {
 	p, ok := h.builtins[name]
 	return p, ok
 }
+
+// Has reports whether a Plugin called name is installed or built into
+// Laneway.
+func (h *Host) Has(name string) bool {
+	_, ok := h.lookup(name)
+	return ok
+}

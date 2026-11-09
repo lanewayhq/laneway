@@ -15,9 +15,9 @@ import (
 // laneway.local.toml. A committed laneway.toml can never turn one on, so a
 // teammate's config can't run code across all of a developer's Projects.
 
-// AddGlobal is Add for a machine-wide Plugin.
-func (h *Host) AddGlobal(src string) (added Plugin, replaced *Plugin, err error) {
-	return h.add(src, src, true)
+// AddGlobal is AddFrom for a machine-wide Plugin.
+func (h *Host) AddGlobal(src, source string) (added Plugin, replaced *Plugin, err error) {
+	return h.add(src, source, true)
 }
 
 // turnedOn are the Plugins the global config and the Project's config files
@@ -47,7 +47,7 @@ func (h *Host) turnedOn(layers []config.Layer) ([]string, error) {
 			p, ok := h.lookup(name)
 			switch {
 			case !ok:
-				return nil, fmt.Errorf("%s: plugins names %s, but no Plugin %s is installed; add it with `lane plugin add <dir>`, or remove it from plugins",
+				return nil, fmt.Errorf("%s: plugins names %s, but no Plugin %s is installed; add it with `lane plugin add <dir|github.com/<owner>/<repo>>`, or remove it from plugins",
 					l.Source, name, name)
 			case p.Global && !l.Personal():
 				return nil, fmt.Errorf("%s: plugins names %s, a machine-wide Plugin, which only your own config can turn on, never a committed %s; "+

@@ -197,6 +197,7 @@ func TestConfigNamingAPluginThatIsNotInstalledSaysToAddIt(t *testing.T) {
 	if res.ExitCode == 0 {
 		t.Fatalf("linking exited 0:\n%s", res.Output())
 	}
-	assertContains(t, res.Stderr, filepath.Join(repo.Dir, "laneway.local.toml")+": plugins names notify, but no Plugin notify is installed; "+
-		"add it with `lane plugin add <dir>`, or remove it from plugins")
+	assertContains(t, res.Stderr, filepath.Join(repo.Dir, "laneway.local.toml")+": plugins names notify, but no Plugin notify is installed")
+	assertContains(t, res.Stderr, "`lane plugin add <dir>`")
+	assertContains(t, res.Stderr, "or remove it from plugins")
 }

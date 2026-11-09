@@ -25,6 +25,7 @@ import (
 	"github.com/lanewayhq/laneway/internal/clock"
 	"github.com/lanewayhq/laneway/internal/container"
 	"github.com/lanewayhq/laneway/internal/dashboard"
+	"github.com/lanewayhq/laneway/internal/github"
 	"github.com/lanewayhq/laneway/internal/paths"
 	"github.com/lanewayhq/laneway/internal/platform"
 	"github.com/lanewayhq/laneway/internal/plugin"
@@ -97,6 +98,10 @@ type Config struct {
 	// signed with; the zero value is Laneway's own (catalog.DefaultURL,
 	// catalog.DefaultKey).
 	Catalog catalog.Location
+	// GitHub is where Plugins added from GitHub (`lane plugin add
+	// github.com/…`) are downloaded from: github.DefaultURL if empty.
+	// Tests serve their own releases.
+	GitHub string
 }
 
 // DefaultServiceHosts are where Services listen: loopback only, IPv4 and
@@ -145,6 +150,10 @@ type Daemon struct {
 	// updates.go. Guarded by catalogMu.
 	checked  checkedCatalog
 	services *service.Manager // shared Services, see services.go
+
+	// github is where Plugins added from GitHub are downloaded from, see
+	// github.go.
+	github *github.Releases
 
 	orphanMu      sync.Mutex // serialises changes to Orphans, see orphans.go
 	orphanTimer   clock.Timer
@@ -238,6 +247,7 @@ func Start(cfg Config) (*Daemon, error) {
 	prov.OnReady(d.worktreeBecameReady)
 	d.plugins = plugins
 	d.catalog = catalog.NewSource(cfg.Catalog, cfg.Paths.Catalog())
+	d.github = github.New(cfg.GitHub)
 	d.services = service.New(service.Options{
 		Engine:      cfg.ContainerEngine,
 		Clock:       cfg.Clock,

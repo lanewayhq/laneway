@@ -224,6 +224,11 @@ func (s *Source) get(ctx context.Context, u string, limit int64) ([]byte, error)
 	return data, nil
 }
 
+// Unpack writes the Plugin in a release archive (as Pack makes) into dir,
+// which must exist and be empty: for Plugins released elsewhere in the same
+// format, such as on GitHub.
+func Unpack(data []byte, dir string) error { return unpack(data, dir) }
+
 // unpack writes the regular files and directories of the gzipped tar data
 // into dir. Anything else, or a path outside dir, is refused.
 func unpack(data []byte, dir string) error {

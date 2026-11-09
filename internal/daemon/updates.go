@@ -161,7 +161,7 @@ func (d *Daemon) updatable(name string) ([]plugin.Plugin, error) {
 		if p.Source != plugin.CatalogSource {
 			if name != "" {
 				return nil, &api.Error{Code: api.CodeNotFromCatalog, Message: fmt.Sprintf(
-					"Plugin %s was added by hand from %s, so it isn't updated from the Catalog; add it again with `lane plugin add` to update it",
+					"Plugin %s was added by hand from %s, so it isn't updated from the Catalog, but from there (POST /v1/plugins/%[1]s/update)",
 					p.Name, p.Source)}
 			}
 			continue

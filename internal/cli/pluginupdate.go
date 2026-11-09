@@ -9,12 +9,15 @@ import (
 
 	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/client"
+	"github.com/lanewayhq/laneway/internal/plugin"
 )
 
 // runPluginUpdate is `lane plugin update [name] [--yes]`: it updates the
 // installed Catalog Plugins (or only name) to the latest release the
 // Catalog lists that every version pin allows. An update that asks for
 // capabilities the installed version doesn't have needs confirming first.
+// Plugins added by hand are updated from where they were added instead (see
+// updateByHand).
 func runPluginUpdate(ctx context.Context, env Env, args []string) error {
 	fs := newFlags(env, "plugin update [name]")
 	yes := fs.Bool("yes", false, "update without asking to confirm new capabilities")
@@ -36,6 +39,34 @@ func runPluginUpdate(ctx context.Context, env Env, args []string) error {
 	if err != nil {
 		return err
 	}
+	plugins, err := c.Plugins(ctx)
+	if err != nil {
+		return err
+	}
+	var fromCatalog, byHand []string
+	for _, p := range plugins {
+		if name != "" && p.Name != name {
+			continue
+		}
+		if p.Source == plugin.CatalogSource {
+			fromCatalog = append(fromCatalog, p.Name)
+		} else {
+			byHand = append(byHand, p.Name)
+		}
+	}
+	// A Plugin added by hand is updated from where it was added; the
+	// Catalog is only asked when a Catalog Plugin is installed, or about
+	// a name that isn't, which it refuses.
+	if len(fromCatalog) > 0 || len(byHand) == 0 {
+		if err := updateFromCatalog(ctx, env, c, name, *yes); err != nil {
+			return err
+		}
+	}
+	return updateByHand(ctx, env, c, byHand, *yes)
+}
+
+// updateFromCatalog updates the installed Catalog Plugins (or only name).
+func updateFromCatalog(ctx context.Context, env Env, c *client.Client, name string, yes bool) error {
 	preview, err := c.UpdatePlugins(ctx, api.UpdatePluginsRequest{Name: name, Preview: true})
 	if err != nil {
 		return err
@@ -49,7 +80,7 @@ func runPluginUpdate(ctx context.Context, env Env, args []string) error {
 		}
 		return nil
 	}
-	if needsConfirming(preview.Updates) && !*yes {
+	if needsConfirming(preview.Updates) && !yes {
 		printUpdates(env.Stdout, preview.Updates)
 		if !confirm(env, "Update? [y/N] ") {
 			return errors.New("nothing was updated; run `lane plugin update --yes` to update without asking")

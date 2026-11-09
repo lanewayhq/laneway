@@ -224,6 +224,14 @@ func (c *Client) AddPlugin(ctx context.Context, req api.AddPluginRequest) (api.A
 	return res, err
 }
 
+// UpdateHandAdded installs what the source of the Plugin name, added by
+// hand, has now, or with req.Preview shows what that would change.
+func (c *Client) UpdateHandAdded(ctx context.Context, name string, req api.UpdateHandAddedRequest) (api.UpdateHandAddedResponse, error) {
+	var res api.UpdateHandAddedResponse
+	err := c.do(ctx, http.MethodPost, "/v1/plugins/"+url.PathEscape(name)+"/update", req, &res)
+	return res, err
+}
+
 // RemovePlugin removes the installed Plugin called name, unless a Linked
 // Project uses it.
 func (c *Client) RemovePlugin(ctx context.Context, name string) (api.RemovePluginResponse, error) {
