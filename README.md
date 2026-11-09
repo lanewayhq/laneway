@@ -71,7 +71,7 @@ go test ./...                                              # fast suite: a real 
 LANEWAY_SLOW=1 go test ./e2e -run RealContainerEngine      # slow tier: real Docker and Podman
 ```
 
-Issues and pull requests: [github.com/lanewayhq/laneway](https://github.com/lanewayhq/laneway).
+Issues and pull requests: [github.com/lanewayhq/laneway](https://github.com/lanewayhq/laneway). See [CONTRIBUTING.md](CONTRIBUTING.md), and [docs/development-flow.md](docs/development-flow.md) for how features, fixes and releases flow through this repository and lanewayhq/plugins.
 
 ## License
 
