@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -40,6 +41,27 @@ func TestANewWorktreeGetsACopyOfTheMainWorktreesSQLiteDatabaseByDefault(t *testi
 	assertFile(t, sqliteFile(repo.Dir), "main-data")
 	assertFile(t, filepath.Join(wt.Dir, ".env"), "DB_DATABASE="+sqliteFile(wt.Dir)+"\n")
 	assertFile(t, filepath.Join(repo.Dir, ".env"), "DB_DATABASE="+sqliteFile(repo.Dir)+"\n")
+}
+
+func TestASQLiteProjectWorksWithNoContainerEngineAndNoPlugins(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t, testkit.NewCatalog(t).Option()) // an empty Catalog: nothing to fetch
+	d.Engine.SetUnavailable(errors.New("neither Podman nor Docker is installed"))
+	repo := sqliteProject(t, "db-no-engine", "")
+	writeTestFile(t, sqliteFile(repo.Dir), "main-data")
+
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	wt := repo.AddWorktree("feature-e")
+	d.MustRunCLI(wt.Dir, "worktree", "ready")
+
+	assertFile(t, sqliteFile(wt.Dir), "main-data")
+	assertFile(t, filepath.Join(wt.Dir, ".env"), "DB_DATABASE="+sqliteFile(wt.Dir)+"\n")
+	if got := installedPlugins(t, d); len(got) != 0 {
+		t.Errorf("installed Plugins = %v, want none", got)
+	}
+	if calls := d.Engine.Calls(); len(calls) != 0 {
+		t.Errorf("Laneway called the container engine: %v", calls)
+	}
 }
 
 func TestTheDatabaseIsCreatedBeforeTheEnvPatchIsApplied(t *testing.T) {
