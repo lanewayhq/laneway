@@ -17,15 +17,8 @@ type GeneratorDecl struct {
 }
 
 func (m Manifest) validateGenerators() error {
-	seen := map[string]bool{}
-	for i, g := range m.Generators {
-		if !name.MatchString(g.Name) {
-			return fmt.Errorf("generators[%d]: name %q isn't a Generator name: use lowercase letters, digits and dashes, starting with a letter", i, g.Name)
-		}
-		if seen[g.Name] {
-			return fmt.Errorf("generators[%d]: the Plugin declares Generator %s twice", i, g.Name)
-		}
-		seen[g.Name] = true
+	if err := checkNames("generators", "Generator", m.Generators, func(g GeneratorDecl) string { return g.Name }); err != nil {
+		return err
 	}
 	if len(m.Generators) > 0 && !slices.Contains(m.Capabilities.Effects, EffectFile) {
 		return fmt.Errorf("generators: a Generator returns file effects, but capabilities.effects doesn't include %q; add it", EffectFile)
@@ -36,9 +29,9 @@ func (m Manifest) validateGenerators() error {
 // callGenerator asks a Generator for its effects.
 const callGenerator = "generator"
 
-// generatorResponse is a module's answer to a Generator call (see
-// sdk.GeneratorResult): file and warning effects.
-type generatorResponse struct {
+// effectsResponse is a module's answer to a hook, command or Generator
+// call: the effects it asks for, in order.
+type effectsResponse struct {
 	Effects []Effect `json:"effects"`
 }
 
@@ -89,7 +82,7 @@ func (h *Host) generate(name, root string) ([]fileblock.Block, []string, error) 
 	var warnings []string
 	for _, g := range p.Generators {
 		what := fmt.Sprintf("the %s Generator (Plugin %s)", g.Name, p.Name)
-		var res generatorResponse
+		var res effectsResponse
 		if err := h.call(p, what, request{Call: callGenerator, Name: g.Name}, root, &res); err != nil {
 			return nil, nil, err
 		}

@@ -188,7 +188,7 @@ func (h *Host) caseOutput(p Plugin, dir string) (caseOutput, error) {
 		}
 		for _, g := range p.Generators {
 			what := fmt.Sprintf("the %s Generator (Plugin %s)", g.Name, p.Name)
-			var res generatorResponse
+			var res effectsResponse
 			err := h.call(p, what, request{Call: callGenerator, Name: g.Name}, project, &res)
 			out.Generators = setOutput(out.Generators, g.Name, checked(p, what, res.Effects, err))
 		}

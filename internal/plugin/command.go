@@ -19,25 +19,15 @@ type CommandDecl struct {
 
 // validateCommands checks the commands m declares.
 func (m Manifest) validateCommands() error {
-	seen := map[string]bool{}
+	if err := checkNames("commands", "command", m.Commands, func(c CommandDecl) string { return c.Name }); err != nil {
+		return err
+	}
 	for i, c := range m.Commands {
-		if !name.MatchString(c.Name) {
-			return fmt.Errorf("commands[%d]: name %q isn't a command name: use lowercase letters, digits and dashes, starting with a letter", i, c.Name)
-		}
-		if seen[c.Name] {
-			return fmt.Errorf("commands[%d]: the Plugin declares command %s twice", i, c.Name)
-		}
-		seen[c.Name] = true
 		if c.Summary == "" {
 			return fmt.Errorf("commands[%d] (%s): summary isn't set; say what the command does, for `lane %s --help`", i, c.Name, m.Name)
 		}
 	}
 	return nil
-}
-
-// commandResponse is a module's answer to a command call.
-type commandResponse struct {
-	Effects []Effect `json:"effects"`
 }
 
 // Command runs the installed Plugin's command with args in the Worktree in
@@ -53,7 +43,7 @@ func (h *Host) Command(p Plugin, command string, args []string, dir string) ([]E
 		return nil, fmt.Errorf("Plugin %s has no command %s", p.Name, command)
 	}
 	out, err := h.runtime.callFresh(p, request{Call: callCommand, Name: command, Args: args}, dir)
-	var res commandResponse
+	var res effectsResponse
 	if err := decode(what, out, err, &res); err != nil {
 		return nil, err
 	}

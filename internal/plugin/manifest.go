@@ -107,6 +107,32 @@ var EffectKinds = map[string]string{
 // names and, later, `lane <plugin>` commands.
 var name = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 
+// checkNames checks the names of what a manifest declares under field,
+// such as the Recipes (what) under recipes: each must be a name, and none
+// declared twice.
+func checkNames[T any](field, what string, decls []T, nameOf func(T) string) error {
+	seen := map[string]bool{}
+	for i, d := range decls {
+		n := nameOf(d)
+		if !name.MatchString(n) {
+			return fmt.Errorf("%s[%d]: name %q isn't %s name: use lowercase letters, digits and dashes, starting with a letter", field, i, n, article(what))
+		}
+		if seen[n] {
+			return fmt.Errorf("%s[%d]: the Plugin declares %s %s twice", field, i, what, n)
+		}
+		seen[n] = true
+	}
+	return nil
+}
+
+// article is noun with "a" or "an" before it.
+func article(noun string) string {
+	if strings.ContainsRune("AEIOUaeiou", rune(noun[0])) {
+		return "an " + noun
+	}
+	return "a " + noun
+}
+
 // LoadManifest reads and checks the manifest of the Plugin in dir. Errors
 // name the file and say what to change.
 func LoadManifest(dir string) (Manifest, error) {
@@ -178,15 +204,10 @@ func (m Manifest) validate() error {
 	if err := m.validateEngineFiles(); err != nil {
 		return err
 	}
-	seen := map[string]bool{}
+	if err := checkNames("recipes", "Recipe", m.Recipes, func(r RecipeDecl) string { return r.Name }); err != nil {
+		return err
+	}
 	for i, r := range m.Recipes {
-		if !name.MatchString(r.Name) {
-			return fmt.Errorf("recipes[%d]: name %q isn't a Recipe name: use lowercase letters, digits and dashes, starting with a letter", i, r.Name)
-		}
-		if seen[r.Name] {
-			return fmt.Errorf("recipes[%d]: the Plugin declares Recipe %s twice", i, r.Name)
-		}
-		seen[r.Name] = true
 		if err := r.Detect.Validate(); err != nil {
 			return fmt.Errorf("recipes[%d] (%s): %w", i, r.Name, err)
 		}

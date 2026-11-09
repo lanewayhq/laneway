@@ -122,11 +122,6 @@ type EventService struct {
 	Port    int    `json:"port"`
 }
 
-// hookResponse is a module's answer to a hook call.
-type hookResponse struct {
-	Effects []Effect `json:"effects"`
-}
-
 // Hooking are the Plugins whose hooks fire for event in the Project whose
 // config is res: those the Project uses that hook it, by Plugin name.
 func (h *Host) Hooking(event string, res recipe.Resolved) []Plugin {
@@ -157,7 +152,7 @@ func HookSource(p Plugin, event string) string {
 // check them against the manifest (see Plugin.CheckEffects). Unlike a
 // Recipe's, a hook's call is never reused: every event runs it.
 func (h *Host) Hook(p Plugin, ev Event, dir string) ([]Effect, error) {
-	var res hookResponse
+	var res effectsResponse
 	if err := h.callFresh(p, HookSource(p, ev.Name), request{Call: callHook, Name: ev.Name, Event: &ev}, dir, &res); err != nil {
 		return nil, err
 	}
