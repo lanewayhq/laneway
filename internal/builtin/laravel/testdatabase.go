@@ -1,51 +1,44 @@
-package recipe
+package main
 
 import (
 	"encoding/xml"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
-	"github.com/lanewayhq/laneway/internal/gitrepo"
+	"github.com/lanewayhq/laneway/sdk"
 )
 
 // testEnvFile is the env file Laravel loads instead of .env when APP_ENV is
 // testing, which `php artisan test` and phpunit.xml set.
 const testEnvFile = ".env.testing"
 
-var _ TestDatabaseWarner = Laravel{}
-
-// AutoTestDatabase decides database.test = auto for a Laravel Project, from
+// autoTestDatabase decides database.test = auto for a Laravel Project, from
 // its files only: its tests use a database of their own when it has a
 // .env.testing or its PHPUnit configuration sets DB_CONNECTION to a
 // connection other than SQLite. A linked Worktree without a .env.testing
 // counts the main Worktree's, which setup copies into it (it is often not
 // committed).
-func (Laravel) AutoTestDatabase(dir string) bool {
-	if exists(dir, testEnvFile) {
+func autoTestDatabase(p sdk.Project) bool {
+	if p.Exists(testEnvFile) || p.MainFileExists(testEnvFile) {
 		return true
 	}
-	if main, ok := gitrepo.MainDir(dir); ok && exists(main, testEnvFile) {
-		return true
-	}
-	connection, ok := readPHPUnit(dir).setting("DB_CONNECTION")
+	connection, ok := readPHPUnit(p).setting("DB_CONNECTION")
 	connection = strings.TrimSpace(connection)
 	return ok && connection != "" && connection != "sqlite"
 }
 
-// TestDatabaseWarnings warns when the Project's PHPUnit configuration sets
+// testDatabaseWarnings warns when the Project's PHPUnit configuration sets
 // DB_DATABASE: it wins over .env.testing, which Laneway points at the
 // Worktree's Test Database, and Laneway never edits it.
-func (Laravel) TestDatabaseWarnings(dir string) []string {
-	p := readPHPUnit(dir)
-	database, ok := p.setting("DB_DATABASE")
+func testDatabaseWarnings(p sdk.Project) []string {
+	php := readPHPUnit(p)
+	database, ok := php.setting("DB_DATABASE")
 	if !ok {
 		return nil
 	}
 	return []string{fmt.Sprintf("%s sets DB_DATABASE to %q, so the Project's tests use that database "+
 		"instead of the Worktree's Test Database; remove DB_DATABASE from %s and let %s set it "+
-		"(Laneway patches %s, but never edits %s)", p.file, database, p.file, testEnvFile, testEnvFile, p.file)}
+		"(Laneway patches %s, but never edits %s)", php.file, database, php.file, testEnvFile, testEnvFile, php.file)}
 }
 
 // phpunit is what the Recipe reads of a Project's PHPUnit configuration: the
@@ -66,9 +59,9 @@ type phpunitVar struct {
 
 // readPHPUnit reads the configuration PHPUnit uses when it isn't given one:
 // the first of phpunit.xml and phpunit.xml.dist the Project has.
-func readPHPUnit(dir string) phpunit {
+func readPHPUnit(p sdk.Project) phpunit {
 	for _, name := range []string{"phpunit.xml", "phpunit.xml.dist"} {
-		data, err := os.ReadFile(filepath.Join(dir, name))
+		data, err := p.ReadFile(name)
 		if err != nil {
 			continue
 		}
@@ -80,21 +73,21 @@ func readPHPUnit(dir string) phpunit {
 		if xml.Unmarshal(data, &doc) != nil {
 			return phpunit{}
 		}
-		p := phpunit{file: name}
+		php := phpunit{file: name}
 		for _, v := range doc.PHP.Vars {
 			if v.XMLName.Local == "env" || v.XMLName.Local == "server" {
-				p.vars = append(p.vars, v)
+				php.vars = append(php.vars, v)
 			}
 		}
-		return p
+		return php
 	}
 	return phpunit{}
 }
 
 // setting is the value the configuration gives the environment variable
 // name, and whether it gives it one.
-func (p phpunit) setting(name string) (string, bool) {
-	for _, v := range p.vars {
+func (php phpunit) setting(name string) (string, bool) {
+	for _, v := range php.vars {
 		if v.Name == name {
 			return v.Value, true
 		}
