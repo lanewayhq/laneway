@@ -28,30 +28,33 @@ import (
 const firstPartyModule = "github.com/lanewayhq/plugins"
 
 // firstPartySource is where the pinned first-party module is: its directory
-// in Go's module cache, read-only, and its version.
+// in Go's module cache, read-only, and its version. `go mod download -json`
+// downloads it first if it isn't there yet, as on a fresh machine or CI
+// runner, where nothing else may have needed it.
 var firstPartySource = sync.OnceValues(func() (struct{ dir, version string }, error) {
 	var src struct{ dir, version string }
 	gomod, err := exec.Command("go", "env", "GOMOD").Output()
 	if err != nil {
 		return src, fmt.Errorf("finding Laneway's module: %w", err)
 	}
-	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}\n{{.Version}}", firstPartyModule)
+	cmd := exec.Command("go", "mod", "download", "-json", firstPartyModule)
 	cmd.Dir = filepath.Dir(strings.TrimSpace(string(gomod)))
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return src, fmt.Errorf("finding %s, which go.mod pins: %w", firstPartyModule, err)
+		return src, fmt.Errorf("downloading %s, which go.mod pins: %v\n%s%s", firstPartyModule, err, out, stderr.String())
 	}
-	src.dir, src.version, _ = strings.Cut(strings.TrimSpace(string(out)), "\n")
-	if src.dir == "" {
-		// The module isn't downloaded yet.
-		if out, err := exec.Command("go", "mod", "download", firstPartyModule).CombinedOutput(); err != nil {
-			return src, fmt.Errorf("downloading %s: %v\n%s", firstPartyModule, err, out)
-		}
-		if out, err = cmd.Output(); err != nil {
-			return src, err
-		}
-		src.dir, src.version, _ = strings.Cut(strings.TrimSpace(string(out)), "\n")
+	var mod struct {
+		Dir, Version, Error string
 	}
+	if err := json.Unmarshal(out, &mod); err != nil {
+		return src, fmt.Errorf("reading `go mod download -json %s`: %w", firstPartyModule, err)
+	}
+	if mod.Error != "" || mod.Dir == "" {
+		return src, fmt.Errorf("downloading %s, which go.mod pins: %s", firstPartyModule, mod.Error)
+	}
+	src.dir, src.version = mod.Dir, mod.Version
 	return src, nil
 })
 
@@ -77,6 +80,11 @@ func firstPartyNames(dir string) ([]string, error) {
 	var names []string
 	for _, m := range manifests {
 		names = append(names, filepath.Base(filepath.Dir(m)))
+	}
+	if len(names) == 0 {
+		// An empty test Catalog would make every test needing a first-party
+		// Plugin fail far from here, with a confusing config error.
+		return nil, fmt.Errorf("no first-party Plugins (plugins/*/plugin.json) in %s", dir)
 	}
 	slices.Sort(names)
 	return names, nil
