@@ -46,7 +46,7 @@ Both repositories have the same protection on `main`:
 
 - **Pull requests only.** No direct pushes, no force pushes.
 - **The `test` check must pass.** In laneway it's gofmt, `go vet` and `go test ./...`. In plugins it's gofmt, `go vet`, the SDK's tests, `lane plugin test` for every Plugin and the e2e tests against a `lane` built from Laneway's `main`.
-- **Code-owner review.** [CODEOWNERS](../.github/CODEOWNERS) makes the maintainer (`mrsafalpiya`) the owner of everything, and above all of CI, the release workflows, `install.sh`, the Catalog key (`internal/catalog/`) and, in plugins, `keys/` and `catalog/`. Pushing new commits dismisses an earlier approval. The maintainer's own pull requests can't be self-approved; the maintainer merges them as an admin once `test` is green.
+- **Code owners, no required approval.** [CODEOWNERS](../.github/CODEOWNERS) makes the maintainer (`mrsafalpiya`) the owner of everything, and above all of CI, the release workflows, `install.sh`, the Catalog key (`internal/catalog/`) and, in plugins, `keys/` and `catalog/`, so every pull request asks for their review. Merging doesn't need an approval: the maintainer is the only one with write access, so nothing merges without them, and their own pull requests (which GitHub won't let them approve) merge once `test` is green. Give anyone else write access only together with bringing back a required code-owner approval.
 
 Conventions, as the history already follows them:
 
