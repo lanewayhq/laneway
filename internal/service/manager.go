@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/activity"
@@ -192,7 +193,7 @@ func (m *Manager) Serve(svc Service) {
 	s.activity = activity.New(m.opts.Clock, m.idleTimeout(), s.goIdle)
 	m.services[svc.Name()] = s
 	for i, host := range m.opts.Hosts {
-		ln, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(svc.Port)))
+		ln, err := listen(net.JoinHostPort(host, strconv.Itoa(svc.Port)))
 		if err != nil {
 			if i == 0 {
 				s.err = fmt.Sprintf("Laneway can't listen on port %d: %v", svc.Port, err)
@@ -211,6 +212,26 @@ func (m *Manager) Serve(svc Service) {
 		m.wg.Go(func() { s.accept(ln) })
 	}
 	m.wg.Go(s.prepare)
+}
+
+// listenRetry is how long listen waits for an address in use to be freed.
+const listenRetry = time.Second
+
+// listen listens on the TCP address addr, waiting up to listenRetry for it
+// if it is in use. A port is often in use for a moment after its listener
+// closes: a program starting holds a copy of every socket of the process
+// that starts it until it runs, so the listener of a Service the daemon
+// served before it restarted can outlive its Close by a few milliseconds.
+// A port another program listens on is still in use after the wait.
+func listen(addr string) (net.Listener, error) {
+	deadline := time.Now().Add(listenRetry)
+	for {
+		ln, err := net.Listen("tcp", addr)
+		if err == nil || !errors.Is(err, syscall.EADDRINUSE) || time.Now().After(deadline) {
+			return ln, err
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // spec is the container that runs svc. Its Image is "" if svc's Engine
