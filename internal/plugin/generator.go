@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/lanewayhq/laneway/internal/fileblock"
 )
@@ -36,17 +37,9 @@ func (m Manifest) validateGenerators() error {
 const callGenerator = "generator"
 
 // generatorResponse is a module's answer to a Generator call (see
-// sdk.GeneratorResult).
+// sdk.GeneratorResult): file and warning effects.
 type generatorResponse struct {
-	Effects []generatorEffect `json:"effects"`
-}
-
-// generatorEffect is one effect a Generator returns (see sdk.Effect): a file
-// block or a warning.
-type generatorEffect struct {
-	Kind    string           `json:"kind"`
-	File    *fileblock.Block `json:"file"`
-	Message string           `json:"message"`
+	Effects []Effect `json:"effects"`
 }
 
 // ErrUnknownPlugin is returned by Generate for a Plugin that isn't
@@ -55,8 +48,9 @@ var ErrUnknownPlugin = errors.New("unknown Plugin")
 
 // Generate runs every Generator of the Plugin name on the Worktree at root,
 // and merges the file blocks they return into its files (see fileblock). It
-// writes nothing if a Generator fails, returns an effect its Plugin's
-// manifest doesn't declare, or returns a block that can't be merged.
+// writes nothing if a Generator fails, returns an effect other than file or
+// warning, returns one Plugin.CheckEffects refuses, or returns a block that
+// can't be merged.
 func (h *Host) Generate(name, root string) (fileblock.Result, error) {
 	p, ok := h.lookup(name)
 	if !ok {
@@ -78,19 +72,15 @@ func (h *Host) Generate(name, root string) (fileblock.Result, error) {
 				return fileblock.Result{}, fmt.Errorf("%s returned a %q effect, but a Generator may only return %q and %q effects; nothing was written",
 					what, e.Kind, EffectFile, EffectWarning)
 			}
-			if !slices.Contains(p.Capabilities.Effects, e.Kind) {
-				return fileblock.Result{}, fmt.Errorf("%s returned a %q effect, which Plugin %s doesn't declare in capabilities.effects; nothing was written",
-					what, e.Kind, p.Name)
-			}
-			switch {
-			case e.Kind == EffectWarning:
+		}
+		effects, refused := p.CheckEffects(what, res.Effects)
+		if len(refused) > 0 {
+			return fileblock.Result{}, fmt.Errorf("%s; nothing was written", strings.Join(refused, "; "))
+		}
+		for _, e := range effects {
+			if e.Kind == EffectWarning {
 				warnings = append(warnings, e.Message)
-			case e.File == nil:
-				return fileblock.Result{}, fmt.Errorf("%s returned a file effect without a file; nothing was written", what)
-			default:
-				if err := e.File.Validate(); err != nil {
-					return fileblock.Result{}, fmt.Errorf("%s: %w; nothing was written", what, err)
-				}
+			} else {
 				blocks = append(blocks, *e.File)
 			}
 		}

@@ -7,10 +7,12 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/lanewayhq/laneway/internal/fileblock"
 )
 
-// Effect is something a Plugin's hook or command asks Laneway to do (see
-// sdk.Effect); Kind says which fields apply. Laneway applies it, under its
+// Effect is something a Plugin's hook, command or Generator asks Laneway to
+// do (see sdk.Effect); Kind says which fields apply. Laneway applies it, under its
 // usual rules, only if the Plugin's manifest declares its kind. To add a
 // kind: add it to EffectKinds, its fields here, its check to check, and its
 // case to the daemon's applyEffect (internal/daemon/effects.go).
@@ -23,6 +25,9 @@ type Effect struct {
 	Message string `json:"message,omitempty"`
 	// Env is an env effect's keys for the Worktree's .env.
 	Env map[string]string `json:"env,omitempty"`
+	// File is a file effect's block, merged into the Worktree's files by
+	// fileblock.Apply. Only Generators' file effects are applied today.
+	File *fileblock.Block `json:"file,omitempty"`
 }
 
 // envKey is what an env file key may be, as in laneway.toml's env.
@@ -48,6 +53,11 @@ func (e Effect) check() error {
 		if strings.TrimSpace(e.Message) == "" {
 			return errors.New("it has no message")
 		}
+	case EffectFile:
+		if e.File == nil {
+			return errors.New("it has no file")
+		}
+		return e.File.Validate()
 	}
 	return nil
 }

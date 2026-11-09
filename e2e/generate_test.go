@@ -150,8 +150,8 @@ func TestGenerateRefusesAnEffectThePluginDoesntDeclareAndWritesNothing(t *testin
 	if res.ExitCode == 0 {
 		t.Fatalf("generate applied an undeclared effect:\n%s", res.Output())
 	}
-	assertContains(t, res.Stderr, `"warning" effect`)
-	assertContains(t, res.Stderr, "capabilities.effects")
+	assertContains(t, res.Stderr, "returned a warning effect, but its manifest doesn't declare it may show warnings")
+	assertContains(t, res.Stderr, "nothing was written")
 	assertNoFile(t, filepath.Join(repo.Dir, "NOTES.md"))
 }
 
