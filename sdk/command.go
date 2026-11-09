@@ -44,6 +44,12 @@ func Env(keys map[string]string) Effect {
 	return Effect{Kind: EffectEnv, Env: keys}
 }
 
+// CommandResult is what a command returns: the effects Laneway applies, in
+// order.
+type CommandResult struct {
+	Effects []Effect `json:"effects"`
+}
+
 // Command answers a CallCommand: it gets the Worktree the developer ran it
 // in, mounted read-only, and the arguments after the command's name, and
 // returns the effects Laneway applies, in order.

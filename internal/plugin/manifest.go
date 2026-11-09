@@ -46,6 +46,8 @@ type Manifest struct {
 	Module string `json:"module,omitempty"`
 	// Recipes are the Recipes it adds, in the order they detect Projects.
 	Recipes []RecipeDecl `json:"recipes,omitempty"`
+	// Integrations are the Integrations it adds.
+	Integrations []IntegrationDecl `json:"integrations,omitempty"`
 	// Commands are the commands it adds, run as `lane <plugin> <command>`.
 	Commands []CommandDecl `json:"commands,omitempty"`
 	// Capabilities are what it may do beyond returning config.
@@ -160,8 +162,8 @@ func (m Manifest) validate() error {
 	if m.Module != "" && (path.IsAbs(m.Module) || !fs.ValidPath(m.Module)) {
 		return fmt.Errorf("module %q must be a path inside the Plugin's directory, such as %q", m.Module, DefaultModule)
 	}
-	if len(m.Recipes) == 0 && len(m.Commands) == 0 {
-		return errors.New("the Plugin adds nothing; declare what it adds, such as a Recipe under recipes or a command under commands")
+	if len(m.Recipes) == 0 && len(m.Integrations) == 0 && len(m.Commands) == 0 {
+		return errors.New("the Plugin adds nothing; declare what it adds, such as a Recipe under recipes, an Integration under integrations or a command under commands")
 	}
 	seen := map[string]bool{}
 	for i, r := range m.Recipes {
@@ -175,6 +177,9 @@ func (m Manifest) validate() error {
 		if err := r.Detect.Validate(); err != nil {
 			return fmt.Errorf("recipes[%d] (%s): %w", i, r.Name, err)
 		}
+	}
+	if err := validateIntegrations(m.Integrations); err != nil {
+		return err
 	}
 	if err := m.validateCommands(); err != nil {
 		return err
@@ -200,5 +205,5 @@ func (m Manifest) module() string {
 
 // needsModule reports whether the Plugin has calls to answer.
 func (m Manifest) needsModule() bool {
-	return len(m.Recipes) > 0 || len(m.Commands) > 0
+	return len(m.Recipes) > 0 || len(m.Integrations) > 0 || len(m.Commands) > 0
 }
