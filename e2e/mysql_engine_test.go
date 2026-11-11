@@ -50,7 +50,7 @@ func TestMySQLDatabasesOnARealContainerEngine(t *testing.T) {
 				}
 				port := version.port
 				db := "my_real_" + name + "_" + strings.ReplaceAll(version.version, ".", "_")
-				repo := mysqlProject(t, strings.ReplaceAll(db, "_", "-"), "test = \"on\"\n"+version.services).
+				repo := dbProject(t, "mysql", strings.ReplaceAll(db, "_", "-"), "test = \"on\"\n"+version.services).
 					WriteFile(".env.testing", "APP_ENV=testing\n")
 
 				d.MustRunCLI(repo.Dir, "link", "--yes")

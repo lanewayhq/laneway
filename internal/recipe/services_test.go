@@ -67,7 +67,7 @@ func TestServicesConfigWrittenAsALayerResolvesToItself(t *testing.T) {
 
 func TestInvalidServicesConfigNamesTheFileAndTheKey(t *testing.T) {
 	for _, tc := range []struct{ toml, want string }{
-		{"[services]\nmemcached = \"1.6\"", `services.memcached: Laneway has no Service "memcached"; the Services are mailpit, mysql, postgres, redis`},
+		{"[services]\nmemcached = \"1.6\"", `services.memcached: Laneway has no Service "memcached"; the Services are mailpit, mariadb, mysql, postgres, redis`},
 		{"[services]\nredis = \"\"", `services.redis must be a version, such as "7" or "7.2", not ""`},
 		{"[services]\nredis = \"7 latest\"", `services.redis must be a version`},
 		{"[services]\nredis = 7", "services.redis"},

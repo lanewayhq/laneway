@@ -5,10 +5,10 @@
 //
 // Servers are chosen by image: see Fake.Serve. Commands run in a container
 // (Exec) are answered per image too, by a Command sharing the container's
-// Volume: see Fake.AnswerCommands. Redis, Mailpit, Postgres and MySQL are
-// built in; adding an Engine to the fake means writing a Server for its
-// image, and a Command if its manifest runs commands in the container (a
-// command readiness probe, or database commands).
+// Volume: see Fake.AnswerCommands. Redis, Mailpit, Postgres, MySQL and
+// MariaDB are built in; adding an Engine to the fake means writing a Server
+// for its image, and a Command if its manifest runs commands in the
+// container (a command readiness probe, or database commands).
 package containertest
 
 import (
@@ -124,8 +124,8 @@ type fakeContainer struct {
 	conns  *connSet
 }
 
-// New returns a Fake that can run Redis, Mailpit, Postgres, MySQL and RustFS
-// images.
+// New returns a Fake that can run Redis, Mailpit, Postgres, MySQL, MariaDB
+// and RustFS images.
 func New() *Fake {
 	f := &Fake{servers: map[string]Server{}, extra: map[string]map[int]Server{},
 		commands: map[string]Command{}, containers: map[string]*fakeContainer{}}
@@ -136,6 +136,8 @@ func New() *Fake {
 	f.AnswerCommands("docker.io/library/postgres", PostgresCommands)
 	f.Serve("docker.io/library/mysql", MySQL)
 	f.AnswerCommands("docker.io/library/mysql", MySQLCommands)
+	f.Serve("docker.io/library/mariadb", MariaDB)
+	f.AnswerCommands("docker.io/library/mariadb", MariaDBCommands)
 	f.Serve("docker.io/rustfs/rustfs", ObjectStore)
 	f.ServePort("docker.io/rustfs/rustfs", 9001, RustFSConsole)
 	f.AnswerCommands("docker.io/rustfs/rustfs", ObjectStoreCommands)

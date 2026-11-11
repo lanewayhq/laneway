@@ -97,6 +97,11 @@ func (l Layer) Personal() bool {
 	return filepath.Base(l.Source) == LocalFileName
 }
 
+// ChoosesEngine reports whether the layer sets database.engine.
+func (l Layer) ChoosesEngine() bool {
+	return l.Database != nil && l.Database.Engine != nil
+}
+
 // pluginName is what a Plugin's name looks like (see plugin.Manifest.Name).
 var pluginName = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 

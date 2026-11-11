@@ -42,8 +42,9 @@ type Manifest struct {
 	// Name is how config and the CLI name it, such as "redis". The Env
 	// Patch's Service variables start with it ({redis_port}).
 	Name string `toml:"name" json:"name"`
-	// DefaultVersion is the version that gets Port; other versions get a
-	// derived port (see Ports).
+	// DefaultVersion is the version that gets Port, unless another
+	// Engine's Service holds it; other versions get a derived port (see
+	// Ports).
 	DefaultVersion string `toml:"default_version" json:"default_version"`
 	// Image is the image repository, fully qualified; the version is its
 	// tag. It is "" when Versions maps each version to an image instead.
@@ -240,7 +241,9 @@ func (m *Manifest) Values(host string, port int) map[string]string {
 const MaxPort = 65535
 
 // Ports are the ports a Service of m at version may listen on, best first.
-// The default version gets the standard Port. Any other version gets a port
+// The default version's best port is the standard Port, then the block
+// below, for when another Engine's Service holds the standard port (as
+// MySQL's and MariaDB's both use 3306). Any other version gets a port
 // in a block of 100 picked by the standard port, at the version's digits,
 // such as redis:6 → 63706 and postgres:14 → 54314; a version with more than
 // two digits uses a hash of it instead. The block is the first three digits
@@ -251,8 +254,9 @@ const MaxPort = 65535
 // in order, for when the first is taken. The port a Service gets is
 // recorded in the Registry, so it never changes.
 func (m *Manifest) Ports(version string) []int {
+	ports := make([]int, 0, 101)
 	if version == m.DefaultVersion {
-		return []int{m.Port}
+		ports = append(ports, m.Port)
 	}
 	base := m.Port / 10 * 100
 	if base+99 > MaxPort {
@@ -274,7 +278,6 @@ func (m *Manifest) Ports(version string) []int {
 		h.Write([]byte(version))
 		n = int(h.Sum32() % 100)
 	}
-	ports := make([]int, 0, 100)
 	for i := range 100 {
 		ports = append(ports, base+(n+i)%100)
 	}
