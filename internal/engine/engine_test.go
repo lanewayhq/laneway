@@ -144,10 +144,10 @@ func TestAnEngineMayMapEachServiceVersionToAnImageByTagOrDigest(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "store") || !strings.Contains(err.Error(), `"1", "2"`) {
 		t.Fatalf("an unlisted version gave %v, want an error naming the Engine and its versions", err)
 	}
-	// The default version still gets the standard port: ports are keyed
-	// by the version, not the image.
-	if got := m.Ports("1"); !slices.Equal(got, []int{9000}) {
-		t.Fatalf("ports of the default version %v, want [9000]", got)
+	// The default version still gets the standard port first: ports are
+	// keyed by the version, not the image.
+	if got := m.Ports("1"); len(got) < 2 || got[0] != 9000 || got[1] != 59001 {
+		t.Fatalf("ports of the default version start %v, want 9000 then 59001", got[:min(len(got), 3)])
 	}
 }
 
@@ -155,16 +155,23 @@ func TestAnEngineMayMapEachServiceVersionToAnImageByTagOrDigest(t *testing.T) {
 // version 1, and returns the ports of version.
 func enginePorts(t *testing.T, port int, version string) []int {
 	t.Helper()
+	return enginePortsAt(t, port, "1", version)
+}
+
+// enginePortsAt parses an Engine whose standard port is port and default
+// version defaultVersion, and returns the ports of version.
+func enginePortsAt(t *testing.T, port int, defaultVersion, version string) []int {
+	t.Helper()
 	m, err := engine.Parse("cache.toml", []byte(fmt.Sprintf(`
 name = "cache"
-default_version = "1"
+default_version = %q
 image = "docker.io/example/cache"
 port = %d
 data_dir = "/data"
 
 [[ready]]
 kind = "http"
-`, port)))
+`, defaultVersion, port)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,16 +182,24 @@ kind = "http"
 // gets first, then the rest of first's block of 100.
 func checkPorts(t *testing.T, port int, version string, first int) {
 	t.Helper()
-	got := enginePorts(t, port, version)
-	if len(got) != 100 || got[0] != first {
-		t.Errorf("port %d, version %s: ports start %v (%d of them), want %d then the rest of its block of 100", port, version, got[:min(len(got), 3)], len(got), first)
+	checkBlock(t, fmt.Sprintf("port %d, version %s", port, version), enginePorts(t, port, version), first)
+}
+
+// checkBlock checks that ports, described by what, are first then the rest
+// of first's block of 100.
+func checkBlock(t *testing.T, what string, ports []int, first int) {
+	t.Helper()
+	if len(ports) != 100 || ports[0] != first {
+		t.Errorf("%s: ports start %v (%d of them), want %d then the rest of its block of 100", what, ports[:min(len(ports), 3)], len(ports), first)
 		return
 	}
 	block := first / 100 * 100
-	for _, p := range got {
-		if p < block || p > block+99 {
-			t.Errorf("port %d, version %s: port %d is outside %d–%d", port, version, p, block, block+99)
+	seen := map[int]bool{}
+	for _, p := range ports {
+		if p < block || p > block+99 || seen[p] {
+			t.Errorf("%s: port %d is outside %d–%d or listed twice", what, p, block, block+99)
 		}
+		seen[p] = true
 	}
 }
 
@@ -219,9 +234,32 @@ func TestAnotherVersionOfAnEngineWithAHighPortGetsAPortFrom50000AndTheFirstTwoDi
 	for _, tt := range tests {
 		checkPorts(t, tt.port, tt.version, tt.first)
 	}
-	// The default version still gets the standard port.
-	if got := enginePorts(t, 9000, "1"); !slices.Equal(got, []int{9000}) {
-		t.Fatalf("ports of the default version %v, want [9000]", got)
+}
+
+// TestTheDefaultVersionOfAnEngineGetsItsStandardPortThenItsVersionBlock: the
+// standard port is the default version's best port, but if another Engine's
+// Service holds it (MySQL's and MariaDB's 3306) the default version falls
+// back to the block another version of that name would get.
+func TestTheDefaultVersionOfAnEngineGetsItsStandardPortThenItsVersionBlock(t *testing.T) {
+	tests := []struct {
+		port           int
+		defaultVersion string
+		block          int // the first port after the standard one
+	}{
+		{3306, "8.4", 33084},
+		{6379, "7", 63707},
+		{5432, "17", 54317},
+		{9000, "1", 59001},  // rustfs
+		{7379, "1", 57301},  // the kv test Engine
+		{27017, "8", 52708}, // a 5-digit port
+	}
+	for _, tt := range tests {
+		got := enginePortsAt(t, tt.port, tt.defaultVersion, tt.defaultVersion)
+		if len(got) == 0 || got[0] != tt.port {
+			t.Errorf("port %d, default version %s: ports start %v, want the standard port %d first", tt.port, tt.defaultVersion, got[:min(len(got), 3)], tt.port)
+			continue
+		}
+		checkBlock(t, fmt.Sprintf("port %d, default version %s after its standard port", tt.port, tt.defaultVersion), got[1:], tt.block)
 	}
 }
 
