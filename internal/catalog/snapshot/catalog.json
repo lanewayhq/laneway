@@ -53,6 +53,20 @@
               }
             }
           ]
+        },
+        {
+          "version": "0.3.0",
+          "api_version": 1,
+          "url": "https://github.com/lanewayhq/plugins/releases/download/laravel/v0.3.0/laravel-0.3.0.tar.gz",
+          "sha256": "7c7e20072261bc7aa6c08d613e8e3b29970ba7ed20f2997e887836d4485923fd",
+          "recipes": [
+            {
+              "name": "laravel",
+              "detect": {
+                "file": "artisan"
+              }
+            }
+          ]
         }
       ]
     },
@@ -75,6 +89,20 @@
           "sha256": "68c471c11eed989b0c03ec6a9a271c3acd30f3650ebc3e0839d57d34c3611411",
           "engines": [
             "mailpit"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "mariadb",
+      "releases": [
+        {
+          "version": "1.0.0",
+          "api_version": 1,
+          "url": "https://github.com/lanewayhq/plugins/releases/download/mariadb/v1.0.0/mariadb-1.0.0.tar.gz",
+          "sha256": "410965ac2163fc0eaf8b67fdccfea6acd5a34811d43521d64076c46fb0d5d2e2",
+          "engines": [
+            "mariadb"
           ]
         }
       ]
