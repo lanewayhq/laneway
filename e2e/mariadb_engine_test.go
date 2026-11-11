@@ -42,7 +42,7 @@ func TestMariaDBDatabasesOnARealContainerEngine(t *testing.T) {
 					t.Fatalf("pulling mariadb:%s: %v", version, err)
 				}
 				services := "[services]\nmariadb = \"" + version + "\"\n"
-				repo := mariadbProject(t, "maria-real", "test = \"on\"\n"+services).
+				repo := dbProject(t, "mariadb", "maria-real", "test = \"on\"\n"+services).
 					WriteFile(".env.testing", "APP_ENV=testing\n")
 
 				d.MustRunCLI(repo.Dir, "link", "--yes")
@@ -151,7 +151,7 @@ func TestMariaDBDatabasesOnARealContainerEngine(t *testing.T) {
 				// Fresh mode, with Worktree names longer than a database
 				// name can be: each gets its own empty database, named
 				// within MariaDB's 64 characters.
-				fresh := mariadbProject(t, "maria-long", "worktree = \"fresh\"\n"+services)
+				fresh := dbProject(t, "mariadb", "maria-long", "worktree = \"fresh\"\n"+services)
 				d.MustRunCLI(fresh.Dir, "link", "--yes")
 				d.MustRunCLI(fresh.Dir, "worktree", "ready")
 				myExec(t, dialMySQL(t, d, port, "maria_long"), "CREATE TABLE notes (body text)")
@@ -175,7 +175,7 @@ func TestMariaDBDatabasesOnARealContainerEngine(t *testing.T) {
 
 				// Shared mode: a new Worktree uses the main Worktree's
 				// database and gets none of its own.
-				shared := mariadbProject(t, "maria-shared", "worktree = \"shared\"\n"+services)
+				shared := dbProject(t, "mariadb", "maria-shared", "worktree = \"shared\"\n"+services)
 				d.MustRunCLI(shared.Dir, "link", "--yes")
 				d.MustRunCLI(shared.Dir, "worktree", "ready")
 				sharedWt := shared.AddWorktree("feature")

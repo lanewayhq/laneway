@@ -469,9 +469,9 @@ func Resolve(in Input) (Resolved, error) {
 	// Laravel app on the mysql connection, overrides the Recipe's, whose
 	// Engine then needn't be installed: Linking fetches only the Engines
 	// the resolved config names.
-	engineChosen := slices.ContainsFunc(in.Layers, func(l config.Layer) bool { return l.Database != nil && l.Database.Engine != nil })
+	engineChosen := slices.ContainsFunc(in.Layers, config.Layer.ChoosesEngine)
 	for _, l := range layers {
-		if engineChosen && l.Database != nil && l.Database.Engine != nil {
+		if engineChosen && l.ChoosesEngine() {
 			db := *l.Database
 			db.Engine = nil
 			l.Database = &db

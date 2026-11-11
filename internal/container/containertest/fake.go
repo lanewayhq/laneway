@@ -6,9 +6,9 @@
 // Servers are chosen by image: see Fake.Serve. Commands run in a container
 // (Exec) are answered per image too, by a Command sharing the container's
 // Volume: see Fake.AnswerCommands. Redis, Mailpit, Postgres, MySQL and
-// MariaDB are built in; adding an Engine to the fake means writing a Server for its
-// image, and a Command if its manifest runs commands in the container (a
-// command readiness probe, or database commands).
+// MariaDB are built in; adding an Engine to the fake means writing a Server
+// for its image, and a Command if its manifest runs commands in the
+// container (a command readiness probe, or database commands).
 package containertest
 
 import (

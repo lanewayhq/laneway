@@ -58,7 +58,7 @@ func (h *Host) Uses(p Plugin, dir string) []string {
 		for e, v := range l.Services {
 			versions[e] = v
 		}
-		if l.Database != nil && l.Database.Engine != nil {
+		if l.ChoosesEngine() {
 			database = *l.Database.Engine
 		}
 	}

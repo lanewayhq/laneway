@@ -42,17 +42,18 @@ import (
 // views, routines or triggers: the slow tier copies those with the real
 // mysqldump.
 func MySQL(ln net.Listener, spec container.Spec, data *Volume) {
-	serveMy(mysqlImage, ln, spec, data)
+	serveMySQLProtocol(mysqlImage, ln, spec, data)
 }
 
 // MariaDB is the MySQL Server as the mariadb image configured by
 // MARIADB_USER / MARIADB_PASSWORD would be, with the same login and
 // statements (MariaDBCommands answers its clients).
 func MariaDB(ln net.Listener, spec container.Spec, data *Volume) {
-	serveMy(mariadbImage, ln, spec, data)
+	serveMySQLProtocol(mariadbImage, ln, spec, data)
 }
 
-func serveMy(image myImage, ln net.Listener, spec container.Spec, data *Volume) {
+// serveMySQLProtocol serves the MySQL protocol on ln, as image's server would.
+func serveMySQLProtocol(image myImage, ln net.Listener, spec container.Spec, data *Volume) {
 	my := myServerOf(image, spec, data)
 	for {
 		conn, err := ln.Accept()
@@ -162,8 +163,10 @@ func myCommands(image myImage, spec container.Spec, data *Volume, cmd []string) 
 		return container.Output{ExitCode: status, Stderr: fmt.Appendf(nil,
 			"%sERROR 1045 (28000): Access denied for user '%s'@'localhost' (using password: YES)\n", client, user)}
 	}
-	script := func(n int, has string) bool {
-		return len(cmd) == n && (cmd[0] == "sh" || cmd[0] == "bash") && cmd[1] == "-c" && strings.Contains(cmd[2], has)
+	// shellScript reports whether cmd is an sh -c or bash -c script argc
+	// words long (the script, $0 and its arguments) that has has in it.
+	shellScript := func(argc int, has string) bool {
+		return len(cmd) == argc && (cmd[0] == "sh" || cmd[0] == "bash") && cmd[1] == "-c" && strings.Contains(cmd[2], has)
 	}
 	switch {
 	case cmd[0] == image.client:
@@ -197,7 +200,7 @@ func myCommands(image myImage, spec container.Spec, data *Volume, cmd []string) 
 		return out
 	case cmd[0] == image.admin && slices.Contains(cmd, "ping"):
 		return container.Output{} // up as soon as the container is
-	case script(7, image.dump+" ") && strings.Contains(cmd[2], image.client+" "):
+	case shellScript(7, image.dump+" ") && strings.Contains(cmd[2], image.client+" "):
 		user, from, to := cmd[4], cmd[5], cmd[6]
 		if image.dash && cmd[0] == "sh" && strings.Contains(cmd[2], "pipefail") {
 			return container.Output{ExitCode: 2, Stderr: []byte("sh: 1: set: Illegal option -o pipefail\n")}
@@ -217,7 +220,7 @@ func myCommands(image myImage, spec container.Spec, data *Volume, cmd []string) 
 		my.removeDatabase(to)
 		my.setDatabase(to, source)
 		return container.Output{}
-	case script(6, "DROP DATABASE") && strings.Contains(cmd[2], image.client+" "):
+	case shellScript(6, "DROP DATABASE") && strings.Contains(cmd[2], image.client+" "):
 		user, db := cmd[4], cmd[5]
 		if user != my.user || password != my.password {
 			return refused("", 1, user)
