@@ -90,7 +90,7 @@ func TestConfigNamingAnEngineNeitherInstalledNorInTheCatalogStillCallsItUnknown(
 	tests := []struct {
 		fixture, engine, want string
 	}{
-		{"database-postgres", "postgres", `database.engine must be sqlite or mysql, not "postgres"`},
+		{"database-postgres", "postgres", `database.engine must be sqlite, mariadb or mysql, not "postgres"`},
 		{"services-layers", "redis", `services.redis: Laneway has no Service "redis"`},
 		{"catalog-engine-env", "redis", "env.REDIS_PORT: unknown template variable {redis_port}"},
 	}

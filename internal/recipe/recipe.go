@@ -465,7 +465,17 @@ func Resolve(in Input) (Resolved, error) {
 	layers = append(layers, integrations...)
 	// The layers before project are the Recipe's and the Integrations'.
 	project := len(layers)
+	// A Project layer choosing database.engine, such as mariadb for a
+	// Laravel app on the mysql connection, overrides the Recipe's, whose
+	// Engine then needn't be installed: Linking fetches only the Engines
+	// the resolved config names.
+	engineChosen := slices.ContainsFunc(in.Layers, func(l config.Layer) bool { return l.Database != nil && l.Database.Engine != nil })
 	for _, l := range layers {
+		if engineChosen && l.Database != nil && l.Database.Engine != nil {
+			db := *l.Database
+			db.Engine = nil
+			l.Database = &db
+		}
 		if err := l.CheckEngines(known); err != nil {
 			return Resolved{}, err
 		}
