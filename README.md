@@ -15,7 +15,7 @@ git worktree add ../shop-checkout -b checkout
 
 - **HTTPS domains.** The main checkout is served at `https://<project>.localhost`, every other worktree at `https://<worktree>.<project>.localhost`, with a local CA Laneway installs into your system's (and on WSL2, Windows') trust store. Extra HTTP Processes, such as Vite, get `https://<process>.<domain>`.
 - **Native Processes that start lazily.** Your web server, queue worker and asset bundler run as ordinary processes on your machine, started on the first request and stopped when the worktree goes idle. Runtimes (PHP, Node, Ruby…) come from [mise](https://mise.jdx.dev).
-- **Shared Services, also lazy.** Postgres, MySQL, Redis, Mailpit and RustFS (S3-compatible object storage) run as one container per engine and version, shared by every Project, started on first use. Mailpit's inbox and RustFS's S3 API and console are served over HTTPS at Service Domains such as `https://s3.laneway.localhost`. Needs Podman (preferred) or Docker; SQLite Projects need neither.
+- **Shared Services, also lazy.** Postgres, MySQL, MariaDB, Redis, Mailpit and RustFS (S3-compatible object storage) run as one container per engine and version, shared by every Project, started on first use. Mailpit's inbox and RustFS's S3 API and console are served over HTTPS at Service Domains such as `https://s3.laneway.localhost`. Needs Podman (preferred) or Docker; SQLite Projects need neither.
 - **A database per worktree.** Each worktree gets its own database (a copy of the main one, or a fresh one), plus a separate Test Database when your tests use one, so test runs never touch each other's data.
 - **A Bucket per worktree.** A Project that declares RustFS gives each worktree its own private Bucket, a copy of the main one's, plus any public or private Buckets the Project declares, so no worktree sees or deletes another's files. Databases and Buckets of removed worktrees are kept for 24 hours before they're dropped.
 - **An Env Patch, not an env rewrite.** Laneway writes only the `.env` keys it owns (such as `APP_URL`, `DB_*`, `MAIL_*` and, with RustFS, `AWS_*`) and never touches the rest.
@@ -24,7 +24,7 @@ git worktree add ../shop-checkout -b checkout
 
 ## Plugins
 
-Laneway's knowledge of stacks, tools and services comes from **Plugins**: Laravel, Rails and Vite, the Postgres, MySQL, Redis, Mailpit and RustFS engines, and the Claude Code, T3 Code and Laravel Boost generators. They live in [lanewayhq/plugins](https://github.com/lanewayhq/plugins) and are listed in a signed Catalog. Laneway fetches the ones a Project needs the first time you Link it, and again whenever it starts if any are missing, such as after an upgrade. You can also add your own (`lane plugin add <dir|github.com/owner/repo>`) or write one: see the [Plugin authoring guide](https://github.com/lanewayhq/plugins/blob/main/docs/authoring.md).
+Laneway's knowledge of stacks, tools and services comes from **Plugins**: Laravel, Rails and Vite, the Postgres, MySQL, MariaDB, Redis, Mailpit and RustFS engines, and the Claude Code, T3 Code and Laravel Boost generators. They live in [lanewayhq/plugins](https://github.com/lanewayhq/plugins) and are listed in a signed Catalog. Laneway fetches the ones a Project needs the first time you Link it, and again whenever it starts if any are missing, such as after an upgrade. You can also add your own (`lane plugin add <dir|github.com/owner/repo>`) or write one: see the [Plugin authoring guide](https://github.com/lanewayhq/plugins/blob/main/docs/authoring.md).
 
 ## Install
 
@@ -58,7 +58,7 @@ lane open                    # https://my-laravel-app.localhost
 
 `lane info` shows the worktree's URL, Processes, databases, Buckets and Services; `lane status` lists every Project. `lane init` writes the resolved config to `laneway.toml`, so you can see and change what Laneway runs. `lane help` lists every command.
 
-For a full walkthrough, from a fresh machine to a Laravel + React + Postgres app with worktrees, see [docs/guides/laravel-react-postgres.md](docs/guides/laravel-react-postgres.md). It ends with object storage: a Bucket per worktree for Laravel's `s3` disk.
+For a full walkthrough, from a fresh machine to a Laravel + React + Postgres app with worktrees, see [docs/guides/laravel-react-postgres.md](docs/guides/laravel-react-postgres.md). It ends with object storage: a Bucket per worktree for Laravel's `s3` disk. For MariaDB, including an app on Laravel's `mysql` connection whose production runs MariaDB, see [docs/guides/mariadb.md](docs/guides/mariadb.md).
 
 ## Learn more
 
