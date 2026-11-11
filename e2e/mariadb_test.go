@@ -219,3 +219,35 @@ func TestALaravelAppOnTheMariaDBConnectionGetsAMariaDBDatabase(t *testing.T) {
 		t.Fatalf("the database is served by %v, want %s", d.Engine.Containers(), mariadbContainer)
 	}
 }
+
+func TestALaravelAppOnTheMySQLConnectionOptsIntoAPinnedMariaDBWithLanewayToml(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	laravelStubs(t, d)
+	repo := laravelRepo(t, "lara-optin")
+	repo.WriteFile("laneway.toml", "[database]\nengine = \"mariadb\"\n\n[services]\nmariadb = \"10.6\"\n").
+		Commit("develop against MariaDB 10.6, as production runs")
+
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+
+	port := servicePort(t, d, "mariadb", "10.6")
+	env := filepath.Join(repo.Dir, ".env")
+	for key, want := range map[string]string{
+		"DB_CONNECTION": "mysql", // the app's own connection, left alone
+		"DB_HOST":       d.ServiceHost(),
+		"DB_PORT":       port,
+		"DB_DATABASE":   "lara_optin",
+		"DB_USERNAME":   "laneway",
+		"DB_PASSWORD":   "laneway",
+	} {
+		if got := envValue(t, env, key); got != want {
+			t.Errorf("%s=%q in .env, want %q", key, got, want)
+		}
+	}
+	n, _ := strconv.Atoi(port)
+	dialMySQL(t, d, n, "lara_optin")
+	if !d.Engine.IsRunning("laneway-mariadb-10.6") || d.Engine.IsRunning("laneway-mysql-8.4") {
+		t.Fatalf("running containers %v, want MariaDB 10.6's and no MySQL", d.Engine.Containers())
+	}
+}
