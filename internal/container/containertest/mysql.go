@@ -42,7 +42,18 @@ import (
 // views, routines or triggers: the slow tier copies those with the real
 // mysqldump.
 func MySQL(ln net.Listener, spec container.Spec, data *Volume) {
-	my := myServerOf(spec, data)
+	serveMy(mysqlImage, ln, spec, data)
+}
+
+// MariaDB is the MySQL Server as the mariadb image configured by
+// MARIADB_USER / MARIADB_PASSWORD would be, with the same login and
+// statements (MariaDBCommands answers its clients).
+func MariaDB(ln net.Listener, spec container.Spec, data *Volume) {
+	serveMy(mariadbImage, ln, spec, data)
+}
+
+func serveMy(image myImage, ln net.Listener, spec container.Spec, data *Volume) {
+	my := myServerOf(image, spec, data)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -52,22 +63,44 @@ func MySQL(ln net.Listener, spec container.Spec, data *Volume) {
 	}
 }
 
+// myImage is what differs between the mysql and mariadb images, for the
+// fake: what their server and clients are called, the env naming the user,
+// and what their sh and dump client accept.
+type myImage struct {
+	name      string // the image, for messages
+	version   string // the server's version, in its greeting
+	envPrefix string // of <prefix>USER and <prefix>PASSWORD
+	client    string // runs SQL
+	dump      string // dumps a database
+	admin     string // pings the server
+	// dash is whether the image's sh is dash, which has no pipefail
+	// ("set: Illegal option -o pipefail", status 2), unlike bash.
+	dash bool
+	// gtid is whether the dump client has --set-gtid-purged, MySQL's.
+	gtid bool
+}
+
+var (
+	mysqlImage   = myImage{name: "mysql", version: "8.4.0-laneway-fake", envPrefix: "MYSQL_", client: "mysql", dump: "mysqldump", admin: "mysqladmin", gtid: true}
+	mariadbImage = myImage{name: "mariadb", version: "11.8.0-MariaDB-laneway-fake", envPrefix: "MARIADB_", client: "mariadb", dump: "mariadb-dump", admin: "mariadb-admin", dash: true}
+)
+
 const myDatabasesKey = "mysql:databases"
 
 // mySystemSchemas are what the server's initialisation creates.
 var mySystemSchemas = []string{"information_schema", "mysql", "performance_schema", "sys"}
 
 // myServerOf is the fake container's MySQL server, shared by its port and
-// the commands run in it (MySQLCommands).
-func myServerOf(spec container.Spec, data *Volume) *myServer {
+// the commands run in it (MySQLCommands, MariaDBCommands).
+func myServerOf(image myImage, spec container.Spec, data *Volume) *myServer {
 	return data.Shared("mysql:server", func() any {
-		my := &myServer{data: data}
+		my := &myServer{data: data, version: image.version}
 		for _, kv := range spec.Env {
 			k, v, _ := strings.Cut(kv, "=")
 			switch k {
-			case "MYSQL_USER":
+			case image.envPrefix + "USER":
 				my.user = v
-			case "MYSQL_PASSWORD":
+			case image.envPrefix + "PASSWORD":
 				my.password = v
 			}
 		}
@@ -91,15 +124,30 @@ func myServerOf(spec container.Spec, data *Volume) *myServer {
 //     separated by tabs. An error goes to stderr as "ERROR <code> (<state>)
 //     at line 1: …" and stops it with status 1.
 //   - the manifest's clone script, sh -c '… mysqldump … | mysql …' sh <user>
-//     <from> <to>: <to>, dropped first if it is there, made a copy of
-//     <from>.
-//   - the manifest's drop script, sh -c '… DROP DATABASE …' sh <user> <db>:
-//     <db> dropped if it is there (the fake has no other sessions to close).
+//     <from> <to> (or bash -c): <to>, dropped first if it is there, made a
+//     copy of <from>.
+//   - the manifest's drop script, sh -c '… DROP DATABASE …' sh <user> <db>
+//     (or bash -c): <db> dropped if it is there (the fake has no other
+//     sessions to close).
 //   - mysqladmin ping: the server is up as soon as the container is.
 //
 // A login refused exits 1, as the mysql client does.
 func MySQLCommands(_ context.Context, spec container.Spec, data *Volume, cmd []string) container.Output {
-	my := myServerOf(spec, data)
+	return myCommands(mysqlImage, spec, data, cmd)
+}
+
+// MariaDBCommands answers commands run in a fake mariadb container as
+// MySQLCommands does, through the image's own client names: mariadb,
+// mariadb-dump and mariadb-admin (images from 11.0 have no mysql ones). The
+// image's sh is dash, so a clone script setting pipefail must run in bash,
+// and mariadb-dump has no --set-gtid-purged: either fails the copy, as the
+// real image would.
+func MariaDBCommands(_ context.Context, spec container.Spec, data *Volume, cmd []string) container.Output {
+	return myCommands(mariadbImage, spec, data, cmd)
+}
+
+func myCommands(image myImage, spec container.Spec, data *Volume, cmd []string) container.Output {
+	my := myServerOf(image, spec, data)
 	password := ""
 	for len(cmd) > 0 && (cmd[0] == "env" || strings.Contains(cmd[0], "=")) {
 		if v, ok := strings.CutPrefix(cmd[0], "MYSQL_PWD="); ok {
@@ -114,8 +162,11 @@ func MySQLCommands(_ context.Context, spec container.Spec, data *Volume, cmd []s
 		return container.Output{ExitCode: status, Stderr: fmt.Appendf(nil,
 			"%sERROR 1045 (28000): Access denied for user '%s'@'localhost' (using password: YES)\n", client, user)}
 	}
+	script := func(n int, has string) bool {
+		return len(cmd) == n && (cmd[0] == "sh" || cmd[0] == "bash") && cmd[1] == "-c" && strings.Contains(cmd[2], has)
+	}
 	switch {
-	case cmd[0] == "mysql":
+	case cmd[0] == image.client:
 		var user, sql string
 		for _, arg := range cmd[1:] {
 			if v, ok := strings.CutPrefix(arg, "--user="); ok {
@@ -144,10 +195,16 @@ func MySQLCommands(_ context.Context, spec container.Spec, data *Volume, cmd []s
 			}
 		}
 		return out
-	case cmd[0] == "mysqladmin" && slices.Contains(cmd, "ping"):
+	case cmd[0] == image.admin && slices.Contains(cmd, "ping"):
 		return container.Output{} // up as soon as the container is
-	case cmd[0] == "sh" && len(cmd) == 7 && cmd[1] == "-c" && strings.Contains(cmd[2], "mysqldump"):
+	case script(7, image.dump+" ") && strings.Contains(cmd[2], image.client+" "):
 		user, from, to := cmd[4], cmd[5], cmd[6]
+		if image.dash && cmd[0] == "sh" && strings.Contains(cmd[2], "pipefail") {
+			return container.Output{ExitCode: 2, Stderr: []byte("sh: 1: set: Illegal option -o pipefail\n")}
+		}
+		if !image.gtid && strings.Contains(cmd[2], "--set-gtid-purged") {
+			return container.Output{ExitCode: 1, Stderr: fmt.Appendf(nil, "%s: unknown variable 'set-gtid-purged=OFF'\n", image.dump)}
+		}
 		if user != my.user || password != my.password {
 			return refused("", 1, user)
 		}
@@ -160,7 +217,7 @@ func MySQLCommands(_ context.Context, spec container.Spec, data *Volume, cmd []s
 		my.removeDatabase(to)
 		my.setDatabase(to, source)
 		return container.Output{}
-	case cmd[0] == "sh" && len(cmd) == 6 && cmd[1] == "-c" && strings.Contains(cmd[2], "DROP DATABASE"):
+	case script(6, "DROP DATABASE") && strings.Contains(cmd[2], image.client+" "):
 		user, db := cmd[4], cmd[5]
 		if user != my.user || password != my.password {
 			return refused("", 1, user)
@@ -170,7 +227,7 @@ func MySQLCommands(_ context.Context, spec container.Spec, data *Volume, cmd []s
 		my.removeDatabase(db)
 		return container.Output{}
 	}
-	return container.Output{ExitCode: 127, Stderr: fmt.Appendf(nil, "the fake mysql image can't run %q\n", cmd)}
+	return container.Output{ExitCode: 127, Stderr: fmt.Appendf(nil, "the fake %s image can't run %q\n", image.name, cmd)}
 }
 
 // myTable is a fake table: one text column and its rows.
@@ -184,6 +241,7 @@ type myDatabase map[string]*myTable
 
 type myServer struct {
 	data           *Volume
+	version        string // in the greeting
 	user, password string
 	nextID         atomic.Uint32
 
@@ -303,7 +361,7 @@ func (my *myServer) serve(conn net.Conn) {
 		scramble[i] = scramble[i]%127 + 1
 	}
 	id := my.nextID.Add(1) + 100
-	g := append([]byte{10}, "8.4.0-laneway-fake\x00"...)
+	g := append([]byte{10}, my.version+"\x00"...)
 	g = binary.LittleEndian.AppendUint32(g, id)
 	g = append(append(g, scramble[:8]...), 0)
 	caps := uint32(0xffffffff &^ (1 << 11)) // everything but SSL
