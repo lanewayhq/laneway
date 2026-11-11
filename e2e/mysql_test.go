@@ -16,17 +16,18 @@ import (
 	"github.com/lanewayhq/laneway/internal/testkit/mysqlwire"
 )
 
-// mysqlProject is a Project whose database is a MySQL database, with the Env
-// Patch setting Laravel's DB_* keys, plus the extra lines given (such as
+// dbProject is a Project whose database is in engine, mysql or mariadb,
+// with the Env Patch setting Laravel's DB_* keys as an app on Laravel's mysql
+// connection has them, plus the extra lines given (such as
 // `worktree = "fresh"`, which land in the [database] table).
-func mysqlProject(t *testing.T, name, database string) *gitfixture.Repo {
+func dbProject(t *testing.T, engine, name, database string) *gitfixture.Repo {
 	t.Helper()
 	return gitfixture.New(t, name).
 		WriteFile(".gitignore", ".env\n").
-		WriteFile("laneway.toml", "[database]\nengine = \"mysql\"\n"+database+"\n"+
+		WriteFile("laneway.toml", "[database]\nengine = \""+engine+"\"\n"+database+"\n"+
 			"[env]\nDB_CONNECTION = \"mysql\"\nDB_HOST = \"{db_host}\"\nDB_PORT = \"{db_port}\"\n"+
 			"DB_DATABASE = \"{db}\"\nDB_USERNAME = \"{db_username}\"\nDB_PASSWORD = \"{db_password}\"\n").
-		Commit("declare a MySQL database")
+		Commit("declare a " + engine + " database")
 }
 
 // dialMySQL connects to the database db of the MySQL Service listening on
@@ -77,7 +78,7 @@ func myColumn(t *testing.T, conn *mysqlwire.Conn, sql string) []string {
 func TestLinkingCreatesTheProjectsEmptyMySQLDatabase(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
-	repo := mysqlProject(t, "my-link", "")
+	repo := dbProject(t, "mysql", "my-link", "")
 
 	d.MustRunCLI(repo.Dir, "link", "--yes")
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
@@ -96,7 +97,7 @@ func TestLinkingCreatesTheProjectsEmptyMySQLDatabase(t *testing.T) {
 func TestMySQLDatabasesAreMadeByMysqlAndMysqldumpInsideTheServiceContainer(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
-	repo := mysqlProject(t, "my-client", "")
+	repo := dbProject(t, "mysql", "my-client", "")
 	d.MustRunCLI(repo.Dir, "link", "--yes")
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
 	myExec(t, dialMySQL(t, d, 3306, "my_client"), "CREATE TABLE notes (body text)")
@@ -127,7 +128,7 @@ func TestMySQLDatabasesAreMadeByMysqlAndMysqldumpInsideTheServiceContainer(t *te
 func TestANewWorktreeGetsACopyOfTheMainWorktreesMySQLDatabaseByDefault(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
-	repo := mysqlProject(t, "my-clone", "")
+	repo := dbProject(t, "mysql", "my-clone", "")
 	d.MustRunCLI(repo.Dir, "link", "--yes")
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
 	main := dialMySQL(t, d, 3306, "my_clone")
@@ -156,7 +157,7 @@ func TestANewWorktreeGetsACopyOfTheMainWorktreesMySQLDatabaseByDefault(t *testin
 func TestInFreshModeANewWorktreeGetsAnEmptyMySQLDatabase(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
-	repo := mysqlProject(t, "my-fresh", `worktree = "fresh"`)
+	repo := dbProject(t, "mysql", "my-fresh", `worktree = "fresh"`)
 	d.MustRunCLI(repo.Dir, "link", "--yes")
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
 	myExec(t, dialMySQL(t, d, 3306, "my_fresh"), "CREATE TABLE notes (body text)")
@@ -173,7 +174,7 @@ func TestInFreshModeANewWorktreeGetsAnEmptyMySQLDatabase(t *testing.T) {
 func TestInSharedModeANewWorktreeUsesTheMainWorktreesMySQLDatabase(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
-	repo := mysqlProject(t, "my-shared", `worktree = "shared"`)
+	repo := dbProject(t, "mysql", "my-shared", `worktree = "shared"`)
 	d.MustRunCLI(repo.Dir, "link", "--yes")
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
 
@@ -189,7 +190,7 @@ func TestInSharedModeANewWorktreeUsesTheMainWorktreesMySQLDatabase(t *testing.T)
 func TestALongWorktreeNameGivesADatabaseNameCutToMySQLsLimitWithAHash(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
-	repo := mysqlProject(t, "my-long", `worktree = "fresh"`)
+	repo := dbProject(t, "mysql", "my-long", `worktree = "fresh"`)
 	d.MustRunCLI(repo.Dir, "link", "--yes")
 	long := "Add-the-very-long-feature-that-needs-a-long-branch-name-to-describe-it-"
 
@@ -215,7 +216,7 @@ func TestALongWorktreeNameGivesADatabaseNameCutToMySQLsLimitWithAHash(t *testing
 func TestAPinnedMySQLVersionGetsItsOwnPortAndGoesIdleOnceSetupIsDone(t *testing.T) {
 	t.Parallel()
 	d, clk := idleDaemon(t)
-	repo := mysqlProject(t, "my-pinned", "[services]\nmysql = \"8.0\"\n")
+	repo := dbProject(t, "mysql", "my-pinned", "[services]\nmysql = \"8.0\"\n")
 
 	d.MustRunCLI(repo.Dir, "link", "--yes")
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
@@ -237,7 +238,7 @@ func TestAPinnedMySQLVersionGetsItsOwnPortAndGoesIdleOnceSetupIsDone(t *testing.
 func TestACopyCutShortIsCopiedAgainRatherThanKept(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
-	repo := mysqlProject(t, "my-cut", "")
+	repo := dbProject(t, "mysql", "my-cut", "")
 	d.MustRunCLI(repo.Dir, "link", "--yes")
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
 	main := dialMySQL(t, d, 3306, "my_cut")
@@ -265,7 +266,7 @@ func TestACopyCutShortIsCopiedAgainRatherThanKept(t *testing.T) {
 func TestWithTestDatabasesOnEachWorktreeGetsAnEmptyMySQLTestDatabaseInEnvTesting(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
-	repo := mysqlProject(t, "my-tdb", `test = "on"`)
+	repo := dbProject(t, "mysql", "my-tdb", `test = "on"`)
 	repo.WriteFile(".env.testing", "APP_ENV=testing\nDB_CONNECTION=mysql\nDB_DATABASE=laravel_test\n").
 		Commit("add the test env")
 	d.MustRunCLI(repo.Dir, "link", "--yes")

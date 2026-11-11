@@ -152,15 +152,8 @@ func TestAnEngineMayMapEachServiceVersionToAnImageByTagOrDigest(t *testing.T) {
 }
 
 // enginePorts parses an Engine whose standard port is port and default
-// version 1, and returns the ports of version.
-func enginePorts(t *testing.T, port int, version string) []int {
-	t.Helper()
-	return enginePortsAt(t, port, "1", version)
-}
-
-// enginePortsAt parses an Engine whose standard port is port and default
 // version defaultVersion, and returns the ports of version.
-func enginePortsAt(t *testing.T, port int, defaultVersion, version string) []int {
+func enginePorts(t *testing.T, port int, defaultVersion, version string) []int {
 	t.Helper()
 	m, err := engine.Parse("cache.toml", []byte(fmt.Sprintf(`
 name = "cache"
@@ -182,7 +175,7 @@ kind = "http"
 // gets first, then the rest of first's block of 100.
 func checkPorts(t *testing.T, port int, version string, first int) {
 	t.Helper()
-	checkBlock(t, fmt.Sprintf("port %d, version %s", port, version), enginePorts(t, port, version), first)
+	checkBlock(t, fmt.Sprintf("port %d, version %s", port, version), enginePorts(t, port, "1", version), first)
 }
 
 // checkBlock checks that ports, described by what, are first then the rest
@@ -254,7 +247,7 @@ func TestTheDefaultVersionOfAnEngineGetsItsStandardPortThenItsVersionBlock(t *te
 		{27017, "8", 52708}, // a 5-digit port
 	}
 	for _, tt := range tests {
-		got := enginePortsAt(t, tt.port, tt.defaultVersion, tt.defaultVersion)
+		got := enginePorts(t, tt.port, tt.defaultVersion, tt.defaultVersion)
 		if len(got) == 0 || got[0] != tt.port {
 			t.Errorf("port %d, default version %s: ports start %v, want the standard port %d first", tt.port, tt.defaultVersion, got[:min(len(got), 3)], tt.port)
 			continue

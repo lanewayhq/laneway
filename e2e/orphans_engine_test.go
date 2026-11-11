@@ -85,7 +85,7 @@ func TestMySQLOrphansOnARealContainerEngine(t *testing.T) {
 				t.Fatalf("pulling mysql:8.4: %v", err)
 			}
 			db := "orphan_my_real_" + name
-			repo := mysqlProject(t, strings.ReplaceAll(db, "_", "-"), `test = "on"`)
+			repo := dbProject(t, "mysql", strings.ReplaceAll(db, "_", "-"), `test = "on"`)
 			d.MustRunCLI(repo.Dir, "link", "--yes")
 			if setup := waitForSetup(t, d, repo.Dir); setup.State != api.SetupReady {
 				t.Fatalf("the main Worktree's setup is %+v, want Ready", setup)

@@ -534,7 +534,7 @@ func mysqlDatabases(t *testing.T, d *testkit.Daemon, port int) []string {
 func TestARemovedWorktreesMySQLDatabasesAreOrphansDroppedAfter24HoursOrByGc(t *testing.T) {
 	t.Parallel()
 	d, clk := orphanDaemon(t)
-	repo := mysqlProject(t, "orphan-mysql", `test = "on"`)
+	repo := dbProject(t, "mysql", "orphan-mysql", `test = "on"`)
 	d.MustRunCLI(repo.Dir, "link", "--yes")
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
 	wt := repo.AddWorktree("feature")

@@ -20,24 +20,10 @@ import (
 // mariadbContainer is the container of the mariadb Engine's default version.
 const mariadbContainer = "laneway-mariadb-11.8"
 
-// mariadbProject is a Project whose database is a MariaDB database, with the
-// Env Patch setting Laravel's DB_* keys as an app on Laravel's mysql
-// connection would have them, plus the extra lines given (which land in the
-// [database] table).
-func mariadbProject(t *testing.T, name, database string) *gitfixture.Repo {
-	t.Helper()
-	return gitfixture.New(t, name).
-		WriteFile(".gitignore", ".env\n").
-		WriteFile("laneway.toml", "[database]\nengine = \"mariadb\"\n"+database+"\n"+
-			"[env]\nDB_CONNECTION = \"mysql\"\nDB_HOST = \"{db_host}\"\nDB_PORT = \"{db_port}\"\n"+
-			"DB_DATABASE = \"{db}\"\nDB_USERNAME = \"{db_username}\"\nDB_PASSWORD = \"{db_password}\"\n").
-		Commit("declare a MariaDB database")
-}
-
 func TestLinkingCreatesTheProjectsEmptyMariaDBDatabase(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
-	repo := mariadbProject(t, "maria-link", "")
+	repo := dbProject(t, "mariadb", "maria-link", "")
 
 	d.MustRunCLI(repo.Dir, "link", "--yes")
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
@@ -59,7 +45,7 @@ func TestLinkingCreatesTheProjectsEmptyMariaDBDatabase(t *testing.T) {
 func TestANewWorktreeGetsACopyOfTheMainWorktreesMariaDBDatabaseByDefault(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
-	repo := mariadbProject(t, "maria-clone", "")
+	repo := dbProject(t, "mariadb", "maria-clone", "")
 	d.MustRunCLI(repo.Dir, "link", "--yes")
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
 	main := dialMySQL(t, d, 3306, "maria_clone")
@@ -86,7 +72,7 @@ func TestANewWorktreeGetsACopyOfTheMainWorktreesMariaDBDatabaseByDefault(t *test
 func TestAMariaDBCopyCutShortIsCopiedAgainRatherThanKept(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
-	repo := mariadbProject(t, "maria-cut", "")
+	repo := dbProject(t, "mariadb", "maria-cut", "")
 	d.MustRunCLI(repo.Dir, "link", "--yes")
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
 	main := dialMySQL(t, d, 3306, "maria_cut")
@@ -125,11 +111,9 @@ func TestProjectsOnTheMySQLAndMariaDBDefaultVersionsBothLinkOnOneDaemon(t *testi
 		t.Run(c.first+" first", func(t *testing.T) {
 			t.Parallel()
 			d := testkit.StartDaemon(t)
-			project := map[string]func(*testing.T, string, string) *gitfixture.Repo{
-				"mysql": mysqlProject, "mariadb": mariadbProject}
 			version := map[string]string{"mysql": "8.4", "mariadb": "11.8"}
-			first := project[c.first](t, "port-"+c.first, "")
-			second := project[c.second](t, "port-"+c.second, "")
+			first := dbProject(t, c.first, "port-"+c.first, "")
+			second := dbProject(t, c.second, "port-"+c.second, "")
 
 			d.MustRunCLI(first.Dir, "link", "--yes")
 			d.MustRunCLI(first.Dir, "worktree", "ready")
