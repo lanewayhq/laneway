@@ -727,7 +727,7 @@ A failed copy fails Preparing with its output, like a failed database copy. Fix 
 | RustFS console | `https://rustfs.laneway.localhost/rustfs/console/`                                   |
 | Credentials    | `laneway` / `laneway`, Laneway's shared ones, as for Postgres                        |
 
-The Dashboard's Services panel has a **Console** link on the RustFS Service. Log in with `laneway`/`laneway` to browse every Worktree's Buckets, which are named after their Project and Worktree. Opening the console starts RustFS if it's stopped. The bare `https://rustfs.laneway.localhost/` answers `403 AccessDenied`: the console is under `/rustfs/console/`. The console's "Access Policy" column calls a public Bucket "Private", because nobody may list it; anonymous reads of its objects still work.
+The Dashboard's Services page has a **Console** link on the RustFS Service. Log in with `laneway`/`laneway` to browse every Worktree's Buckets, which are named after their Project and Worktree. Opening the console starts RustFS if it's stopped. The bare `https://rustfs.laneway.localhost/` answers `403 AccessDenied`: the console is under `/rustfs/console/`. The console's "Access Policy" column calls a public Bucket "Private", because nobody may list it; anonymous reads of its objects still work.
 
 S3 clients outside the app, such as a GUI, can use `http://127.0.0.1:9000` with the same credentials, which doesn't depend on a client trusting Laneway's CA. As with Postgres, Laneway listens on that port and the first connection starts RustFS. RustFS stops when nothing has used it for `service_idle_timeout`, and its files stay in its volume.
 

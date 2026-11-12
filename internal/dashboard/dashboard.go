@@ -4,15 +4,21 @@
 //
 // The frontend is plain HTML, CSS and JavaScript modules in static/, with no
 // build step and no dependencies: what is in the repository is what the
-// browser runs. See static/app.js for how panels are added.
+// browser runs. Each page of the Dashboard has its own URL (/projects/<name>,
+// /logs…); the daemon answers every such path with index.html and the page
+// routes on the client. See static/app.js for how pages are added.
 package dashboard
 
 import (
+	"bytes"
 	"embed"
 	"encoding/json"
 	"io/fs"
 	"net"
 	"net/http"
+	"path"
+	"strings"
+	"time"
 
 	"github.com/lanewayhq/laneway/internal/api"
 )
@@ -34,8 +40,36 @@ func Handler(domain string, routes http.Handler) http.Handler {
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/api/", sameOrigin(domain, http.StripPrefix("/api", routes)))
-	mux.Handle("/", pageHeaders(http.FileServerFS(files)))
+	mux.Handle("/", pageHeaders(pages(files)))
 	return mux
+}
+
+// pages serves the Dashboard's files, and its page (index.html) for every
+// other path, such as /projects/shop or /logs: those are the Dashboard's
+// pages, which app.js picks from the URL, so reloading one or opening a
+// bookmark shows it again. Paths under /api never get here.
+func pages(files fs.FS) http.Handler {
+	index, err := fs.ReadFile(files, "index.html")
+	if err != nil {
+		panic(err)
+	}
+	fileServer := http.FileServerFS(files)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
+		if name == "" || isFile(files, name) {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(index))
+	})
+}
+
+// isFile reports whether name is one of the Dashboard's files (not a
+// directory).
+func isFile(files fs.FS, name string) bool {
+	info, err := fs.Stat(files, name)
+	return err == nil && !info.IsDir()
 }
 
 // pageHeaders sets the headers of the Dashboard's files. No caching, so a new
