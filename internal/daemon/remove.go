@@ -24,22 +24,7 @@ import (
 
 // removeWorktree previews, or carries out, the removal req asks for.
 func (d *Daemon) removeWorktree(ctx context.Context, req api.RemoveRequest) (api.RemoveResponse, error) {
-	dir, err := d.worktreeDir(ctx, req.Dir, req.Worktree)
-	if err != nil {
-		return api.RemoveResponse{}, err
-	}
-	p, checkout, err := d.worktreeAt(ctx, dir)
-	if err != nil {
-		return api.RemoveResponse{}, err
-	}
-	if checkout.Main() {
-		return api.RemoveResponse{}, &api.Error{
-			Code: api.CodeMainWorktree,
-			Message: fmt.Sprintf("the main Worktree of %q can't be Removed; run `lane unlink` there to Unlink the Project instead",
-				p.Name),
-		}
-	}
-	w, err := d.linkedWorktree(ctx, p, checkout.Dir)
+	p, w, err := d.linkedTarget(ctx, req.Dir, req.Worktree, "Removed")
 	if err != nil {
 		return api.RemoveResponse{}, err
 	}
@@ -48,12 +33,20 @@ func (d *Daemon) removeWorktree(ctx context.Context, req api.RemoveRequest) (api
 		return res, err
 	}
 
-	if res.Locked {
-		return res, api.LockedError(w.Name, res.LockReason)
-	}
 	if changed := changedSince(req, res); changed != "" {
 		return res, &api.Error{Code: api.CodeWorktreeChanged,
 			Message: fmt.Sprintf("Worktree %q changed since the preview (%s), so nothing was removed; look at it again", w.Name, changed)}
+	}
+	// A lock is another tool's (an agent, a harness) saying it still uses
+	// the Worktree: only the developer's say-so unlocks it.
+	if res.Locked && !req.Unlock {
+		return res, api.LockedError(w.Name, res.LockReason)
+	}
+	if res.Locked {
+		if err := gitrepo.UnlockWorktree(ctx, p.Path, w.Path); err != nil {
+			return res, err
+		}
+		d.log.Info("Worktree unlocked to Remove it", "project", p.Name, "worktree", w.Name, "lock", res.LockReason)
 	}
 	if err := gitrepo.RemoveWorktree(ctx, p.Path, w.Path, len(res.ChangedFiles) > 0); err != nil {
 		return res, err
@@ -90,6 +83,49 @@ func (d *Daemon) removeWorktrees(ctx context.Context, req api.RemoveAllRequest) 
 		res.Results = append(res.Results, result)
 	}
 	return res
+}
+
+// unlockWorktree unlocks the locked linked Worktree req names (`git worktree
+// unlock`), leaving it where it is.
+func (d *Daemon) unlockWorktree(ctx context.Context, req api.UnlockRequest) (api.UnlockResponse, error) {
+	p, w, err := d.linkedTarget(ctx, req.Dir, req.Worktree, "unlocked")
+	if err != nil {
+		return api.UnlockResponse{}, err
+	}
+	res := api.UnlockResponse{Worktree: w.Path}
+	locked, reason := gitrepo.Lock(w.Path)
+	if !locked {
+		return res, nil
+	}
+	if err := gitrepo.UnlockWorktree(ctx, p.Path, w.Path); err != nil {
+		return res, err
+	}
+	res.Unlocked = true
+	d.log.Info("Worktree unlocked through Laneway", "project", p.Name, "worktree", w.Name, "lock", reason)
+	return res, nil
+}
+
+// linkedTarget is the Project and the linked Worktree a request names (dir
+// and worktree, as worktreeDir takes them). The main Worktree is refused:
+// it can't be done (as what says, e.g. "Removed") to it.
+func (d *Daemon) linkedTarget(ctx context.Context, dir, worktree, what string) (registry.Project, registry.Worktree, error) {
+	dir, err := d.worktreeDir(ctx, dir, worktree)
+	if err != nil {
+		return registry.Project{}, registry.Worktree{}, err
+	}
+	p, checkout, err := d.worktreeAt(ctx, dir)
+	if err != nil {
+		return registry.Project{}, registry.Worktree{}, err
+	}
+	if checkout.Main() {
+		return registry.Project{}, registry.Worktree{}, &api.Error{
+			Code: api.CodeMainWorktree,
+			Message: fmt.Sprintf("the main Worktree of %q can't be %s; run `lane unlink` there to Unlink the Project instead",
+				p.Name, what),
+		}
+	}
+	w, err := d.linkedWorktree(ctx, p, checkout.Dir)
+	return p, w, err
 }
 
 // linkedWorktree is the Project p's linked Worktree at dir, as recorded.

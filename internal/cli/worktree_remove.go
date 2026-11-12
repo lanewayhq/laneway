@@ -13,8 +13,10 @@ import (
 )
 
 // runWorktreeRemove is `lane worktree remove [name] [--delete-branch]
-// [--force]`: Remove a linked Worktree (the current one unless name names
-// another) after saying what would be lost. On a terminal it asks first
+// [--unlock] [--force]`: Remove a linked Worktree (the current one unless
+// name names another) after saying what would be lost. A locked Worktree
+// (`git worktree lock`, which agents and harnesses use while they work in
+// one) is refused unless --unlock says to unlock it first. On a terminal it asks first
 // (unless --force). Otherwise (a script, an agent) it goes ahead only when
 // nothing is lost: the Worktree is clean, and its commits not on the
 // Default Branch stay on its branch.
@@ -25,6 +27,7 @@ func runWorktreeRemove(ctx context.Context, env Env, args []string) error {
 	fs := newFlags(env, "worktree remove [name]")
 	deleteBranch := fs.Bool("delete-branch", false, "also delete the branch when it has commits not on the Default Branch")
 	force := fs.Bool("force", false, "remove it without asking, even if commits or changes are lost")
+	unlock := fs.Bool("unlock", false, "unlock it first if it is locked (git worktree lock)")
 	merged := fs.Bool("merged", false, "remove every merged, clean Worktree of the current Project instead")
 	all := fs.Bool("all", false, "with --merged, those of every Project")
 	// The name may come before or after the flags.
@@ -49,6 +52,8 @@ func runWorktreeRemove(ctx context.Context, env Env, args []string) error {
 		return usageError{"--merged removes every merged, clean Worktree, so it takes no name"}
 	case *merged && *deleteBranch:
 		return usageError{"--merged removes merged Worktrees, whose branches are deleted anyway, so it takes no --delete-branch"}
+	case *merged && *unlock:
+		return usageError{"--merged leaves locked Worktrees alone, so it takes no --unlock; Remove each with `lane worktree remove <name> --unlock`"}
 	case *all && !*merged:
 		return usageError{"--all goes with --merged: `lane worktree remove --merged --all`"}
 	}
@@ -64,18 +69,29 @@ func runWorktreeRemove(ctx context.Context, env Env, args []string) error {
 		return err
 	}
 	who := fmt.Sprintf("Worktree %q", preview.Worktree.Name)
-	if preview.Locked {
+	if preview.Locked && !*unlock {
 		return api.LockedError(preview.Worktree.Name, preview.LockReason)
 	}
 	printRemoval(env.Stdout, preview, *deleteBranch)
+	if preview.Locked {
+		reason := ""
+		if preview.LockReason != "" {
+			reason = ": " + preview.LockReason
+		}
+		fmt.Fprintf(env.Stdout, "It is locked%s. It is unlocked first (--unlock).\n", reason)
+	}
 	// Commits are lost when no branch is left to keep them.
 	loses := !preview.Clean || (!preview.Merged && (preview.Branch == "" || *deleteBranch))
 	if !*force {
 		switch {
 		case env.Terminal:
-			question := fmt.Sprintf("Remove %s? [y/N] ", who)
+			verb := "Remove"
+			if preview.Locked {
+				verb = "Unlock and remove"
+			}
+			question := fmt.Sprintf("%s %s? [y/N] ", verb, who)
 			if !preview.Clean {
-				question = fmt.Sprintf("Remove %s and discard its changes? [y/N] ", who)
+				question = fmt.Sprintf("%s %s and discard its changes? [y/N] ", verb, who)
 			}
 			if !confirm(env, question) {
 				return errors.New("nothing was removed")
@@ -85,7 +101,7 @@ func runWorktreeRemove(ctx context.Context, env Env, args []string) error {
 		}
 	}
 
-	req := api.RemoveRequest{Dir: env.Dir, Worktree: preview.Worktree.Path, Branch: preview.Branch, DeleteBranch: *deleteBranch}
+	req := api.RemoveRequest{Dir: env.Dir, Worktree: preview.Worktree.Path, Branch: preview.Branch, DeleteBranch: *deleteBranch, Unlock: *unlock}
 	for _, cm := range preview.UnmergedCommits {
 		req.UnmergedCommits = append(req.UnmergedCommits, cm.Hash)
 	}

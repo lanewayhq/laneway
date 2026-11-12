@@ -16,7 +16,9 @@
 //     "Also delete branch x", unchecked;
 //   - unmerged commits on no branch: a red note listing every one (nothing
 //     keeps them once the Worktree goes);
-//   - locked: why, and only a Close button;
+//   - locked: who locked it, above the rest, with "Unlock only" next to
+//     "Unlock and remove" (which sends unlock: the daemon unlocks it once
+//     the rest checks out);
 // then what removing it does: its checkout (and a merged branch) deleted,
 // its Processes stopped and Domains freed, its databases, Test Databases
 // and Buckets turned into Orphans. Long lists scroll.
@@ -25,7 +27,7 @@
 // listing every Worktree (however many), then one POST /v1/worktrees/remove
 // with exactly those, each checked again by the daemon.
 import { commitRow, fileRow } from "./changes.js";
-import { confirm, list, notice } from "./confirm.js";
+import { confirm, list } from "./confirm.js";
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
 
@@ -45,26 +47,19 @@ export async function removeWorktree(dash, worktree, project) {
   const name = worktree.name || preview.worktree?.name || worktree.path;
   const subtitle = [preview.project || project.name, " · ", h("span", { class: "mono" }, preview.worktree?.path || worktree.path)];
 
-  if (preview.locked) {
-    await notice({
-      title: `Worktree ${name} is locked`,
-      subtitle,
-      className: "remove",
-      body: [note("warn", "lock", [h("b", {}, "git won't remove a locked Worktree")],
-        [preview.lockReason ? ["It was locked: ", h("q", {}, preview.lockReason), ". "] : "",
-          "Unlock it with ", h("code", {}, "git worktree unlock"), " when whatever locked it is done, then Remove it."])],
-    });
-    return false;
-  }
-
+  const locked = !!preview.locked;
   const deleteBranch = h("input", { type: "checkbox" });
   return confirm({
-    title: `Remove Worktree ${name}?`,
+    title: locked ? `Remove locked Worktree ${name}?` : `Remove Worktree ${name}?`,
     subtitle,
     className: "remove",
-    body: dialogBody(preview, deleteBranch),
-    action: preview.clean ? "Remove Worktree" : "Remove and discard changes",
+    body: [locked ? lockNote(preview) : "", ...dialogBody(preview, deleteBranch)],
+    action: locked
+      ? (preview.clean ? "Unlock and remove" : "Unlock, remove and discard changes")
+      : (preview.clean ? "Remove Worktree" : "Remove and discard changes"),
     busy: "Removing…",
+    // Unlock only: the row stays, and Remove then needs no unlocking.
+    also: locked ? { label: "Unlock only", busy: "Unlocking…", run: () => dash.api.post("/v1/worktree/unlock", target) } : undefined,
     async run() {
       const res = await dash.api.post("/v1/worktree/remove", {
         ...target,
@@ -72,6 +67,7 @@ export async function removeWorktree(dash, worktree, project) {
         unmergedCommits: preview.unmergedCommits.map((c) => c.hash),
         changedFiles: preview.changedFiles.map((f) => f.path),
         deleteBranch: deleteBranch.checked,
+        unlock: locked,
       }).catch((err) => {
         if (err.code === "worktree_changed") {
           err.message += " Close this and choose Remove again to see what it has now.";
@@ -255,6 +251,15 @@ function orphansText(orphans) {
 // and joins items as "a", "a and b", "a, b and c".
 function and(items) {
   return items.flatMap((item, i) => [i === 0 ? "" : i === items.length - 1 ? " and " : ", ", item].flat());
+}
+
+// lockNote says who locked the Worktree (git's lock reason) and what
+// unlocking it means.
+function lockNote(p) {
+  return note("warn", "lock", [h("b", {}, "This Worktree is locked")],
+    [p.lockReason ? ["It was locked: ", h("q", {}, p.lockReason), ". "] : "",
+      "Tools such as agents and harnesses lock a Worktree while they work in it, and git won't remove it until it's unlocked. ",
+      "Unlock it only if whatever locked it is done with it."]);
 }
 
 // note is a coloured block: a heading, a muted line under it, and more

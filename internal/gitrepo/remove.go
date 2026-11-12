@@ -21,3 +21,10 @@ func DeleteBranch(ctx context.Context, mainDir, branch string) error {
 	_, err := run(ctx, mainDir, "branch", "--delete", "--force", "--", branch)
 	return err
 }
+
+// UnlockWorktree runs `git worktree unlock` on the linked Worktree at dir, of
+// the repository whose main Worktree is at mainDir.
+func UnlockWorktree(ctx context.Context, mainDir, dir string) error {
+	_, err := run(ctx, mainDir, "worktree", "unlock", "--", dir)
+	return err
+}
