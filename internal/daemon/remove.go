@@ -49,12 +49,7 @@ func (d *Daemon) removeWorktree(ctx context.Context, req api.RemoveRequest) (api
 	}
 
 	if res.Locked {
-		msg := fmt.Sprintf("Worktree %q is locked", w.Name)
-		if res.LockReason != "" {
-			msg += ": " + res.LockReason
-		}
-		return res, &api.Error{Code: api.CodeWorktreeLocked,
-			Message: msg + "; run `git worktree unlock` on it first if it can go"}
+		return res, api.LockedError(w.Name, res.LockReason)
 	}
 	if changed := changedSince(req, res); changed != "" {
 		return res, &api.Error{Code: api.CodeWorktreeChanged,
@@ -125,28 +120,22 @@ func (d *Daemon) linkedWorktree(ctx context.Context, p registry.Project, dir str
 // git now, in full.
 func (d *Daemon) removal(ctx context.Context, p registry.Project, w registry.Worktree) (api.RemoveResponse, error) {
 	res := api.RemoveResponse{
-		Project:         p.Name,
-		DefaultBranch:   gitrepo.DefaultBranch(ctx, p.Path),
-		Branch:          gitrepo.Branch(ctx, w.Path),
-		UnmergedCommits: []api.Commit{},
-		ChangedFiles:    []api.ChangedFile{},
-		Domains:         []string{},
-		Orphans:         []api.Orphan{},
+		Project:       p.Name,
+		DefaultBranch: gitrepo.DefaultBranch(ctx, p.Path),
+		Branch:        gitrepo.Branch(ctx, w.Path),
+		Domains:       []string{},
+		Orphans:       []api.Orphan{},
 	}
 	commits, err := gitrepo.UnmergedCommits(ctx, w.Path, res.DefaultBranch)
 	if err != nil {
 		return api.RemoveResponse{}, fmt.Errorf("checking Worktree %q against the Default Branch: %w", w.Name, err)
 	}
-	for _, c := range commits {
-		res.UnmergedCommits = append(res.UnmergedCommits, api.Commit{Hash: c.Hash, Subject: c.Subject, Time: c.Time})
-	}
+	res.UnmergedCommits = apiCommits(commits)
 	changes, err := gitrepo.ChangedFiles(ctx, w.Path)
 	if err != nil {
 		return api.RemoveResponse{}, err
 	}
-	for _, c := range changes {
-		res.ChangedFiles = append(res.ChangedFiles, api.ChangedFile{Path: c.Path, Status: c.Status})
-	}
+	res.ChangedFiles = apiChangedFiles(changes)
 	res.Merged, res.Clean = len(commits) == 0, len(changes) == 0
 
 	list, err := gitrepo.Worktrees(ctx, p.Path)

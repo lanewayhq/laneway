@@ -77,15 +77,15 @@ type Commit struct {
 // (a rebase merge) counts as merged; merge commits are left out. It fails
 // with ErrNoDefaultBranch when neither branch exists.
 func UnmergedCommits(ctx context.Context, dir, defaultBranch string) ([]Commit, error) {
-	bases, err := defaultBranchRefs(ctx, dir, defaultBranch)
+	defaultRefs, err := defaultBranchRefs(ctx, dir, defaultBranch)
 	if err != nil {
 		return nil, err
 	}
-	// A commit is unmerged when it is unmerged against every base: one
-	// base having it, or its patch, is enough.
+	// A commit is unmerged when it is unmerged against every Default
+	// Branch ref: one of them having it, or its patch, is enough.
 	var unmerged []Commit
-	for i, base := range bases {
-		commits, err := notOn(ctx, dir, base)
+	for i, ref := range defaultRefs {
+		commits, err := notOn(ctx, dir, ref)
 		if err != nil {
 			return nil, err
 		}
@@ -125,11 +125,11 @@ func defaultBranchRefs(ctx context.Context, dir, defaultBranch string) ([]string
 	return refs, nil
 }
 
-// notOn are the commits on HEAD in dir that neither base nor a commit on base
+// notOn are the commits on HEAD in dir that neither ref nor a commit on ref
 // with the same patch has, newest first, leaving out merge commits.
-func notOn(ctx context.Context, dir, base string) ([]Commit, error) {
+func notOn(ctx context.Context, dir, ref string) ([]Commit, error) {
 	out, err := run(ctx, dir, "log", "--cherry-mark", "--right-only", "--no-merges",
-		"--format=%m%x00%H%x00%ct%x00%s", base+"...HEAD", "--")
+		"--format=%m%x00%H%x00%ct%x00%s", ref+"...HEAD", "--")
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +137,7 @@ func notOn(ctx context.Context, dir, base string) ([]Commit, error) {
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.SplitN(line, "\x00", 4)
 		if len(f) != 4 || f[0] == "=" {
-			continue // "=": the same patch is on base
+			continue // "=": the same patch is on ref
 		}
 		secs, _ := strconv.ParseInt(f[2], 10, 64)
 		commits = append(commits, Commit{Hash: f[1], Subject: f[3], Time: time.Unix(secs, 0).UTC()})

@@ -47,7 +47,10 @@
 // Errors are returned with a non-2xx status and an ErrorResponse body.
 package api
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // Project is a Linked git repository.
 type Project struct {
@@ -667,6 +670,16 @@ type OrphanRef struct {
 }
 
 // GCResponse is what was dropped, or with a preview what would be.
+// LockedError is the error for removing the Worktree named name while it
+// is locked, giving git's lock reason if there is one.
+func LockedError(name, reason string) *Error {
+	msg := fmt.Sprintf("Worktree %q is locked", name)
+	if reason != "" {
+		msg += ": " + reason
+	}
+	return &Error{Code: CodeWorktreeLocked, Message: msg + "; run `git worktree unlock` on it first if it can go"}
+}
+
 type GCResponse struct {
 	Orphans []Orphan `json:"orphans"`
 	// Errors say what couldn't be dropped (or, for a preview, looked for)

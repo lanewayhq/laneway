@@ -137,18 +137,32 @@ func (e *mergeEntry) status() *api.MergeStatus {
 		s.Error = e.changedErr.Error()
 	}
 	s.UnmergedCount = len(e.commits)
-	for _, c := range e.commits[:min(len(e.commits), api.MergeListLimit)] {
-		s.UnmergedCommits = append(s.UnmergedCommits, api.Commit{Hash: c.Hash, Subject: c.Subject, Time: c.Time})
-	}
+	s.UnmergedCommits = apiCommits(e.commits[:min(len(e.commits), api.MergeListLimit)])
 	s.ChangedCount = len(e.changed)
-	for _, c := range e.changed[:min(len(e.changed), api.MergeListLimit)] {
-		s.ChangedFiles = append(s.ChangedFiles, api.ChangedFile{Path: c.Path, Status: c.Status})
-	}
+	s.ChangedFiles = apiChangedFiles(e.changed[:min(len(e.changed), api.MergeListLimit)])
 	if s.Error == "" {
 		s.Merged = s.UnmergedCount == 0
 		s.Clean = s.ChangedCount == 0
 	}
 	return s
+}
+
+// apiCommits are commits as the API lists them; never nil.
+func apiCommits(commits []gitrepo.Commit) []api.Commit {
+	out := make([]api.Commit, 0, len(commits))
+	for _, c := range commits {
+		out = append(out, api.Commit{Hash: c.Hash, Subject: c.Subject, Time: c.Time})
+	}
+	return out
+}
+
+// apiChangedFiles are changed files as the API lists them; never nil.
+func apiChangedFiles(files []gitrepo.Change) []api.ChangedFile {
+	out := make([]api.ChangedFile, 0, len(files))
+	for _, f := range files {
+		out = append(out, api.ChangedFile{Path: f.Path, Status: f.Status})
+	}
+	return out
 }
 
 // forgetMerges drops what is kept for Worktrees and Projects that are no

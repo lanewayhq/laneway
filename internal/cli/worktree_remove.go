@@ -65,11 +65,7 @@ func runWorktreeRemove(ctx context.Context, env Env, args []string) error {
 	}
 	who := fmt.Sprintf("Worktree %q", preview.Worktree.Name)
 	if preview.Locked {
-		msg := who + " is locked"
-		if preview.LockReason != "" {
-			msg += ": " + preview.LockReason
-		}
-		return errors.New(msg + "; run `git worktree unlock` on it first if it can go")
+		return api.LockedError(preview.Worktree.Name, preview.LockReason)
 	}
 	printRemoval(env.Stdout, preview, *deleteBranch)
 	// Commits are lost when no branch is left to keep them.
