@@ -299,3 +299,20 @@ func run(ctx context.Context, dir string, args ...string) (string, error) {
 	}
 	return strings.TrimRight(string(out), "\n"), nil
 }
+
+// Created is when git created the linked Worktree whose root is dir (`git
+// worktree add`), or zero if it can't tell. Git records no such time, but
+// writes the commondir file in the Worktree's git dir when it adds the
+// Worktree and never again (not on commits, checkouts, `git worktree move`
+// or `repair`), so its modification time is it. Only file metadata is read.
+func Created(dir string) time.Time {
+	gitDir, ok := linkedGitDir(dir)
+	if !ok {
+		return time.Time{}
+	}
+	info, err := os.Stat(filepath.Join(gitDir, "commondir"))
+	if err != nil {
+		return time.Time{}
+	}
+	return info.ModTime()
+}
