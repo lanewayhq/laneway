@@ -34,7 +34,7 @@ export function pluginActions(dash, item, dir) {
 // href is url, keeping the port the Dashboard is served on for a URL under
 // the Dashboard's Domain (such as Mailpit's Inbox at mail.<its Domain>),
 // which the daemon serves on the same port.
-function href(url) {
+export function href(url) {
   try {
     const u = new URL(url);
     if (location.port && (u.hostname === location.hostname || u.hostname.endsWith("." + location.hostname))) {
