@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -231,17 +232,25 @@ func (d *Daemon) RunCLI(dir string, args ...string) CLIResult {
 // "y\n" to answer a confirmation.
 func (d *Daemon) RunCLIWithInput(dir, input string, args ...string) CLIResult {
 	d.t.Helper()
-	return d.runCLI(dir, input, false, args)
+	return d.runCLI(dir, strings.NewReader(input), false, args)
 }
 
 // RunCLIInTerminal is RunCLIWithInput as if stdin were a terminal, where a
 // person may answer questions (cli.Env.Terminal).
 func (d *Daemon) RunCLIInTerminal(dir, input string, args ...string) CLIResult {
 	d.t.Helper()
-	return d.runCLI(dir, input, true, args)
+	return d.runCLI(dir, strings.NewReader(input), true, args)
 }
 
-func (d *Daemon) runCLI(dir, input string, terminal bool, args []string) CLIResult {
+// RunCLIInTerminalReading is RunCLIInTerminal reading its answers from
+// stdin, such as a reader that changes something just before it answers,
+// while the command waits.
+func (d *Daemon) RunCLIInTerminalReading(dir string, stdin io.Reader, args ...string) CLIResult {
+	d.t.Helper()
+	return d.runCLI(dir, stdin, true, args)
+}
+
+func (d *Daemon) runCLI(dir string, stdin io.Reader, terminal bool, args []string) CLIResult {
 	d.t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), cliTimeout)
 	defer cancel()
@@ -251,7 +260,7 @@ func (d *Daemon) runCLI(dir, input string, terminal bool, args []string) CLIResu
 		Dir:      dir,
 		Getenv:   d.Getenv,
 		Environ:  d.Environ,
-		Stdin:    strings.NewReader(input),
+		Stdin:    stdin,
 		Terminal: terminal,
 		Stdout:   &stdout,
 		Stderr:   &stderr,
