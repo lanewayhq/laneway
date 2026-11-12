@@ -22,6 +22,7 @@ func (d *Daemon) routes() http.Handler {
 	mux.HandleFunc("GET /v1/daemon", d.handleDaemonInfo)
 	mux.HandleFunc("GET /v1/logs", d.handleLogs)
 	mux.HandleFunc("POST /v1/worktree/ready", d.handleWorktreeReady)
+	mux.HandleFunc("POST /v1/worktree/remove", d.handleRemoveWorktree)
 	mux.HandleFunc("POST /v1/worktree/{action}", d.handleControl)
 	mux.HandleFunc("POST /v1/aliases", d.handleAddAlias)
 	mux.HandleFunc("DELETE /v1/aliases/{name}", d.handleRemoveAlias)
@@ -115,6 +116,19 @@ func (d *Daemon) handleWorktreeReady(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, info)
+}
+
+func (d *Daemon) handleRemoveWorktree(w http.ResponseWriter, r *http.Request) {
+	var req api.RemoveRequest
+	if !readJSON(w, r, &req) {
+		return
+	}
+	res, err := d.removeWorktree(r.Context(), req)
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 func (d *Daemon) handleControl(w http.ResponseWriter, r *http.Request) {
@@ -246,6 +260,10 @@ var statusFor = map[string]int{
 	api.CodeNotFromCatalog:     http.StatusUnprocessableEntity,
 	api.CodeCatalogChanged:     http.StatusConflict,
 	api.CodeSourceChanged:      http.StatusConflict,
+
+	api.CodeMainWorktree:    http.StatusUnprocessableEntity,
+	api.CodeWorktreeLocked:  http.StatusConflict,
+	api.CodeWorktreeChanged: http.StatusConflict,
 }
 
 // writeError sends err to the client. An *api.Error is passed through as is;

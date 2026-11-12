@@ -73,6 +73,10 @@ type Worktree struct {
 	Gone bool
 	// Initializing means `git worktree add` is still checking it out.
 	Initializing bool
+	// Locked means it is locked (`git worktree lock`), so git won't remove
+	// it; LockReason is the reason given, if any.
+	Locked     bool
+	LockReason string
 }
 
 // Worktrees lists the Worktrees of the repository whose main Worktree is at
@@ -101,6 +105,9 @@ func Worktrees(ctx context.Context, mainDir string) ([]Worktree, error) {
 		case f == "locked initializing":
 			// `git worktree add` holds this lock until the checkout is done.
 			cur.Initializing = true
+		case f == "locked" || strings.HasPrefix(f, "locked "):
+			cur.Locked = true
+			cur.LockReason = strings.TrimPrefix(strings.TrimPrefix(f, "locked"), " ")
 		}
 	}
 	if len(list) == 0 {

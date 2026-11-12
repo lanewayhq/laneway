@@ -9,18 +9,19 @@ import (
 
 // worktreeCommands are the `lane worktree <name>` subcommands.
 var worktreeCommands = map[string]func(ctx context.Context, env Env, args []string) error{
-	"add":   runWorktreeAdd,
-	"alias": runWorktreeAlias,
-	"ready": runWorktreeReady,
+	"add":    runWorktreeAdd,
+	"alias":  runWorktreeAlias,
+	"ready":  runWorktreeReady,
+	"remove": runWorktreeRemove,
 }
 
 func runWorktree(ctx context.Context, env Env, args []string) error {
 	if len(args) == 0 {
-		return usageError{"missing subcommand; use `lane worktree add <name>`, `lane worktree ready` or `lane worktree alias <name>`"}
+		return usageError{"missing subcommand; use `lane worktree add <name>`, `lane worktree ready`, `lane worktree alias <name>` or `lane worktree remove [name]`"}
 	}
 	run, ok := worktreeCommands[args[0]]
 	if !ok {
-		return usageError{fmt.Sprintf("unknown subcommand %q; use `lane worktree add <name>`, `lane worktree ready` or `lane worktree alias <name>`", args[0])}
+		return usageError{fmt.Sprintf("unknown subcommand %q; use `lane worktree add <name>`, `lane worktree ready`, `lane worktree alias <name>` or `lane worktree remove [name]`", args[0])}
 	}
 	return run(ctx, env, args[1:])
 }
