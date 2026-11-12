@@ -12,15 +12,10 @@ import (
 // false if dir isn't the root of a linked Worktree (the main Worktree's .git
 // is a directory).
 func MainDir(dir string) (string, bool) {
-	data, err := os.ReadFile(filepath.Join(dir, ".git"))
-	if err != nil {
-		return "", false
-	}
-	gitDir, ok := strings.CutPrefix(strings.TrimSpace(string(data)), "gitdir:")
+	gitDir, ok := linkedGitDir(dir)
 	if !ok {
 		return "", false
 	}
-	gitDir = relativeTo(dir, strings.TrimSpace(gitDir))
 	common, err := os.ReadFile(filepath.Join(gitDir, "commondir"))
 	if err != nil {
 		return "", false

@@ -386,7 +386,7 @@ Database GUIs (TablePlus, DBeaver, `psql`) connect to `127.0.0.1:5432` as `lanew
 ### 7.2 Commands
 
 ```sh
-lane status                 # every Project, its Worktrees and their Processes
+lane status                 # every Project, its Worktrees, whether they are merged, and their Processes
 lane info                   # this Worktree: URL, Processes, databases, Buckets, Services
 lane info --json            # the same, in a stable format for scripts and agents
 

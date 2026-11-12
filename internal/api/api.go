@@ -48,6 +48,11 @@ type Project struct {
 	Name string `json:"name"`
 	// Path is the main Worktree's directory.
 	Path string `json:"path"`
+	// DefaultBranch is the branch the Project's work is merged into: the
+	// one its origin remote's HEAD names, else the branch checked out in
+	// the main Worktree. Empty when neither names one. Only
+	// GET /v1/projects and GET /v1/events fill it in.
+	DefaultBranch string `json:"defaultBranch,omitempty"`
 	// Worktrees are the Project's Worktrees, the main one first.
 	Worktrees []Worktree `json:"worktrees"`
 	// Warnings are problems with the whole Project, such as Catalog
@@ -97,9 +102,67 @@ type Worktree struct {
 	// GET /v1/worktree, POST /v1/worktree/ready and the up/down/restart
 	// routes fill it in.
 	Setup *Setup `json:"setup,omitempty"`
+	// Merge is how the linked Worktree's work stands against the
+	// Project's Default Branch. It is nil for the main Worktree, which is
+	// on the Default Branch. Only GET /v1/projects and GET /v1/events fill
+	// it in.
+	Merge *MergeStatus `json:"merge,omitempty"`
 	// PluginItems are what Plugins the Worktree uses show on it; only
 	// GET /v1/projects and GET /v1/events fill them in.
 	PluginItems
+}
+
+// MergeStatus is whether a linked Worktree's work is safe on its Project's
+// Default Branch. Laneway reads it from git without fetching: a commit is
+// merged once it, or a commit with the same patch (a rebase merge), is on
+// the local Default Branch or on the remote one as last fetched. Squash
+// merges can't be told apart locally, so their commits show as unmerged.
+type MergeStatus struct {
+	// Branch is the branch checked out in the Worktree; empty when it
+	// isn't on one (a detached HEAD).
+	Branch string `json:"branch,omitempty"`
+	// Merged is true when the Worktree has no unmerged commits.
+	Merged bool `json:"merged"`
+	// Clean is true when the Worktree has no changed files.
+	Clean bool `json:"clean"`
+	// UnmergedCount is how many commits on the Worktree's HEAD are on
+	// neither the local nor the remote Default Branch.
+	UnmergedCount int `json:"unmergedCount"`
+	// UnmergedCommits are those commits, newest first, at most
+	// MergeListLimit of them.
+	UnmergedCommits []Commit `json:"unmergedCommits,omitempty"`
+	// ChangedCount is how many files have uncommitted changes, staged or
+	// not, plus untracked files (an untracked directory counts once).
+	ChangedCount int `json:"changedCount"`
+	// ChangedFiles are those files, sorted by path, at most MergeListLimit
+	// of them.
+	ChangedFiles []ChangedFile `json:"changedFiles,omitempty"`
+	// Error is why git couldn't say, such as a Project with no Default
+	// Branch. Merged and Clean are false then.
+	Error string `json:"error,omitempty"`
+}
+
+// MergeListLimit is the most commits, and the most files, a MergeStatus
+// lists; its counts are the full numbers.
+const MergeListLimit = 50
+
+// Commit is one commit, as a merge status lists it.
+type Commit struct {
+	Hash    string `json:"hash"`
+	Subject string `json:"subject"`
+	// Time is when it was committed; its age is now minus Time.
+	Time time.Time `json:"time"`
+}
+
+// ChangedFile is one file with uncommitted changes in a Worktree.
+type ChangedFile struct {
+	// Path is relative to the Worktree's top directory; an untracked
+	// directory ends in "/".
+	Path string `json:"path"`
+	// Status is git's two-letter short status, such as " M" (modified,
+	// not staged), "A " (added), "D " (deleted), "R " (renamed) or "??"
+	// (untracked).
+	Status string `json:"status"`
 }
 
 // DeclaredProcess is a Process as the Worktree's config declares it.

@@ -88,6 +88,20 @@ func (w *Worktree) WriteFile(rel, content string) *Worktree {
 	return w
 }
 
+// Commit stages everything in the worktree and commits it.
+func (w *Worktree) Commit(msg string) *Worktree {
+	w.Repo.t.Helper()
+	w.Git("add", "--all")
+	w.Git("commit", "--quiet", "--allow-empty", "-m", msg)
+	return w
+}
+
+// Git runs git with args in the worktree and returns its trimmed output.
+func (w *Worktree) Git(args ...string) string {
+	w.Repo.t.Helper()
+	return Git(w.Repo.t, w.Dir, args...)
+}
+
 // Git runs git with args in dir, isolated from the user's git config, and
 // fails the test if it exits non-zero.
 func Git(t testing.TB, dir string, args ...string) string {
