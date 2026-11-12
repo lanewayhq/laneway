@@ -26,10 +26,10 @@
 // removeAll is "Remove all N" on the Overview's Ready to remove: one dialog
 // listing every Worktree (however many), then one POST /v1/worktrees/remove
 // with exactly those, each checked again by the daemon.
+import { commitRow, fileRow } from "./changes.js";
 import { confirm, list } from "./confirm.js";
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
-import { absolute, relative } from "./time.js";
 
 // removeWorktree previews, asks and removes worktree (a Worktree of
 // project, as the `projects` event has them). It resolves true only if the
@@ -267,18 +267,6 @@ function lockNote(p) {
 function note(tone, iconName, title, sub, ...more) {
   return h("div", { class: `note ${tone}` }, icon(iconName),
     h("div", { class: "t" }, ...title, h("div", { class: "sub" }, ...[sub].flat(2)), ...more));
-}
-
-function fileRow(f) {
-  const status = f.status === "??" ? "?" : f.status.trim().charAt(0) || "M";
-  const tone = status === "?" ? "new" : status === "D" ? "gone" : "mod";
-  return [h("span", { class: `flag ${tone}`, title: f.status }, status), h("span", { class: "file" }, f.path)];
-}
-
-function commitRow(c) {
-  const t = new Date(c.time);
-  return [h("span", { class: "hash" }, c.hash.slice(0, 7)), h("span", { class: "subject", title: c.subject }, c.subject),
-    h("span", { class: "age", title: absolute(t) }, relative(t))];
 }
 
 function code(text) {

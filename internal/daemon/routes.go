@@ -21,6 +21,7 @@ func (d *Daemon) routes() http.Handler {
 	mux.HandleFunc("GET /v1/info", d.handleInfo)
 	mux.HandleFunc("GET /v1/daemon", d.handleDaemonInfo)
 	mux.HandleFunc("GET /v1/logs", d.handleLogs)
+	mux.HandleFunc("GET /v1/worktree/diff", d.handleDiff)
 	mux.HandleFunc("POST /v1/worktree/ready", d.handleWorktreeReady)
 	mux.HandleFunc("POST /v1/worktree/remove", d.handleRemoveWorktree)
 	mux.HandleFunc("POST /v1/worktree/unlock", d.handleUnlockWorktree)

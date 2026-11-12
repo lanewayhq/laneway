@@ -179,6 +179,24 @@ type ChangedFile struct {
 	Status string `json:"status"`
 }
 
+// DiffResponse answers GET /v1/worktree/diff?dir=…[&worktree=…] with either
+// path (one of the Worktree's changed files, as its merge status lists it)
+// or commit (a commit's hash): a unified diff, as git prints it, of that
+// file's uncommitted changes against HEAD (an untracked file shows as
+// added, an untracked directory as each file in it) or of that commit.
+type DiffResponse struct {
+	// Worktree is the Worktree's directory.
+	Worktree string `json:"worktree"`
+	Path     string `json:"path,omitempty"`
+	Commit   string `json:"commit,omitempty"`
+	Diff     string `json:"diff"`
+	// Truncated says Diff stops at DiffLimit bytes, at a line's end.
+	Truncated bool `json:"truncated,omitempty"`
+}
+
+// DiffLimit is the most bytes of a diff a DiffResponse carries.
+const DiffLimit = 1 << 20
+
 // DeclaredProcess is a Process as the Worktree's config declares it.
 type DeclaredProcess struct {
 	Name string `json:"name"`
