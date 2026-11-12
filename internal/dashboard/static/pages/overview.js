@@ -95,7 +95,7 @@ export default {
           h("b", {}, plural(n, "Worktree")), n === 1 ? ` has ${what}` : ` have ${what}`,
           h("div", { class: "sub" }, ...summary(items, detail)),
           open ? h("ul", { class: "ov-list" }, ...items.map(({ project, worktree }) => h("li", {},
-            h("a", { href: projectHref(project.name) }, worktreeName(worktree)),
+            h("a", { href: projectHref(project.name, worktree) }, worktreeName(worktree)),
             h("span", { class: "muted" }, ` ${project.name} · ${detail(worktree)}`)))) : ""),
         toggle);
     };
@@ -321,7 +321,7 @@ function summary(items, detail) {
   const parts = [];
   for (const [name, list] of byProject) {
     if (list.length <= 2) {
-      parts.push(...list.map(({ worktree }) => h("a", { href: projectHref(name), title: `${worktreeName(worktree)} in ${name}` },
+      parts.push(...list.map(({ worktree }) => h("a", { href: projectHref(name, worktree), title: `${worktreeName(worktree)} in ${name}` },
         `${worktreeName(worktree)} (${detail(worktree)})`)));
     } else {
       parts.push(h("a", { href: projectHref(name) }, `${list.length} in ${name}`));
