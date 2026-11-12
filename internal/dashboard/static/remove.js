@@ -10,20 +10,20 @@
 //
 // The dialog, from the preview:
 //   - merged and clean: a green note;
-//   - changed files: a red note listing them, and the button becomes
-//     "Remove and discard changes";
-//   - unmerged commits on a branch: an amber note listing them, with "Also
-//     delete branch x", unchecked;
-//   - unmerged commits on no branch: a red note listing them (nothing keeps
-//     them once the Worktree goes);
+//   - changed files: a red note listing the first eight, then "and N
+//     more", and the button becomes "Remove and discard changes";
+//   - unmerged commits on a branch: an amber note listing every one, with
+//     "Also delete branch x", unchecked;
+//   - unmerged commits on no branch: a red note listing every one (nothing
+//     keeps them once the Worktree goes);
 //   - locked: why, and only a Close button;
 // then what removing it does: its checkout (and a merged branch) deleted,
-// its Processes stopped and Domains freed, its databases and Buckets
-// turned into Orphans.
+// its Processes stopped and Domains freed, its databases, Test Databases
+// and Buckets turned into Orphans. Long lists scroll.
 //
 // removeAll is "Remove all N" on the Overview's Ready to remove: one dialog
-// listing every Worktree, then one POST /v1/worktrees/remove with exactly
-// those, each checked again by the daemon.
+// listing every Worktree (however many), then one POST /v1/worktrees/remove
+// with exactly those, each checked again by the daemon.
 import { confirm, list, notice } from "./confirm.js";
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
@@ -171,7 +171,7 @@ function dialogBody(p, deleteBranch) {
     body.push(note("bad", "warning", [h("b", {}, f === 1 ? "1 uncommitted change will be lost" : `${f} uncommitted changes will be lost`)],
       [f === 1 ? "It isn't" : "They aren't", " in any commit, so nothing can bring ", f === 1 ? "it" : "them",
         " back. Ignored files such as ", code(".env"), " are deleted too."],
-      list(p.changedFiles, fileRow, { className: "files" })));
+      list(p.changedFiles, fileRow, { max: 8, className: "files" })));
   }
   if (n > 0 && !p.branch) {
     body.push(note("bad", "warning",
@@ -227,18 +227,25 @@ function dialogBody(p, deleteBranch) {
   return body;
 }
 
-// orphansText says which databases and Buckets become Orphans, and when
-// they are dropped.
+// orphanKinds name each kind of Orphan, one and many, in the order the
+// dialog lists them. A kind not listed here is named as a database.
+const orphanKinds = [
+  ["database", "database", "databases"],
+  ["test database", "Test Database", "Test Databases"],
+  ["bucket", "Bucket", "Buckets"],
+];
+
+// orphansText says which databases, Test Databases and Buckets become
+// Orphans, and when they are dropped.
 function orphansText(orphans) {
-  const names = (kind) => orphans.filter((o) => o.kind === kind).map((o) => code(o.database));
-  const dbs = names("database");
-  const buckets = names("bucket");
+  const known = new Set(orphanKinds.map(([kind]) => kind));
+  const kindOf = (o) => (known.has(o.kind) ? o.kind : "database");
   const parts = [];
-  if (dbs.length) {
-    parts.push([dbs.length === 1 ? "its database " : "its databases ", ...and(dbs)]);
-  }
-  if (buckets.length) {
-    parts.push([buckets.length === 1 ? "its Bucket " : "its Buckets ", ...and(buckets)]);
+  for (const [kind, one, many] of orphanKinds) {
+    const names = orphans.filter((o) => kindOf(o) === kind).map((o) => code(o.database));
+    if (names.length) {
+      parts.push([`its ${names.length === 1 ? one : many} `, ...and(names)]);
+    }
   }
   const grace = Math.round((new Date(orphans[0].expires) - new Date(orphans[0].since)) / 3_600_000);
   const one = orphans.length === 1;

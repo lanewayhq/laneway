@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"maps"
 	"net/http"
 	"os"
 	"slices"
@@ -285,6 +286,29 @@ func TestTheDashboardPreviewsWhatRemovingAWorktreeLoses(t *testing.T) {
 	}
 	if _, ok := findWorktree(t, d, "remove-preview", "feature"); !ok {
 		t.Fatal("the preview removed the Worktree")
+	}
+}
+
+func TestTheRemovePreviewListsTheTestDatabaseAmongTheOrphans(t *testing.T) {
+	t.Parallel()
+	d, dash := dashboardDaemon(t, "dash-remove-testdb")
+	repo := postgresProject(t, "remove-testdb", `test = "on"`)
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	wt := repo.AddWorktree("feature")
+	d.MustRunCLI(wt.Dir, "worktree", "ready")
+
+	status, p, e := removeRequest(t, d, dash, api.RemoveRequest{Dir: repo.Dir, Worktree: "feature", Preview: true})
+
+	if status != http.StatusOK {
+		t.Fatalf("preview: status %d: %+v", status, e)
+	}
+	kinds := map[string]api.OrphanKind{}
+	for _, o := range p.Orphans {
+		kinds[o.Name] = o.Kind
+	}
+	want := map[string]api.OrphanKind{"remove_testdb__feature": api.OrphanDatabase, "remove_testdb__feature_test": api.OrphanTestDatabase}
+	if !maps.Equal(kinds, want) {
+		t.Errorf("Orphans = %v, want the database and the Test Database %v", kinds, want)
 	}
 }
 

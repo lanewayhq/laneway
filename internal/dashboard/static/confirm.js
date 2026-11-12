@@ -86,10 +86,12 @@ export function notice({ title, subtitle, body = [], className = "" }) {
 }
 
 // list is a bordered list of items, one row each (row(item) returns the
-// row's children): the first max of them, then "and N more".
-export function list(items, row, { max = 8, className = "" } = {}) {
+// row's children). With max, it shows the first max of them, then "and N
+// more"; without, it shows every item, scrolling once the list is long.
+export function list(items, row, { max = Infinity, className = "" } = {}) {
   const shown = items.length > max ? items.slice(0, max) : items;
-  return h("div", { class: `dlg-list ${className}`.trim() },
+  const scroll = max === Infinity ? "scroll" : "";
+  return h("div", { class: `dlg-list ${scroll} ${className}`.replace(/\s+/g, " ").trim() },
     ...shown.map((item) => h("div", { class: "row" }, ...[row(item)].flat())),
     items.length > shown.length ? h("div", { class: "row more" }, `and ${items.length - shown.length} more`) : "");
 }

@@ -348,6 +348,8 @@ dialog.remove .note q { color: var(--color-ink); }
   margin-top: 8px; overflow: hidden; background: var(--color-surface); border: 1px solid var(--color-line);
   border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 12px;
 }
+/* A list showing every item scrolls past about ten rows. */
+.dlg-list.scroll { max-height: 272px; overflow-y: auto; overscroll-behavior: contain; }
 .dlg-list .row { display: flex; gap: 10px; padding: 4px 10px; white-space: nowrap; border-top: 1px solid var(--color-line); color: var(--color-ink); }
 .dlg-list .row:first-child { border-top: 0; }
 .dlg-list .row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
