@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/clock"
+	"github.com/lanewayhq/laneway/internal/daemon"
 	"github.com/lanewayhq/laneway/internal/gitfixture"
 	"github.com/lanewayhq/laneway/internal/testkit"
 )
@@ -283,4 +285,53 @@ func TestTheDashboardRemovesExactlyTheListedWorktreesInOneRequest(t *testing.T) 
 			t.Errorf("GET /v1/projects still lists the removed Worktree %s", name)
 		}
 	}
+}
+
+func TestTheDashboardsRemoveAllSendsOnlyDirAndBranchAndTheDatabasesBecomeOrphans(t *testing.T) {
+	t.Parallel()
+	clk := clock.NewFake(orphanEpoch)
+	domain := "dash-remove-all-orphans.localhost"
+	d := testkit.StartDaemon(t, testkit.WithClock(clk), func(c *daemon.Config) { c.DashboardDomain = domain })
+	dash := "https://" + domain
+	repo := postgresProject(t, "dash-bulk-shop", "")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	var listed []map[string]string
+	var dirs []string
+	for _, name := range []string{"feature-x", "feature-y"} {
+		wt := repo.AddWorktree(name)
+		d.MustRunCLI(wt.Dir, "worktree", "ready")
+		waitForMerge(t, d, "dash-bulk-shop", name, "merged and clean", func(m api.MergeStatus) bool { return m.Merged && m.Clean })
+		w, _ := findWorktree(t, d, "dash-bulk-shop", name)
+		// Exactly what "Remove all N" sends for each Worktree it listed.
+		listed = append(listed, map[string]string{"dir": w.Path, "branch": w.Merge.Branch})
+		dirs = append(dirs, wt.Dir)
+	}
+
+	status, body := dashboardRequest(t, d, http.MethodPost, dash+"/api/v1/worktrees/remove", dash,
+		map[string]any{"worktrees": listed})
+
+	if status != http.StatusOK {
+		t.Fatalf("POST /v1/worktrees/remove: status %d:\n%s", status, body)
+	}
+	var res api.RemoveAllResponse
+	if err := json.Unmarshal([]byte(body), &res); err != nil {
+		t.Fatalf("%v:\n%s", err, body)
+	}
+	want := []string{"dash_bulk_shop__feature_x", "dash_bulk_shop__feature_y"}
+	if len(res.Results) != len(want) {
+		t.Fatalf("got %d results, want %d: %+v", len(res.Results), len(want), res.Results)
+	}
+	for i, r := range res.Results {
+		if r.Error != nil || !r.Removed {
+			t.Errorf("result %d: removed %v, error %+v; want removed", i, r.Removed, r.Error)
+		}
+		if len(r.Orphans) != 1 || r.Orphans[0].Name != want[i] || r.Orphans[0].Expires.IsZero() {
+			t.Errorf("result %d: Orphans %+v, want only %s with when it is dropped", i, r.Orphans, want[i])
+		}
+	}
+	for _, dir := range dirs {
+		assertGone(t, dir)
+	}
+	waitForOrphans(t, d, want...)
 }

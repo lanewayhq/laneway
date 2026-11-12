@@ -8,14 +8,17 @@
 //
 // Which Worktrees need attention or are ready to Remove is attention.js's
 // call. A Worktree ready to Remove gets a Remove button when another page
-// provides dash.removeWorktree(worktree, project) (a Promise); the Ready to
-// remove card's header has room for actions on the whole list.
+// provides dash.removeWorktree(worktree, project) (a Promise). With two or
+// more, its header has "Remove all N" (remove.js's removeAll), which asks
+// once and removes exactly the Worktrees it listed; with one, that row's
+// own Remove is the way, with the full Remove dialog.
 import { h, pageHeader } from "../dom.js";
 import { icon } from "../icons.js";
 import { href as pluginHref } from "../pluginitems.js";
 import { failedCount, projectHref, runState } from "../sidebar.js";
 import { relative, absolute } from "../time.js";
 import { needsAttention, readyToRemove } from "../attention.js";
+import { removeAll } from "../remove.js";
 
 // guidesURL is where the guides are: the Dashboard serves none itself.
 const guidesURL = "https://github.com/lanewayhq/laneway/tree/main/docs/guides";
@@ -28,6 +31,7 @@ export default {
     const data = { projects: null, services: null, orphans: null };
     const shown = new Set(); // Needs attention rows whose full list is shown
     const removing = new Set(); // paths of Worktrees whose Remove is in progress
+    let removedAll = null; // what the last "Remove all N" did: { removed, total, orphans }
 
     const render = () => {
       if (!data.projects) {
@@ -99,14 +103,42 @@ export default {
     const readyCard = (projects) => {
       const items = readyToRemove(projects);
       const remove = typeof dash.removeWorktree === "function" ? dash.removeWorktree : null;
-      const actions = []; // actions on the whole list go here
+      const actions = remove && items.length >= 2 ? [removeAllButton(items)] : [];
       return card("Ready to remove", h("span", { class: "c" }, String(items.length)), actions, items.length
-        ? [h("p", { class: "note" }, "Merged into their Default Branch, with no uncommitted changes."),
+        ? [removedAllNote(),
+          h("p", { class: "note" }, "Merged into their Default Branch, with no uncommitted changes."),
           ...items.map(({ project, worktree }) => h("div", { class: "ov-row", "data-worktree": worktree.path },
             h("div", { class: "t" }, h("b", {}, worktree.name),
               h("div", { class: "sub" }, project.name, " · ", h("span", { class: "mono" }, worktree.merge.branch ?? "not on a branch"))),
             remove ? removeButton(remove, project, worktree) : ""))]
-        : [h("p", { class: "note empty" }, "No linked Worktree is merged into its Default Branch with no uncommitted changes.")]);
+        : [removedAllNote(),
+          h("p", { class: "note empty" }, "No linked Worktree is merged into its Default Branch with no uncommitted changes.")]);
+    };
+
+    // removeAllButton asks once about exactly the Worktrees items lists now,
+    // and removes them.
+    const removeAllButton = (items) => {
+      const b = h("button", { type: "button", class: "danger", "data-action": "remove-all" }, `Remove all ${items.length}`);
+      b.addEventListener("click", async () => {
+        removedAll = null;
+        const outcome = await removeAll(dash, items);
+        if (outcome) {
+          removedAll = outcome;
+          render();
+        }
+      });
+      return b;
+    };
+
+    // removedAllNote says what the last "Remove all N" did.
+    const removedAllNote = () => {
+      if (!removedAll) {
+        return "";
+      }
+      const { removed, total, orphans } = removedAll;
+      return h("p", { class: "note done", role: "status" },
+        removed === total ? `Removed ${plural(removed, "Worktree")}.` : `Removed ${removed} of ${plural(total, "Worktree")}; the rest were skipped.`,
+        orphans ? [" Their databases and Buckets are ", h("a", { href: "/orphans" }, "Orphans"), " now, dropped in 24 hours."] : "");
     };
 
     const removeButton = (remove, project, worktree) => {

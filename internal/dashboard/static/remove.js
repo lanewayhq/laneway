@@ -20,6 +20,10 @@
 // then what removing it does: its checkout (and a merged branch) deleted,
 // its Processes stopped and Domains freed, its databases and Buckets
 // turned into Orphans.
+//
+// removeAll is "Remove all N" on the Overview's Ready to remove: one dialog
+// listing every Worktree, then one POST /v1/worktrees/remove with exactly
+// those, each checked again by the daemon.
 import { confirm, list, notice } from "./confirm.js";
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
@@ -77,6 +81,75 @@ export async function removeWorktree(dash, worktree, project) {
       dash.report(res.warnings?.length ? res.warnings.join("\n") : "");
     },
   });
+}
+
+// removeAll asks once about items ([{ project, worktree }], merged and clean
+// linked Worktrees as the Overview's Ready to remove lists them), then sends
+// exactly the Worktrees it listed, each as its path and branch, so the
+// daemon removes one only if it is still on that branch, merged and clean.
+// The list is frozen when removeAll is called: what changes while the dialog
+// is open isn't added or dropped. If any was skipped, the dialog stays open
+// and says which and why, matching the daemon's results to the list by
+// index. It resolves { removed, total, orphans } (orphans: how many
+// databases and Buckets became Orphans) once something was sent and the
+// dialog closed, or null when the developer cancelled; it never rejects.
+export async function removeAll(dash, items) {
+  const listed = [...items];
+  const n = listed.length;
+  let outcome = null;
+  await confirm({
+    title: `Remove these ${n} Worktrees?`,
+    subtitle: "Each is merged into its Default Branch, with no uncommitted changes.",
+    className: "remove",
+    body: [
+      list(listed, readyRow, { className: "ready" }),
+      h("div", { class: "removing" }, h("div", { class: "lbl" }, "Removing them"),
+        h("ul", { class: "what" },
+          h("li", {}, icon("orphans"), h("span", {}, "deletes their checkouts and merged branches")),
+          h("li", {}, icon("stop"), h("span", {}, "stops their Processes and frees their Domains")),
+          h("li", {}, icon("database"), h("span", {}, "makes their databases and Buckets Orphans, which are dropped in 24 hours")))),
+      h("p", { class: "dlg-sub" }, "Each is checked again first: one that has changed since is skipped, not removed."),
+    ],
+    action: `Remove ${n} Worktrees`,
+    busy: "Removing…",
+    async run() {
+      const res = await dash.api.post("/v1/worktrees/remove", {
+        worktrees: listed.map(({ worktree }) => (worktree.merge.branch
+          ? { dir: worktree.path, branch: worktree.merge.branch }
+          : { dir: worktree.path })),
+      });
+      const results = res.results ?? [];
+      const skipped = [];
+      let removed = 0;
+      let orphans = 0;
+      const warnings = [];
+      listed.forEach((item, i) => {
+        const r = results[i];
+        if (r?.removed && !r.error) {
+          removed++;
+          orphans += r.orphans?.length ?? 0;
+          warnings.push(...(r.warnings ?? []));
+        } else {
+          skipped.push({ item, message: r?.error?.message ?? "no result for it" });
+        }
+      });
+      outcome = { removed, total: n, orphans };
+      dash.report(warnings.join("\n"));
+      if (skipped.length) {
+        throw new Error([
+          `Removed ${removed} of ${n} Worktrees. Skipped ${skipped.length}:`,
+          ...skipped.map(({ item, message }) => `${item.project.name} · ${item.worktree.name}: ${message}`),
+        ].join("\n"));
+      }
+    },
+  });
+  return outcome;
+}
+
+// readyRow is a Worktree in removeAll's list: Project · Worktree · branch.
+function readyRow({ project, worktree }) {
+  return h("span", {}, h("span", { class: "proj" }, project.name, " · "), h("b", {}, worktree.name),
+    h("span", { class: "branch" }, " · ", worktree.merge.branch ?? "not on a branch"));
 }
 
 // dialogBody is the Remove dialog's notes and its "Removing it" list.
