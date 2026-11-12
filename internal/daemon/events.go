@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/gitrepo"
 	"github.com/lanewayhq/laneway/internal/plugin"
 	"github.com/lanewayhq/laneway/internal/recipe"
 )
@@ -28,6 +29,7 @@ func (d *Daemon) projectList() api.ProjectList {
 			w = d.withState(w)
 			if !w.Main {
 				w.Merge = d.mergeStatus(p.Path, ap.DefaultBranch, w.Path)
+				w.Created = gitrepo.Created(w.Path)
 			}
 			if cfg, err := d.plugins.ResolveDir(w.Path); err == nil {
 				w.Declared = declaredProcesses(cfg)

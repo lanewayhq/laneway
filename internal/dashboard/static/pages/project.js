@@ -35,6 +35,7 @@ import { icon } from "../icons.js";
 import { pluginActions, pluginBadges, pluginLinks } from "../pluginitems.js";
 import { runningProcesses, runs, worktreeName } from "../projects.js";
 import { colors, logsHref, plain } from "./logs.js";
+import { relative } from "../time.js";
 
 // recentLines is how many lines of a Worktree's output its row shows.
 const recentLines = 6;
@@ -288,6 +289,7 @@ export default {
     };
 
     const expansion = (p, w) => h("div", { class: "x" },
+      created(w),
       failed(w) ? failure(w.setup) : "",
       changes(dash, p, w),
       h("div", { class: "xin" },
@@ -466,6 +468,17 @@ function readiness(s) {
     default:
       return h("span", { class: "st off" }, h("i"), s.state === "discovered" ? "Found" : s.state);
   }
+}
+
+// created says when git created linked Worktree w: how long ago, then the
+// date and time. The main Worktree has no such time.
+function created(w) {
+  if (!w.created) {
+    return "";
+  }
+  const t = new Date(w.created);
+  return h("p", { class: "x-created" }, "Created ", relative(t), " · ",
+    h("time", { datetime: w.created }, t.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })));
 }
 
 // failure says which step of Preparing failed, why, and how to retry.

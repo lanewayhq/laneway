@@ -116,6 +116,10 @@ type Worktree struct {
 	// on the Default Branch. Only GET /v1/projects and GET /v1/events fill
 	// it in.
 	Merge *MergeStatus `json:"merge,omitempty"`
+	// Created is when git created the linked Worktree (`git worktree
+	// add`); zero for the main Worktree, which is the clone itself. Only
+	// GET /v1/projects and GET /v1/events fill it in.
+	Created time.Time `json:"created,omitzero"`
 	// PluginItems are what Plugins the Worktree uses show on it; only
 	// GET /v1/projects and GET /v1/events fill them in.
 	PluginItems
