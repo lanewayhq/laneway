@@ -23,9 +23,10 @@ export function unmerged(w) {
   return Boolean(w.merge && !w.merge.error && !w.merge.merged);
 }
 
-// removable is whether Worktree w is a linked Worktree, merged and clean.
+// removable is whether Worktree w is a linked Worktree, merged, clean and
+// not locked.
 export function removable(w) {
-  return Boolean(!w.main && w.merge && !w.merge.error && w.merge.merged && w.merge.clean);
+  return Boolean(!w.main && w.merge && !w.merge.error && w.merge.merged && w.merge.clean && !w.merge.locked);
 }
 
 // needsAttention lists what needs attention across projects, failures
@@ -58,8 +59,8 @@ export function needsAttention(projects) {
   return result;
 }
 
-// readyToRemove lists the linked Worktrees across projects that are merged
-// and clean, as [{ project, worktree }].
+// readyToRemove lists the linked Worktrees across projects that are merged,
+// clean and not locked, as [{ project, worktree }].
 export function readyToRemove(projects) {
   return projects.flatMap((project) =>
     project.worktrees.filter(removable).map((worktree) => ({ project, worktree })));
