@@ -15,6 +15,9 @@ const shapes = {
   ],
   orphans: [["path", { d: "M4 7h16M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" }]],
   plugins: [["path", { d: "M9 3v4M15 3v4M7 7h10v5a5 5 0 0 1-10 0zM12 17v4" }]],
+  failed: [["circle", { cx: 12, cy: 12, r: 9 }], ["path", { d: "m15 9-6 6M9 9l6 6" }]],
+  commit: [["circle", { cx: 12, cy: 12, r: 3 }], ["path", { d: "M12 3v6M12 15v6" }]],
+  guides: [["path", { d: "M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2z" }], ["path", { d: "M8 7h6" }]],
   branch: [
     ["circle", { cx: 6, cy: 6, r: 2.5 }], ["circle", { cx: 6, cy: 18, r: 2.5 }], ["circle", { cx: 18, cy: 7, r: 2.5 }],
     ["path", { d: "M6 8.5v7M18 9.5c0 4-4 5-10 6.5" }],

@@ -202,6 +202,28 @@ func TestAServiceShowsTheLinksAndBadgesOfThePluginThatAddsItsEngine(t *testing.T
 	}
 }
 
+func TestTheServicesEventCarriesTheLinksOfThePluginThatAddsItsEngine(t *testing.T) {
+	t.Parallel()
+	// The Overview's Links are the Services' own links, read live from the
+	// `services` event rather than from GET /v1/services.
+	d, dash := toolboxDaemon(t, "dash-links")
+	events := liveEvents[api.ServiceList](t, d, dash+"/api/v1/events", "services")
+	d.MustRunCLI(serviceProject(t, "dash-links-shop", `box = "1"`+"\n"+`redis = "7"`, "").Dir, "link")
+
+	want := []api.PluginLink{{Plugin: "toolbox", Label: "Console", URL: "https://console.dash-links.localhost/box/1"}}
+	list := waitForLive(t, events, "box:1 and redis:7", func(l api.ServiceList) bool {
+		_, box := serviceIn(l, "box:1")
+		_, redis := serviceIn(l, "redis:7")
+		return box && redis
+	})
+	if box, _ := serviceIn(list, "box:1"); !slices.Equal(box.Links, want) {
+		t.Errorf("box:1 links in the services event %+v, want %+v", box.Links, want)
+	}
+	if redis, _ := serviceIn(list, "redis:7"); len(redis.Links) != 0 {
+		t.Errorf("redis:7 links in the services event %+v, want none", redis.Links)
+	}
+}
+
 func TestAPluginsDashboardItemsMustBeScopedAndRunItsOwnCommands(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
