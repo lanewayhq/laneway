@@ -481,8 +481,10 @@ The main Worktree follows the same rule: `lane worktree alias demo` there makes 
 **Removing a Worktree:**
 
 ```sh
-git worktree remove ../shop.worktrees/feature-x
+lane worktree remove feature-x   # says what would be lost, then asks
 ```
+
+Laneway first checks the Worktree against the Project's **Default Branch** (the branch `origin/HEAD` names, such as `main`), without fetching. A merged, clean Worktree goes with its branch. Commits not on the Default Branch are listed, and the branch is kept so they stay reachable, unless you add `--delete-branch`. Uncommitted and untracked files are listed too, and are only discarded once you confirm. `--force` skips the question; without a terminal, Laneway refuses to lose commits or changes unless it is given. The main Worktree and a locked one (`git worktree lock`) are never removed. A plain `git worktree remove ../shop.worktrees/feature-x` works too.
 
 Its databases (and Buckets, §10) become **Orphans**: Laneway keeps them for 24 hours in case the removal was a mistake (a worktree of the same name reclaims them), then drops them. To drop them now:
 

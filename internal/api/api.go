@@ -21,6 +21,9 @@
 //	POST /v1/worktree/restart  ControlRequest -> Worktree
 //	POST /v1/worktree/ready    ReadyRequest -> WorktreeInfo  (find the Worktree containing
 //	                    dir now, begin or retry its setup and, with wait, wait for it)
+//	POST /v1/worktree/remove   RemoveRequest -> RemoveResponse  (Remove a linked Worktree:
+//	                    with preview, only say what removing it would lose; otherwise
+//	                    remove it, if it is still as the preview showed)
 //	POST   /v1/aliases  AliasRequest -> AliasResponse  (add an Alias to the Worktree containing dir)
 //	DELETE /v1/aliases/{name}?dir=<abs path> -> AliasResponse  (remove one)
 //	GET  /v1/services   -> ServiceList
@@ -241,6 +244,82 @@ type ControlRequest struct {
 	Process string `json:"process,omitempty"`
 }
 
+// RemoveRequest is the body of POST /v1/worktree/remove. A preview says what
+// removing the Worktree would lose. The call that removes it sends back what
+// the preview showed (Branch, UnmergedCommits and ChangedFiles), and is
+// refused with CodeWorktreeChanged unless the Worktree is still exactly so.
+// Sending only Branch therefore removes the Worktree only if it is still
+// merged and clean, which is how merged, clean Worktrees are removed in bulk
+// from the merge status GET /v1/projects reports.
+type RemoveRequest struct {
+	// Dir is an absolute path inside the Linked Project.
+	Dir string `json:"dir"`
+	// Worktree names the Worktree to Remove, as in ControlRequest; empty
+	// means the one containing Dir.
+	Worktree string `json:"worktree,omitempty"`
+	// Preview only reports what removing the Worktree would lose, and
+	// changes nothing.
+	Preview bool `json:"preview,omitempty"`
+	// Branch is the branch the preview showed the Worktree on; empty when
+	// it showed none.
+	Branch string `json:"branch,omitempty"`
+	// UnmergedCommits are the hashes of every unmerged commit the preview
+	// showed.
+	UnmergedCommits []string `json:"unmergedCommits,omitempty"`
+	// ChangedFiles are the paths of every changed file the preview showed.
+	// Changes are discarded only when there are some.
+	ChangedFiles []string `json:"changedFiles,omitempty"`
+	// DeleteBranch deletes the Worktree's branch even though it has
+	// unmerged commits. A merged branch is deleted anyway.
+	DeleteBranch bool `json:"deleteBranch,omitempty"`
+}
+
+// RemoveResponse is what removing a linked Worktree would lose (a preview),
+// or lost. Its lists are complete, not capped like MergeStatus's.
+type RemoveResponse struct {
+	// Project is the name of the Worktree's Project.
+	Project string `json:"project"`
+	// Worktree is the Worktree, with its Domain, Primary Domain and
+	// Aliases.
+	Worktree Worktree `json:"worktree"`
+	// DefaultBranch is the Project's Default Branch (see Project).
+	DefaultBranch string `json:"defaultBranch,omitempty"`
+	// Branch is the branch checked out in the Worktree; empty when it isn't
+	// on one, so its unmerged commits become unreachable when it goes.
+	Branch string `json:"branch,omitempty"`
+	// Merged is true when the Worktree has no unmerged commits, so its
+	// branch is deleted with it.
+	Merged bool `json:"merged"`
+	// Clean is true when the Worktree has no changed files.
+	Clean bool `json:"clean"`
+	// UnmergedCommits are the commits on the Worktree's HEAD that are on
+	// neither the local nor the remote Default Branch (see MergeStatus),
+	// newest first.
+	UnmergedCommits []Commit `json:"unmergedCommits"`
+	// ChangedFiles are the Worktree's uncommitted changes and untracked
+	// files, sorted by path, which removing it discards. Ignored files,
+	// such as .env, aren't listed, and are deleted too.
+	ChangedFiles []ChangedFile `json:"changedFiles"`
+	// Locked is true when the Worktree is locked (`git worktree lock`), so
+	// it can't be removed; LockReason is the reason given, if any.
+	Locked     bool   `json:"locked,omitempty"`
+	LockReason string `json:"lockReason,omitempty"`
+	// Domains are the Domains the Worktree is served at, freed when it
+	// goes: its Primary Domain first, then the others, sorted.
+	Domains []string `json:"domains"`
+	// Orphans are the databases and Buckets that become Orphans when it
+	// goes, as if it went now (Since and Expires are set).
+	Orphans []Orphan `json:"orphans"`
+	// Removed is true once the Worktree's checkout is removed; never for a
+	// preview.
+	Removed bool `json:"removed,omitempty"`
+	// BranchDeleted is true when its branch was deleted too.
+	BranchDeleted bool `json:"branchDeleted,omitempty"`
+	// Warnings are problems that didn't stop the removal, such as a branch
+	// git wouldn't delete.
+	Warnings []string `json:"warnings,omitempty"`
+}
+
 // ProjectList is the body of GET /v1/projects.
 type ProjectList struct {
 	Projects []Project `json:"projects"`
@@ -434,6 +513,17 @@ const (
 	// has something other than the preview the developer confirmed, so
 	// nothing was installed.
 	CodeSourceChanged = "source_changed"
+
+	// CodeMainWorktree: the main Worktree can't be Removed; its Project is
+	// Unlinked instead.
+	CodeMainWorktree = "main_worktree"
+	// CodeWorktreeLocked: the Worktree is locked (`git worktree lock`), so
+	// it wasn't Removed; the message gives git's lock reason.
+	CodeWorktreeLocked = "worktree_locked"
+	// CodeWorktreeChanged: the Worktree isn't as the preview the developer
+	// confirmed showed it (its branch, unmerged commits or changed files
+	// differ), so nothing was removed.
+	CodeWorktreeChanged = "worktree_changed"
 )
 
 // Service is a shared Service, such as redis:7, and how to connect to it.

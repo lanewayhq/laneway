@@ -199,6 +199,15 @@ func (c *Client) Unlink(ctx context.Context, dir, worktree string) (api.UnlinkRe
 	return res, err
 }
 
+// RemoveWorktree Removes a linked Worktree, if it is still as the preview
+// req sends back showed it (with req.Preview, only says what removing it
+// would lose).
+func (c *Client) RemoveWorktree(ctx context.Context, req api.RemoveRequest) (api.RemoveResponse, error) {
+	var res api.RemoveResponse
+	err := c.do(ctx, http.MethodPost, "/v1/worktree/remove", req, &res)
+	return res, err
+}
+
 // GC drops Orphans and leftover parallel test copies now (with
 // req.Preview, only lists them).
 func (c *Client) GC(ctx context.Context, req api.GCRequest) (api.GCResponse, error) {
