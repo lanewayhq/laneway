@@ -376,3 +376,51 @@ func TestDeleteBranchAlsoDeletesABranchWithUnmergedCommits(t *testing.T) {
 		t.Fatal("--delete-branch kept the branch feature")
 	}
 }
+
+// The Remove dialog names the Worktree by its path, sends back everything
+// its preview listed and, when "Also delete branch" is ticked, deleteBranch.
+func TestTheDashboardRemovesAWorktreeAsItsDialogConfirmsIt(t *testing.T) {
+	t.Parallel()
+	d, dash := dashboardDaemon(t, "dash-remove-dialog")
+	repo := postgresProject(t, "remove-dialog", "")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	wt := repo.AddWorktree("feature")
+	d.MustRunCLI(wt.Dir, "worktree", "ready")
+	wt.WriteFile("a.txt", "a\n").Commit("Add a")
+	wt.WriteFile("notes.txt", "draft\n")
+	events := projectEvents(t, d, dash+"/api/v1/events")
+	waitForEvent(t, events, "the Worktree feature", func(l api.ProjectList) bool {
+		_, ok := worktreeIn(l, "feature.remove-dialog.localhost")
+		return ok
+	})
+
+	status, preview, e := removeRequest(t, d, dash, api.RemoveRequest{Dir: repo.Dir, Worktree: wt.Dir, Preview: true})
+	if status != http.StatusOK || preview.Merged || preview.Clean {
+		t.Fatalf("preview: status %d, %+v, %+v; want unmerged with changes", status, preview, e)
+	}
+	req := confirming(repo.Dir, preview)
+	req.Worktree = wt.Dir
+	req.DeleteBranch = true
+
+	status, res, e := removeRequest(t, d, dash, req)
+
+	if status != http.StatusOK || !res.Removed || !res.BranchDeleted {
+		t.Fatalf("confirm: status %d, %+v, %+v; want removed with its branch", status, res, e)
+	}
+	assertGone(t, wt.Dir)
+	if hasBranch(t, repo.Dir, "feature") {
+		t.Error("deleteBranch kept the branch feature")
+	}
+	waitForEvent(t, events, "no Worktree feature", func(l api.ProjectList) bool {
+		_, ok := worktreeIn(l, "feature.remove-dialog.localhost")
+		return !ok
+	})
+	status, body := dashboardRequest(t, d, http.MethodGet, dash+"/api/v1/orphans", "", nil)
+	var orphans api.OrphanList
+	if err := json.Unmarshal([]byte(body), &orphans); status != http.StatusOK || err != nil {
+		t.Fatalf("GET /api/v1/orphans: status %d, %v:\n%s", status, err, body)
+	}
+	if len(orphans.Orphans) != 1 || orphans.Orphans[0].Name != "remove_dialog__feature" {
+		t.Errorf("Orphans = %+v, want the database remove_dialog__feature", orphans.Orphans)
+	}
+}

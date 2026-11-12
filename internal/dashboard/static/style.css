@@ -196,16 +196,79 @@ details > p, details > pre { margin-top: 6px; max-width: 36rem; }
   .process[data-color="5"] { color: #39c5cf; }
 }
 
-/* Dialogs: confirm.js and a Plugin action's result. */
-dialog.confirm { max-width: 32rem; margin: auto; padding: 18px 20px; border: 1px solid var(--color-line); border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-ink); }
-dialog.confirm h3 { font-size: var(--text-lg); font-weight: 650; margin-bottom: 8px; }
-dialog.confirm::backdrop { background: rgb(0 0 0 / 0.4); }
-dialog.confirm .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-dialog.confirm .drops { max-height: 14rem; overflow: auto; padding-left: 1.25rem; margin: 8px 0; }
-dialog.result { max-width: 48rem; }
-dialog.result > div + div { margin-top: 8px; }
+/* Dialogs (confirm.js): a header, a body and a footer with the buttons, as
+   confirm(), notice() and a Plugin action's result use them. */
+dialog.confirm {
+  width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 32px); margin: auto; padding: 0;
+  border: 1px solid var(--color-line); border-radius: 12px; background: var(--color-surface); color: var(--color-ink);
+  box-shadow: 0 24px 60px rgb(0 0 0 / .22); overflow: hidden;
+}
+dialog.confirm[open] { display: flex; flex-direction: column; }
+dialog.confirm::backdrop { background: rgb(10 12 16 / .45); }
+.dlg-hd { padding: 20px 22px 4px; }
+.dlg-hd h3 { font-size: 17px; font-weight: 650; letter-spacing: -.01em; line-height: 1.3; overflow-wrap: anywhere; }
+.dlg-sub { color: var(--color-muted); margin-top: 3px; overflow-wrap: anywhere; }
+.dlg-bd { padding: 14px 22px 18px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; overflow-y: auto; }
+.dlg-bd p + p { margin-top: 0; }
+.dlg-ft {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px;
+  padding: 14px 22px; border-top: 1px solid var(--color-line); background: var(--color-sunken);
+}
+.dlg-ft button { height: 34px; padding: 0 14px; font-weight: 600; }
+.dlg-ft button:focus { outline: none; box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-accent); }
+.dlg-ft button.danger { background: var(--color-bad); border-color: var(--color-bad); color: var(--color-surface); }
+.dlg-ft button.danger:hover { background: color-mix(in srgb, var(--color-bad) 88%, var(--color-ink)); }
+.dlg-ft button:disabled { cursor: default; }
+.dlg-error { flex-basis: 100%; color: var(--color-bad); font-size: var(--text-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+dialog.confirm .drops {
+  max-height: 14rem; overflow: auto; list-style: none; padding: 0; border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm); font-size: var(--text-sm);
+}
+dialog.confirm .drops li { padding: 4px 10px; border-top: 1px solid var(--color-line); }
+dialog.confirm .drops li:first-child { border-top: 0; }
+dialog.result { width: min(720px, calc(100vw - 32px)); }
 dialog.result pre { margin-top: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
 dialog.result .warning { padding: 0; }
+
+/* ---- Remove dialog (remove.js) ----
+   Notes in green (merged and clean), amber (unmerged commits on a branch)
+   and red (changes, or commits on no branch), the lists of files and
+   commits in them, "Also delete branch", and "Removing it". */
+dialog.remove { width: min(600px, calc(100vw - 32px)); }
+dialog.remove code { font-size: 12px; padding: 1px 5px; border-radius: 4px; color: var(--color-ink); overflow-wrap: anywhere; }
+dialog.remove .note { display: flex; gap: 10px; padding: 11px 12px; border: 1px solid transparent; border-radius: var(--radius-md); font-size: var(--text-sm); }
+dialog.remove .note > svg.i { width: 16px; height: 16px; margin-top: 1px; }
+dialog.remove .note b { font-weight: 650; }
+dialog.remove .note .t { flex: 1; min-width: 0; color: var(--color-ink); }
+dialog.remove .note .sub { margin-top: 2px; color: var(--color-muted); }
+dialog.remove .note.ok { background: var(--color-ok-soft); color: var(--color-ok); }
+dialog.remove .note.warn { background: var(--color-warn-soft); color: var(--color-warn); border-color: color-mix(in srgb, var(--color-warn) 25%, transparent); }
+dialog.remove .note.bad { background: var(--color-bad-soft); color: var(--color-bad); border-color: color-mix(in srgb, var(--color-bad) 25%, transparent); }
+dialog.remove .note q { color: var(--color-ink); }
+.dlg-list {
+  margin-top: 8px; overflow: hidden; background: var(--color-surface); border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 12px;
+}
+.dlg-list .row { display: flex; gap: 10px; padding: 4px 10px; white-space: nowrap; border-top: 1px solid var(--color-line); color: var(--color-ink); }
+.dlg-list .row:first-child { border-top: 0; }
+.dlg-list .row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.dlg-list .more { color: var(--color-muted); font-family: var(--font-sans); }
+.dlg-list .flag { width: 14px; flex: none; font-weight: 700; }
+.dlg-list .flag.mod { color: var(--color-warn); }
+.dlg-list .flag.new { color: var(--color-ok); }
+.dlg-list .flag.gone { color: var(--color-bad); }
+.dlg-list .hash { flex: none; font-weight: 600; color: var(--color-warn); }
+.note.bad .dlg-list .hash { color: var(--color-bad); }
+.dlg-list .row > .age { flex: none; margin-left: auto; color: var(--color-muted); overflow: visible; }
+dialog.remove .chk { display: flex; align-items: flex-start; gap: 9px; margin-top: 10px; color: var(--color-ink); cursor: pointer; }
+dialog.remove .chk input { width: 16px; height: 16px; margin: 1px 0 0; flex: none; accent-color: var(--color-accent); cursor: pointer; }
+dialog.remove .chk .sub { margin-top: 0; }
+dialog.remove .removing .lbl { padding: 0; margin-bottom: 8px; }
+dialog.remove .what { list-style: none; padding: 0; display: grid; gap: 7px; font-size: var(--text-sm); }
+dialog.remove .what li { display: flex; gap: 10px; align-items: flex-start; }
+dialog.remove .what li > svg.i { width: 14px; height: 14px; margin-top: 2px; color: var(--color-muted); }
+dialog.remove .dlg-warning { color: var(--color-warn); font-size: var(--text-sm); }
+/* ---- end of Remove dialog ---- */
 
 @media (max-width: 760px) {
   body { grid-template-columns: minmax(0, 1fr); }

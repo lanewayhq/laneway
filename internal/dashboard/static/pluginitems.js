@@ -3,6 +3,7 @@
 // Worktree or Service). Plugins supply no UI of their own; this draws them.
 // An action runs the Plugin's command (POST
 // /v1/plugins/{plugin}/commands/{command}) and shows its result in a dialog.
+import { modal } from "./confirm.js";
 import { h } from "./dom.js";
 
 // pluginLinks are the item's links, opening in a new tab.
@@ -49,19 +50,20 @@ function href(url) {
 // its output, its warnings, and why it failed if it did.
 function showResult(a, res) {
   const close = h("button", { type: "button" }, "Close");
-  const dialog = h("dialog", { class: "confirm result" },
-    h("h3", {}, a.label),
-    h("p", { class: "tag" }, `lane ${a.plugin} ${[a.command, ...(a.args ?? [])].join(" ")}`),
-    ...(res.effects ?? []).map((e) => h("div", {},
-      e.command ? h("code", {}, "$ " + e.command.join(" ")) : h("code", {}, e.kind),
-      e.output ? h("pre", {}, e.output) : "")),
-    ...(res.warnings ?? []).map((w) => h("p", { class: "warning" }, "Warning: ", w)),
-    res.error ? h("p", { class: "error" }, res.error) : "",
-    !res.error && !(res.effects ?? []).length && !(res.warnings ?? []).length ? h("p", {}, "Done.") : "",
-    h("div", { class: "buttons" }, close));
+  const dialog = modal({
+    title: a.label,
+    subtitle: h("span", { class: "mono" }, `lane ${a.plugin} ${[a.command, ...(a.args ?? [])].join(" ")}`),
+    className: "result",
+    body: [
+      ...(res.effects ?? []).map((e) => h("div", {},
+        e.command ? h("code", {}, "$ " + e.command.join(" ")) : h("code", {}, e.kind),
+        e.output ? h("pre", {}, e.output) : "")),
+      ...(res.warnings ?? []).map((w) => h("p", { class: "warning" }, "Warning: ", w)),
+      res.error ? h("p", { class: "error" }, res.error) : "",
+      !res.error && !(res.effects ?? []).length && !(res.warnings ?? []).length ? h("p", {}, "Done.") : "",
+    ],
+    footer: [close],
+  });
   close.addEventListener("click", () => dialog.close());
-  dialog.addEventListener("close", () => dialog.remove());
-  document.body.append(dialog);
-  dialog.showModal();
   close.focus();
 }

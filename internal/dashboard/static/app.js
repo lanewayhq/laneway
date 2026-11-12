@@ -18,7 +18,7 @@
 // What a page gets in `dash`:
 //   dash.api.get(path) / dash.api.post(path, body) / dash.api.del(path)  JSON
 //       API under /api (same routes as the CLI, see package api). They throw
-//       an Error carrying the API's message.
+//       an Error carrying the API's message, and its code as err.code.
 //   dash.api.stream(path, onLine, signal)  NDJSON streaming routes such as
 //       /v1/logs?follow=true, one parsed object per call.
 //   dash.onProjects(fn)  fn(list) with every ProjectList from GET /v1/events:
@@ -44,9 +44,15 @@
 //       use the signal.
 //   dash.report(message)  shows a message (an error) at the top of the page.
 //   dash.confirm({ title, body, action })  asks in a modal dialog before a
-//       destructive action; resolves true only if `action` was chosen.
+//       destructive action; resolves true only if `action` was chosen. With
+//       run, it also does the action in the dialog (see confirm.js).
+//   dash.removeWorktree(worktree, project)  Removes a linked Worktree after
+//       the Remove dialog (remove.js) shows what it would lose and the
+//       developer confirms. Resolves true only if it was removed; errors are
+//       shown, never thrown. The row then goes with the `projects` event.
 import pages from "./pages/index.js";
 import { confirm } from "./confirm.js";
+import { removeWorktree } from "./remove.js";
 import { createRouter } from "./router.js";
 import { mountSidebar } from "./sidebar.js";
 
@@ -89,11 +95,12 @@ const api = {
   },
 };
 
-// parse returns a response's JSON body, or throws the API's error message.
+// parse returns a response's JSON body, or throws an Error with the API's
+// message and its code (such as "worktree_changed") as err.code.
 async function parse(res) {
   const body = await res.json().catch(() => null);
   if (!res.ok) {
-    throw new Error(body?.error?.message ?? `${res.status} ${res.statusText}`);
+    throw Object.assign(new Error(body?.error?.message ?? `${res.status} ${res.statusText}`), { code: body?.error?.code ?? "" });
   }
   return body;
 }
@@ -151,6 +158,9 @@ const shared = {
   emit,
   control(action, worktree, process) {
     return api.post(`/v1/worktree/${action}`, { dir: worktree.path, process: process ?? "" });
+  },
+  removeWorktree(worktree, project) {
+    return removeWorktree(shared, worktree, project);
   },
   worktreeActions: [],
   processActions: [],
