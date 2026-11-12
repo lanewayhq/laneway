@@ -9,9 +9,11 @@
 //          show(el, dash, route) { … } }
 //      path may have parameters, as in "/projects/:name". register runs
 //      once when the Dashboard opens, whichever page is shown: it is for
-//      what other pages use, such as dash.worktreeActions. show runs each
-//      time the page is shown, with its (empty) element and the route
-//      ({ path, params, query }). title may be a function of the route.
+//      what other pages use, such as dash.worktreeActions, or a function
+//      it sets on dash (dash.removeWorktree), which every page's dash then
+//      has. show runs each time the page is shown, with its (empty)
+//      element and the route ({ path, params, query }). title may be a
+//      function of the route.
 //   2. Add it to the list in pages/index.js, and to the sidebar
 //      (sidebar.js) if it has an entry there.
 //
@@ -168,9 +170,10 @@ const shared = {
 };
 
 // scoped is a dash whose subscriptions end when signal aborts (never, for
-// none).
-function scoped(signal) {
-  return Object.assign(Object.create(shared), {
+// none). It has what pages set on the Dashboard's own dash (parent) in
+// register.
+function scoped(signal, parent = dash) {
+  return Object.assign(Object.create(parent), {
     signal,
     on: (name, fn) => listen(name, fn, signal),
     onProjects: (fn) => live("projects", fn, signal),
@@ -180,7 +183,7 @@ function scoped(signal) {
   });
 }
 
-const dash = scoped(undefined);
+const dash = scoped(undefined, shared);
 
 const connection = document.getElementById("connection");
 const setConnection = (state, label) => {

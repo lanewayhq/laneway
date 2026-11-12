@@ -21,6 +21,11 @@ const colors = 6;
 // tools like Vite write even into a pipe.
 const ansi = /\x1b\[[0-9;?]*[ -\/]*[@-~]/g;
 
+// plain is a line of output without its terminal escape sequences.
+export function plain(text) {
+  return text.replace(ansi, "");
+}
+
 // logsHref is the path of the Logs page following the Worktree at dir
 // (all its Processes, or just process).
 export function logsHref(dir, process) {
@@ -110,7 +115,7 @@ function follow(el, dash, dir, process) {
     }
     lines.append(h("div", { class: "line", title: new Date(line.time).toLocaleString() },
       all ? h("span", { class: "process", "data-color": labels.get(line.process) }, line.process) : "",
-      h("span", { class: "text" }, line.text.replace(ansi, ""))));
+      h("span", { class: "text" }, plain(line.text))));
     while (lines.childElementCount > maxLines) {
       lines.firstElementChild.remove();
     }

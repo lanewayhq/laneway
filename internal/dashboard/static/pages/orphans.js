@@ -7,9 +7,7 @@
 // Dropping now matches `lane gc`: "Drop all now" previews (POST /v1/gc
 // with preview, which also finds leftover parallel test copies), asks, then
 // sends exactly the previewed list; "Drop" on a row sends just that one.
-// It also adds "Unlink" to each Project's main Worktree on Project pages
-// (DELETE /v1/projects), since Unlinking is what makes a Project's
-// databases and Buckets Orphans. Every one of these asks first.
+// Both ask first.
 import { h, pageHeader } from "../dom.js";
 import { absolute, relative } from "../time.js";
 
@@ -17,9 +15,6 @@ export default {
   id: "orphans",
   path: "/orphans",
   title: "Orphans",
-  register(dash) {
-    dash.worktreeActions.push((w, p) => (w.main ? [{ label: "Unlink", run: () => unlink(dash, p) }] : []));
-  },
   show(el, dash) {
     const pending = new Set(); // keys of buttons whose request is in flight
     let last = null;
@@ -122,21 +117,6 @@ async function gc(dash, orphans) {
   });
   dash.report(res.errors?.length ? res.errors.join("\n") : "");
   return res.orphans.length;
-}
-
-// unlink Unlinks Project p after asking.
-async function unlink(dash, p) {
-  const ok = await dash.confirm({
-    title: `Unlink ${p.name}?`,
-    body: [
-      `Laneway stops its Worktrees and forgets its Domains (${p.worktrees.map((w) => w.domain).filter(Boolean).join(", ")}).`,
-      "Its databases and Buckets become Orphans and are dropped in 24 hours unless you link it again. Files, including .env, are left alone.",
-    ],
-    action: "Unlink",
-  });
-  if (ok) {
-    await dash.api.del("/v1/projects?" + new URLSearchParams({ dir: p.path }));
-  }
 }
 
 function describe(o) {
