@@ -23,6 +23,25 @@ export function unmerged(w) {
   return Boolean(w.merge && !w.merge.error && !w.merge.merged);
 }
 
+// attentionNeeded is whether Worktree w needs attention: it failed
+// preparing, has uncommitted changes or has unmerged commits.
+export function attentionNeeded(w) {
+  return failed(w) || changed(w) || unmerged(w);
+}
+
+// byAttention orders the Worktrees that need attention as the Overview
+// lists them: failures first, then uncommitted changes, then unmerged
+// commits. Worktrees in the same group keep their order.
+export function byAttention(a, b) {
+  const rank = (w) => (failed(w) ? 0 : changed(w) ? 1 : 2);
+  return rank(a) - rank(b);
+}
+
+// failedCount is how many of Project p's Worktrees failed preparing.
+export function failedCount(p) {
+  return p.worktrees.filter(failed).length;
+}
+
 // removable is whether Worktree w is a linked Worktree, merged, clean and
 // not locked.
 export function removable(w) {
@@ -51,7 +70,7 @@ export function needsAttention(projects) {
       if (unmerged(worktree)) {
         result.unmerged.push({ project, worktree });
       }
-      if (failed(worktree) || changed(worktree) || unmerged(worktree)) {
+      if (attentionNeeded(worktree)) {
         result.count++;
       }
     }

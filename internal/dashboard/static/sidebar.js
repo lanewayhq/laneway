@@ -3,8 +3,10 @@
 // Services, Orphans and Plugins pages with their counts. It marks the page
 // shown, and "Find a Project…" narrows the list of Projects (Enter opens
 // the first one left).
+import { failedCount } from "./attention.js";
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
+import { projectHref, runState, runStateLabels } from "./projects.js";
 
 export function mountSidebar(el, dash) {
   const find = h("input", { type: "search", placeholder: "Find a Project…", "aria-label": "Find a Project", autocomplete: "off" });
@@ -30,7 +32,7 @@ export function mountSidebar(el, dash) {
         const state = runState(p);
         const failed = failedCount(p);
         return item(projectHref(p.name), on("project") && route.params.name === p.name,
-          h("span", { class: `dot ${state}`, title: { run: "running", idle: "idle", stopped: "stopped" }[state] }),
+          h("span", { class: `dot ${state}`, title: runStateLabels[state] }),
           h("span", { class: "name" }, p.name),
           failed ? h("span", { class: "bad" }, `${failed} failed`) : "",
           count(p.worktrees.length));
@@ -76,25 +78,4 @@ export function mountSidebar(el, dash) {
   });
   dash.on("route", render);
   render();
-}
-
-// projectHref is the path of Project name's page.
-export function projectHref(name) {
-  return "/projects/" + encodeURIComponent(name);
-}
-
-// runState is "run" when any of Project p's Worktrees is running or
-// starting, else "idle" when any is idle (stopped after its idle timeout,
-// started again by the next request), else "stopped".
-export function runState(p) {
-  const states = new Set(p.worktrees.map((w) => w.state));
-  if (states.has("running") || states.has("starting")) {
-    return "run";
-  }
-  return states.has("idle") ? "idle" : "stopped";
-}
-
-// failedCount is how many of Project p's Worktrees failed preparing.
-export function failedCount(p) {
-  return p.worktrees.filter((w) => w.setup?.state === "failed").length;
 }

@@ -8,14 +8,14 @@
 // which emit a `logs` event ({ worktree, process? }); the Dashboard then
 // shows this page for them. Link to it with logsHref.
 import { h, pageHeader } from "../dom.js";
-import { projectHref } from "../sidebar.js";
+import { projectHref } from "../projects.js";
 
 // maxLines matches the daemon's kept output per Process
 // (supervisor.RecentLines); older lines are dropped from the page.
 const maxLines = 1000;
 
 // colors is how many distinct process label colours style.css defines.
-const colors = 6;
+export const colors = 6;
 
 // ansi matches terminal escape sequences (colours, cursor moves), which
 // tools like Vite write even into a pipe.

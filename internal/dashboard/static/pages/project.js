@@ -3,9 +3,10 @@
 // A header names the Project with its path, Recipe (GET /v1/info, read
 // once), Default Branch and how many Processes run, with its Plugins'
 // badges, links and actions, and Logs and Unlink buttons. Tabs narrow the
-// Worktrees to All, Running, Merged or Needs attention (Preparing failed,
-// changed files or unmerged commits), each with a live count, and "Filter
-// Worktrees…" narrows them by name, branch or Domain.
+// Worktrees to All, Running, Merged or Needs attention (as attention.js
+// says: Preparing failed, changed files or unmerged commits, failures
+// listed first), each with a live count, and "Filter Worktrees…" narrows
+// them by name, branch or Domain.
 //
 // One quiet row per Worktree shows its name and branch, Primary Domain
 // (and how many other Domains it has), Readiness, merge status against the
@@ -13,33 +14,33 @@
 // start or stop and restart its Processes, a "⋯" menu with the less common
 // actions (its Plugins' actions and the ones other pages add through
 // dash.worktreeActions, such as Logs), and, on every linked Worktree, Remove
-// (dash.removeWorktree, when a page defines it). A row expands into its
-// Processes with their own controls (and dash.processActions) and the last
-// lines of their output (GET /v1/logs without follow), linking to the Logs
-// page for that Worktree.
+// (dash.removeWorktree). A row expands into its Processes with their own
+// controls (and dash.processActions) and the last lines of their output
+// (GET /v1/logs without follow), linking to the Logs page for that
+// Worktree.
 //
 // It re-renders on every `projects` event, keeping which rows are expanded,
 // which menu is open, which requests are in flight and where the focus is.
+import { attentionNeeded, byAttention, failed } from "../attention.js";
 import { h, pageHeader } from "../dom.js";
 import { icon } from "../icons.js";
 import { pluginActions, pluginBadges, pluginLinks } from "../pluginitems.js";
-import { logsHref, plain } from "./logs.js";
+import { runningProcesses, runs, worktreeName } from "../projects.js";
+import { colors, logsHref, plain } from "./logs.js";
 
 // recentLines is how many lines of a Worktree's output its row shows.
 const recentLines = 6;
-
-// colors is how many distinct process label colours style.css defines.
-const colors = 6;
 
 // recipes caches each Project's Recipe by its path: it only changes when
 // its config does, so it is read once.
 const recipes = new Map();
 
+// tabs narrow the Worktrees to those it has, in its order if it has one.
 const tabs = [
   { id: "all", label: "All", has: () => true },
-  { id: "running", label: "Running", has: (w) => w.state === "running" || w.state === "starting" },
-  { id: "merged", label: "Merged", has: (w) => merged(w) },
-  { id: "attention", label: "Needs attention", has: (w) => needsAttention(w) },
+  { id: "running", label: "Running", has: runs },
+  { id: "merged", label: "Merged", has: merged },
+  { id: "attention", label: "Needs attention", has: attentionNeeded, order: byAttention },
 ];
 
 export default {
@@ -86,7 +87,11 @@ export default {
       // that Laneway couldn't fetch when it started.
       warnings.replaceChildren(...(p.warnings ?? []).map((w) => h("p", { class: "warning" }, "warning: ", w)));
       counts.replaceChildren(...tabs.map((t) => tabButton(t, p.worktrees.filter(t.has).length)));
-      const shown = p.worktrees.filter(tabs.find((t) => t.id === tab).has).filter(matches(query.value));
+      const current = tabs.find((t) => t.id === tab);
+      const shown = p.worktrees.filter(current.has).filter(matches(query.value));
+      if (current.order) {
+        shown.sort(current.order);
+      }
       list.replaceChildren(
         h("div", { class: "grid head", role: "presentation" },
           h("span"), h("span", {}, "Worktree"), h("span", {}, "Domain"), h("span", {}, "Readiness"),
@@ -118,7 +123,7 @@ export default {
         [h("span", { class: "mono", title: "The main Worktree's directory" }, p.path),
           recipe ? h("span", { title: `Recipe ${recipe}` }, recipe[0].toUpperCase() + recipe.slice(1)) : "",
           p.defaultBranch ? h("span", {}, "Default Branch ", h("b", { class: "mono" }, p.defaultBranch)) : "",
-          running(p)],
+          plural(runningProcesses(p), "Process", "Processes") + " running"],
         [...pluginBadges(p), ...pluginLinks(p),
           ...pluginActions(dash, p, p.path).map((a) => textButton(`${p.path}:project:${a.label}`, a.label, a.run)),
           h("a", { class: "btn", href: logsHref(p.path), title: "The main Worktree's Logs" }, icon("logs"), "Logs"),
@@ -172,7 +177,7 @@ export default {
     };
 
     // startStop is Stop while the Worktree (or Process) runs, else Start.
-    const startStop = (key, runs, what, worktree, process) => runs
+    const startStop = (key, running, what, worktree, process) => running
       ? iconButton(`${key}:down`, "stop", `Stop ${what}`, () => dash.control("down", worktree, process))
       : iconButton(`${key}:up`, "start", `Start ${what}`, () => dash.control("up", worktree, process));
 
@@ -236,8 +241,6 @@ export default {
       const chev = h("button", { type: "button", class: "ib chev", "aria-expanded": String(expanded), "data-focus": `${key}:expand`,
         "aria-label": `${expanded ? "Hide" : "Show"} ${label}'s Processes and recent output` }, icon(expanded ? "collapse" : "expand"));
       chev.addEventListener("click", () => toggle(w));
-      const runs = w.state === "running" || w.state === "starting";
-      const removeWorktree = dash.removeWorktree;
       const r = h("div", { class: expanded ? "grid r open" : "grid r", role: "listitem", "data-domain": w.domain ?? "" },
         chev,
         h("div", { class: "wt" }, h("b", { title: w.path }, label), branchLine(p, w)),
@@ -246,12 +249,12 @@ export default {
         h("div", { class: "merge" }, mergeStatus(w)),
         processDots(w),
         h("div", { class: "acts" },
-          startStop(key, runs, `${label}'s Processes`, w),
+          startStop(key, runs(w), `${label}'s Processes`, w),
           iconButton(`${key}:restart`, "restart", `Restart ${label}'s Processes`, () => dash.control("restart", w)),
           more(`${key}:more`, `More actions for ${label}`,
             [...pluginActions(dash, w, w.path), ...dash.worktreeActions.flatMap((fn) => fn(w, p))]),
-          !w.main && typeof removeWorktree === "function"
-            ? iconButton(`${key}:remove`, "remove", `Remove Worktree ${label}`, () => removeWorktree(w, p), "ib del")
+          !w.main
+            ? iconButton(`${key}:remove`, "remove", `Remove Worktree ${label}`, () => dash.removeWorktree(w, p), "ib del")
             : h("span", { class: "ib", "aria-hidden": "true" })));
       // A click anywhere else on the row expands it too.
       r.addEventListener("click", (e) => {
@@ -263,7 +266,7 @@ export default {
     };
 
     const expansion = (p, w) => h("div", { class: "x" },
-      w.setup?.state === "failed" ? failure(w.setup) : "",
+      failed(w) ? failure(w.setup) : "",
       h("div", { class: "xin" },
         h("section", { class: "box" }, h("h4", {}, "Processes"), ...processRows(p, w)),
         h("section", { class: "box" },
@@ -280,7 +283,7 @@ export default {
       return all.map((d) => {
         const key = `${w.path}:${d.name}`;
         const state = d.state;
-        const runs = state === "running" || state === "restarting";
+        const running = state === "running" || state === "restarting";
         return h("div", { class: "pr" },
           h("span", { class: "n" }, d.name, d.primary ? h("span", { class: "tag" }, "primary") : ""),
           h("span", { class: `st ${stateTone(state)}` }, h("i"), state),
@@ -288,7 +291,7 @@ export default {
             ? link(`${d.name}.${w.primaryDomain}`, "mono")
             : h("span", { class: "tag" }, d.startMode ?? ""),
           h("div", { class: "acts" },
-            startStop(key, runs, d.name, w, d.name),
+            startStop(key, running, d.name, w, d.name),
             iconButton(`${key}:restart`, "restart", `Restart ${d.name}`, () => dash.control("restart", w, d.name)),
             more(`${key}:more`, `More actions for ${d.name}`, dash.processActions.flatMap((fn) => fn(w, p, d)))));
       });
@@ -385,20 +388,10 @@ async function unlink(dash, p) {
   }
 }
 
-function worktreeName(w) {
-  return w.main ? "main" : w.name;
-}
-
 // merged is whether linked Worktree w's commits are all on the Default
 // Branch.
 function merged(w) {
   return !w.main && !!w.merge?.merged && !w.merge.error;
-}
-
-// needsAttention is whether Worktree w failed preparing, or has changed
-// files or commits not on the Default Branch.
-function needsAttention(w) {
-  return w.setup?.state === "failed" || (!!w.merge && (!w.merge.merged || !w.merge.clean));
 }
 
 // matches is whether a Worktree's name, branch or Domains contain text.
@@ -513,10 +506,9 @@ function stateTone(state) {
   return { running: "ok", restarting: "warn", failed: "bad" }[state] ?? "off";
 }
 
-// running says how many of Project p's Processes run.
-function running(p) {
-  const n = p.worktrees.reduce((n, w) => n + (w.processes ?? []).filter((pr) => pr.state === "running").length, 0);
-  return `${n} Process${n === 1 ? "" : "es"} running`;
+// plural is "1 <one>" or "<n> <many>".
+function plural(n, one, many) {
+  return `${n} ${n === 1 ? one : many}`;
 }
 
 function link(domain, cls = "") {

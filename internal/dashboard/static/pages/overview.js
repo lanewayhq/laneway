@@ -7,17 +7,17 @@
 // `services` and `orphans` event, and each minute for the relative times.
 //
 // Which Worktrees need attention or are ready to Remove is attention.js's
-// call. A Worktree ready to Remove gets a Remove button when another page
-// provides dash.removeWorktree(worktree, project) (a Promise). With two or
-// more, its header has "Remove all N" (remove.js's removeAll), which asks
-// once and removes exactly the Worktrees it listed; with one, that row's
-// own Remove is the way, with the full Remove dialog.
+// call. A Worktree ready to Remove gets a Remove button
+// (dash.removeWorktree). With two or more, its header has "Remove all N"
+// (remove.js's removeAll), which asks once and removes exactly the
+// Worktrees it listed; with one, that row's own Remove is the way, with the
+// full Remove dialog.
 import { h, pageHeader } from "../dom.js";
 import { icon } from "../icons.js";
 import { href as pluginHref } from "../pluginitems.js";
-import { failedCount, projectHref, runState } from "../sidebar.js";
+import { projectHref, runningProcesses, runs, runState, runStateLabels, worktreeName } from "../projects.js";
 import { relative, absolute } from "../time.js";
-import { needsAttention, readyToRemove } from "../attention.js";
+import { failedCount, needsAttention, readyToRemove } from "../attention.js";
 import { removeAll } from "../remove.js";
 
 // guidesURL is where the guides are: the Dashboard serves none itself.
@@ -72,7 +72,7 @@ export default {
         h("span", { class: "ov-ico bad" }, icon("failed")),
         h("div", { class: "t" },
           h("b", {}, project.name), ": ",
-          n === 1 ? `Worktree ${worktreeName(project, worktrees[0])} failed preparing` : `${n} Worktrees failed preparing`,
+          n === 1 ? `Worktree ${worktreeName(worktrees[0])} failed preparing` : `${n} Worktrees failed preparing`,
           h("div", { class: "sub wrap" },
             steps.length ? ["at ", ...steps.flatMap((s, i) => (i ? [", ", h("code", {}, s)] : [h("code", {}, s)])), ". "] : "",
             "Fix it, then run ", h("code", {}, "lane worktree ready --retry"), n === 1 ? " in it." : " in each.")),
@@ -95,22 +95,21 @@ export default {
           h("b", {}, plural(n, "Worktree")), n === 1 ? ` has ${what}` : ` have ${what}`,
           h("div", { class: "sub" }, ...summary(items, detail)),
           open ? h("ul", { class: "ov-list" }, ...items.map(({ project, worktree }) => h("li", {},
-            h("a", { href: projectHref(project.name) }, worktree.name),
+            h("a", { href: projectHref(project.name) }, worktreeName(worktree)),
             h("span", { class: "muted" }, ` ${project.name} · ${detail(worktree)}`)))) : ""),
         toggle);
     };
 
     const readyCard = (projects) => {
       const items = readyToRemove(projects);
-      const remove = typeof dash.removeWorktree === "function" ? dash.removeWorktree : null;
-      const actions = remove && items.length >= 2 ? [removeAllButton(items)] : [];
+      const actions = items.length >= 2 ? [removeAllButton(items)] : [];
       return card("Ready to remove", h("span", { class: "c" }, String(items.length)), actions, items.length
         ? [removedAllNote(),
           h("p", { class: "note" }, "Merged into their Default Branch, with no uncommitted changes."),
           ...items.map(({ project, worktree }) => h("div", { class: "ov-row", "data-worktree": worktree.path },
             h("div", { class: "t" }, h("b", {}, worktree.name),
               h("div", { class: "sub" }, project.name, " · ", h("span", { class: "mono" }, worktree.merge.branch ?? "not on a branch"))),
-            remove ? removeButton(remove, project, worktree) : ""))]
+            removeButton(project, worktree)))]
         : [removedAllNote(),
           h("p", { class: "note empty" }, "No linked Worktree is merged into its Default Branch with no uncommitted changes.")]);
     };
@@ -141,7 +140,7 @@ export default {
         orphans ? [" Their databases and Buckets are ", h("a", { href: "/orphans" }, "Orphans"), " now, dropped in 24 hours."] : "");
     };
 
-    const removeButton = (remove, project, worktree) => {
+    const removeButton = (project, worktree) => {
       const busy = removing.has(worktree.path);
       const b = h("button", { type: "button", class: "ov-ib del", title: "Remove Worktree", "aria-label": `Remove ${worktree.name}`, disabled: busy },
         icon("remove"));
@@ -149,7 +148,7 @@ export default {
         removing.add(worktree.path);
         render();
         try {
-          await remove(worktree, project);
+          await dash.removeWorktree(worktree, project);
         } catch (err) {
           dash.report(err.message);
         } finally {
@@ -208,11 +207,6 @@ function stat(label, value, of, sub) {
     h("div", { class: "s" }, ...[sub].flat(Infinity)));
 }
 
-// runningProcesses is how many of Project p's Processes are running.
-function runningProcesses(p) {
-  return p.worktrees.reduce((n, w) => n + (w.processes ?? []).filter((pr) => pr.state === "running").length, 0);
-}
-
 // servicesSummary counts the Services that aren't running by state.
 function servicesSummary(services) {
   if (!services.length) {
@@ -251,17 +245,17 @@ function projectCard(p) {
   const main = p.worktrees.find((w) => w.main);
   const state = runState(p);
   const failed = failedCount(p);
-  const running = p.worktrees.filter((w) => w.state === "running").length;
+  const running = p.worktrees.filter(runs).length;
   return h("a", { class: "ov-pc", href: projectHref(p.name), "data-project": p.name },
     h("div", { class: "top" },
-      h("span", { class: `dot ${state}`, title: { run: "running", idle: "Idle", stopped: "stopped" }[state] }),
+      h("span", { class: `dot ${state}`, title: runStateLabels[state] }),
       h("b", {}, p.name),
       failed ? h("span", { class: "bad" }, `${failed} failed`) : ""),
     h("span", { class: "domain mono" }, main?.primaryDomain || "no Domain"),
     h("span", { class: "path mono", title: p.path }, p.path),
     h("div", { class: "foot" },
       h("span", {}, plural(p.worktrees.length, "Worktree")),
-      h("span", {}, running ? `${running} running` : { run: "Starting", idle: "Idle", stopped: "Stopped" }[state]),
+      h("span", {}, running ? `${running} running` : { idle: "Idle", stopped: "Stopped" }[state]),
       ...(p.badges ?? []).map((b) => h("span", { title: b.title || `from Plugin ${b.plugin}` }, b.text))));
 }
 
@@ -327,8 +321,8 @@ function summary(items, detail) {
   const parts = [];
   for (const [name, list] of byProject) {
     if (list.length <= 2) {
-      parts.push(...list.map(({ worktree }) => h("a", { href: projectHref(name), title: `${worktree.name} in ${name}` },
-        `${worktree.name} (${detail(worktree)})`)));
+      parts.push(...list.map(({ worktree }) => h("a", { href: projectHref(name), title: `${worktreeName(worktree)} in ${name}` },
+        `${worktreeName(worktree)} (${detail(worktree)})`)));
     } else {
       parts.push(h("a", { href: projectHref(name) }, `${list.length} in ${name}`));
     }
@@ -343,10 +337,6 @@ function changedDetail(w) {
 function unmergedDetail(w) {
   const commits = plural(w.merge.unmergedCount, "commit");
   return w.merge.branch ? commits : `${commits}, not on a branch`;
-}
-
-function worktreeName(project, w) {
-  return w.main ? `${project.name} (main)` : w.name;
 }
 
 function host(url) {

@@ -37,7 +37,6 @@ const shapes = {
   // The Remove dialog's notes and its "Removing it" list.
   merged: [["circle", { cx: 12, cy: 12, r: 9 }], ["path", { d: "m8 12.5 3 3 5-6" }]],
   warning: [["path", { d: "M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" }], ["path", { d: "M12 9v4M12 17h.01" }]],
-  commit: [["circle", { cx: 12, cy: 12, r: 3 }], ["path", { d: "M12 3v6M12 15v6" }]],
   lock: [["rect", { x: 5, y: 11, width: 14, height: 10, rx: 2 }], ["path", { d: "M8 11V7a4 4 0 0 1 8 0v4" }]],
   database: [["ellipse", { cx: 12, cy: 6, rx: 7, ry: 3 }], ["path", { d: "M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6" }]],
 };
