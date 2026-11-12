@@ -56,7 +56,7 @@ lane worktree ready          # waits for its database and setup steps
 lane open                    # https://my-laravel-app.localhost
 ```
 
-`lane info` shows the worktree's URL, Processes, databases, Buckets and Services; `lane status` lists every Project. `lane init` writes the resolved config to `laneway.toml`, so you can see and change what Laneway runs. `lane help` lists every command.
+`lane info` shows the worktree's URL, Processes, databases, Buckets and Services; `lane status` lists every Project and its Worktrees, with whether each Worktree's work is merged into the Default Branch. `lane init` writes the resolved config to `laneway.toml`, so you can see and change what Laneway runs. `lane help` lists every command.
 
 For a full walkthrough, from a fresh machine to a Laravel + React + Postgres app with worktrees, see [docs/guides/laravel-react-postgres.md](docs/guides/laravel-react-postgres.md). It ends with object storage: a Bucket per worktree for Laravel's `s3` disk. For MariaDB, including an app on Laravel's `mysql` connection whose production runs MariaDB, see [docs/guides/mariadb.md](docs/guides/mariadb.md).
 

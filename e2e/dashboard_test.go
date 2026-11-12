@@ -371,7 +371,9 @@ func TestEveryFileTheDashboardLoadsIsBuiltIn(t *testing.T) {
 
 	contentTypes := map[string]string{".js": "text/javascript", ".css": "text/css", ".html": "text/html"}
 	seen := map[string]bool{}
-	queue := []string{"/"}
+	// A page's own path, nested like /projects/shop, loads the same files
+	// as /, so the page refers to them by absolute paths.
+	queue := []string{"/", "/projects/shop"}
 	for len(queue) > 0 {
 		file := queue[0]
 		queue = queue[1:]
@@ -394,11 +396,65 @@ func TestEveryFileTheDashboardLoadsIsBuiltIn(t *testing.T) {
 			queue = append(queue, path.Clean(ref))
 		}
 	}
-	for _, want := range []string{"/app.js", "/style.css", "/panels/index.js", "/panels/worktrees.js", "/panels/logs.js",
-		"/panels/services.js", "/panels/orphans.js", "/panels/plugins.js", "/confirm.js", "/time.js", "/pluginitems.js"} {
+	for _, want := range []string{"/app.js", "/style.css", "/router.js", "/sidebar.js", "/icons.js", "/dom.js",
+		"/pages/index.js", "/pages/overview.js", "/pages/project.js", "/pages/logs.js", "/pages/services.js",
+		"/pages/orphans.js", "/pages/plugins.js", "/confirm.js", "/remove.js", "/time.js", "/pluginitems.js",
+		"/attention.js", "/projects.js"} {
 		if !seen[want] {
 			t.Errorf("the Dashboard never loads %s (loaded: %v)", want, slices.Sorted(maps.Keys(seen)))
 		}
+	}
+}
+
+func TestEveryDashboardPageHasItsOwnURL(t *testing.T) {
+	t.Parallel()
+	d, dash := dashboardDaemon(t, "dash-pages")
+
+	// Reloading or opening a bookmark asks the daemon for the page's own
+	// path; the Dashboard's page then shows the page it names.
+	for _, page := range []string{"/projects/shop", "/projects/my.site", "/projects/shop%20two", "/logs",
+		"/logs?dir=%2Fsrc%2Fshop&process=web", "/services", "/orphans", "/plugins", "/no-such-page"} {
+		res := d.Navigate(dash + page)
+		if res.StatusCode != http.StatusOK {
+			t.Errorf("%s: status %d, want 200:\n%s", page, res.StatusCode, res.Body)
+			continue
+		}
+		if ct := res.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+			t.Errorf("%s: Content-Type %q, want HTML", page, ct)
+		}
+		if !strings.Contains(res.Body, "<title>Laneway</title>") {
+			t.Errorf("%s: not the Dashboard:\n%s", page, res.Body)
+		}
+		if got := res.Header.Get("X-Frame-Options"); got != "DENY" {
+			t.Errorf("%s: X-Frame-Options %q, want DENY", page, got)
+		}
+		if csp := res.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "default-src 'self'") {
+			t.Errorf("%s: Content-Security-Policy %q, want the Dashboard's", page, csp)
+		}
+	}
+}
+
+func TestTheDashboardsPagePathsLeaveItsFilesAndAPIAlone(t *testing.T) {
+	t.Parallel()
+	d, dash := dashboardDaemon(t, "dash-page-api")
+
+	if res := d.Get(dash + "/api/v1/projects"); res.StatusCode != http.StatusOK ||
+		!strings.HasPrefix(res.Header.Get("Content-Type"), "application/json") {
+		t.Errorf("/api/v1/projects: status %d, Content-Type %q, want 200 JSON", res.StatusCode, res.Header.Get("Content-Type"))
+	}
+	if res := d.Get(dash + "/api/v1/no-such-route"); res.StatusCode != http.StatusNotFound || strings.Contains(res.Body, "<title>") {
+		t.Errorf("/api/v1/no-such-route: status %d, want a 404 that isn't the Dashboard's page:\n%s", res.StatusCode, res.Body)
+	}
+	if status, body := dashboardRequest(t, d, http.MethodPost, dash+"/api/v1/gc", "https://evil.example", map[string]any{}); status != http.StatusForbidden {
+		t.Errorf("POST /api/v1/gc from another Origin: status %d, want 403:\n%s", status, body)
+	}
+	if res := d.Get(dash + "/app.js"); res.StatusCode != http.StatusOK ||
+		!strings.HasPrefix(res.Header.Get("Content-Type"), "text/javascript") || strings.Contains(res.Body, "<title>") {
+		t.Errorf("/app.js: status %d, Content-Type %q, want the script", res.StatusCode, res.Header.Get("Content-Type"))
+	}
+	if res := d.Get(dash + "/style.css"); res.StatusCode != http.StatusOK ||
+		!strings.HasPrefix(res.Header.Get("Content-Type"), "text/css") {
+		t.Errorf("/style.css: status %d, Content-Type %q, want the stylesheet", res.StatusCode, res.Header.Get("Content-Type"))
 	}
 }
 

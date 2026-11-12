@@ -16,6 +16,14 @@ _Avoid_: Add, register, park
 One checkout of a Project. The main checkout is a Worktree like any other, with no special status.
 _Avoid_: Instance, environment, branch, lane
 
+**Remove**:
+Deleting a Worktree's checkout, whether with git or through Laneway. Its databases and Buckets become Orphans. The main Worktree can't be removed; its Project is Unlinked instead.
+_Avoid_: Delete, destroy, prune
+
+**Default Branch**:
+The branch a Project's work is merged into, such as `main`: the one its remote names as its default. A Worktree's commits count as merged once they are on the Default Branch, either locally or at the remote as last fetched.
+_Avoid_: Primary branch, base branch, trunk, master
+
 **Env Patch**:
 The set of env file keys Laneway owns and writes for each Worktree, such as its URL, database name and Service ports. Every other key in the file belongs to the developer and is never touched. Laneway re-applies it whenever its inputs change, such as when the Worktree's URL changes.
 _Avoid_: Env override, env template, env sync

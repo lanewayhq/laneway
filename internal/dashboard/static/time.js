@@ -1,4 +1,4 @@
-// Times as the panels show them: "3 h ago", "in 21 h", with the full date
+// Times as the pages show them: "3 h ago", "in 21 h", with the full date
 // in a title.
 
 // relative says how far t (a Date) is from now, roughly: "just now",

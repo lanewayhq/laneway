@@ -93,7 +93,7 @@ func TestWorktreeWithNoTrafficGoesIdleAndItsProcessesStop(t *testing.T) {
 	waitForExit(t, pid)
 	waitForState(t, d, "idle-basic.localhost", "idle")
 	lines := strings.Split(strings.TrimRight(d.MustRunCLI(d.Home, "status").Stdout, "\n"), "\n")
-	if got, want := strings.Fields(lines[len(lines)-1]), []string{"idle-basic", "idle-basic.localhost", repo.Dir, "ready", "idle"}; !slices.Equal(got, want) {
+	if got, want := strings.Fields(lines[len(lines)-1]), []string{"idle-basic", "idle-basic.localhost", repo.Dir, "ready", "idle", "main", "default-branch"}; !slices.Equal(got, want) {
 		t.Fatalf("status row %q, want %v", lines[len(lines)-1], want)
 	}
 }

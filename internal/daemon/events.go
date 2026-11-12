@@ -23,8 +23,12 @@ func (d *Daemon) projectList() api.ProjectList {
 	for _, p := range d.registry.Projects() {
 		ap := d.apiProject(p)
 		ap.Warnings = d.unfetchedWarnings(p.Path)
+		ap.DefaultBranch = d.defaultBranch(p.Path)
 		for i, w := range ap.Worktrees {
 			w = d.withState(w)
+			if !w.Main {
+				w.Merge = d.mergeStatus(p.Path, ap.DefaultBranch, w.Path)
+			}
 			if cfg, err := d.plugins.ResolveDir(w.Path); err == nil {
 				w.Declared = declaredProcesses(cfg)
 				w.PluginItems = d.worktreeItems(plugin.ScopeWorktree, ap.Name, w, cfg)
@@ -36,6 +40,7 @@ func (d *Daemon) projectList() api.ProjectList {
 		}
 		list.Projects = append(list.Projects, ap)
 	}
+	d.forgetMerges(list.Projects)
 	return list
 }
 

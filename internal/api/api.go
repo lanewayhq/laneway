@@ -21,6 +21,12 @@
 //	POST /v1/worktree/restart  ControlRequest -> Worktree
 //	POST /v1/worktree/ready    ReadyRequest -> WorktreeInfo  (find the Worktree containing
 //	                    dir now, begin or retry its setup and, with wait, wait for it)
+//	POST /v1/worktree/remove   RemoveRequest -> RemoveResponse  (Remove a linked Worktree:
+//	                    with preview, only say what removing it would lose; otherwise
+//	                    remove it, if it is still as the preview showed)
+//	POST /v1/worktrees/remove  RemoveAllRequest -> RemoveAllResponse  (Remove several
+//	                    Worktrees, each as POST /v1/worktree/remove would, one at a
+//	                    time, with a result for each; always 200 once the body is read)
 //	POST   /v1/aliases  AliasRequest -> AliasResponse  (add an Alias to the Worktree containing dir)
 //	DELETE /v1/aliases/{name}?dir=<abs path> -> AliasResponse  (remove one)
 //	GET  /v1/services   -> ServiceList
@@ -41,13 +47,21 @@
 // Errors are returned with a non-2xx status and an ErrorResponse body.
 package api
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // Project is a Linked git repository.
 type Project struct {
 	Name string `json:"name"`
 	// Path is the main Worktree's directory.
 	Path string `json:"path"`
+	// DefaultBranch is the branch the Project's work is merged into: the
+	// one its origin remote's HEAD names, else the branch checked out in
+	// the main Worktree. Empty when neither names one. Only
+	// GET /v1/projects and GET /v1/events fill it in.
+	DefaultBranch string `json:"defaultBranch,omitempty"`
 	// Worktrees are the Project's Worktrees, the main one first.
 	Worktrees []Worktree `json:"worktrees"`
 	// Warnings are problems with the whole Project, such as Catalog
@@ -97,9 +111,72 @@ type Worktree struct {
 	// GET /v1/worktree, POST /v1/worktree/ready and the up/down/restart
 	// routes fill it in.
 	Setup *Setup `json:"setup,omitempty"`
+	// Merge is how the linked Worktree's work stands against the
+	// Project's Default Branch. It is nil for the main Worktree, which is
+	// on the Default Branch. Only GET /v1/projects and GET /v1/events fill
+	// it in.
+	Merge *MergeStatus `json:"merge,omitempty"`
 	// PluginItems are what Plugins the Worktree uses show on it; only
 	// GET /v1/projects and GET /v1/events fill them in.
 	PluginItems
+}
+
+// MergeStatus is whether a linked Worktree's work is safe on its Project's
+// Default Branch. Laneway reads it from git without fetching: a commit is
+// merged once it, or a commit with the same patch (a rebase merge), is on
+// the local Default Branch or on the remote one as last fetched. Squash
+// merges can't be told apart locally, so their commits show as unmerged.
+type MergeStatus struct {
+	// Branch is the branch checked out in the Worktree; empty when it
+	// isn't on one (a detached HEAD).
+	Branch string `json:"branch,omitempty"`
+	// Merged is true when the Worktree has no unmerged commits.
+	Merged bool `json:"merged"`
+	// Clean is true when the Worktree has no changed files.
+	Clean bool `json:"clean"`
+	// UnmergedCount is how many commits on the Worktree's HEAD are on
+	// neither the local nor the remote Default Branch.
+	UnmergedCount int `json:"unmergedCount"`
+	// UnmergedCommits are those commits, newest first, at most
+	// MergeListLimit of them.
+	UnmergedCommits []Commit `json:"unmergedCommits,omitempty"`
+	// ChangedCount is how many files have uncommitted changes, staged or
+	// not, plus untracked files (an untracked directory counts once).
+	ChangedCount int `json:"changedCount"`
+	// ChangedFiles are those files, sorted by path, at most MergeListLimit
+	// of them.
+	ChangedFiles []ChangedFile `json:"changedFiles,omitempty"`
+	// Locked is true when the Worktree is locked (`git worktree lock`), so
+	// Laneway won't Remove it however merged and clean it is; LockReason
+	// is the reason given, if any.
+	Locked     bool   `json:"locked,omitempty"`
+	LockReason string `json:"lockReason,omitempty"`
+	// Error is why git couldn't say, such as a Project with no Default
+	// Branch. Merged and Clean are false then.
+	Error string `json:"error,omitempty"`
+}
+
+// MergeListLimit is the most commits, and the most files, a MergeStatus
+// lists; its counts are the full numbers.
+const MergeListLimit = 50
+
+// Commit is one commit, as a merge status lists it.
+type Commit struct {
+	Hash    string `json:"hash"`
+	Subject string `json:"subject"`
+	// Time is when it was committed; its age is now minus Time.
+	Time time.Time `json:"time"`
+}
+
+// ChangedFile is one file with uncommitted changes in a Worktree.
+type ChangedFile struct {
+	// Path is relative to the Worktree's top directory; an untracked
+	// directory ends in "/".
+	Path string `json:"path"`
+	// Status is git's two-letter short status, such as " M" (modified,
+	// not staged), "A " (added), "D " (deleted), "R " (renamed) or "??"
+	// (untracked).
+	Status string `json:"status"`
 }
 
 // DeclaredProcess is a Process as the Worktree's config declares it.
@@ -176,6 +253,112 @@ type ControlRequest struct {
 	Worktree string `json:"worktree,omitempty"`
 	// Process names one Process; empty means the whole Worktree.
 	Process string `json:"process,omitempty"`
+}
+
+// RemoveRequest is the body of POST /v1/worktree/remove. A preview says what
+// removing the Worktree would lose. The call that removes it sends back what
+// the preview showed (Branch, UnmergedCommits and ChangedFiles), and is
+// refused with CodeWorktreeChanged unless the Worktree is still exactly so.
+// Sending only Branch therefore removes the Worktree only if it is still
+// merged and clean, which is how merged, clean Worktrees are removed in bulk
+// from the merge status GET /v1/projects reports.
+type RemoveRequest struct {
+	// Dir is an absolute path inside the Linked Project.
+	Dir string `json:"dir"`
+	// Worktree names the Worktree to Remove, as in ControlRequest; empty
+	// means the one containing Dir.
+	Worktree string `json:"worktree,omitempty"`
+	// Preview only reports what removing the Worktree would lose, and
+	// changes nothing.
+	Preview bool `json:"preview,omitempty"`
+	// Branch is the branch the preview showed the Worktree on; empty when
+	// it showed none.
+	Branch string `json:"branch,omitempty"`
+	// UnmergedCommits are the hashes of every unmerged commit the preview
+	// showed.
+	UnmergedCommits []string `json:"unmergedCommits,omitempty"`
+	// ChangedFiles are the paths of every changed file the preview showed.
+	// Changes are discarded only when there are some.
+	ChangedFiles []string `json:"changedFiles,omitempty"`
+	// DeleteBranch deletes the Worktree's branch even though it has
+	// unmerged commits. A merged branch is deleted anyway.
+	DeleteBranch bool `json:"deleteBranch,omitempty"`
+}
+
+// RemoveResponse is what removing a linked Worktree would lose (a preview),
+// or lost. Its lists are complete, not capped like MergeStatus's.
+type RemoveResponse struct {
+	// Project is the name of the Worktree's Project.
+	Project string `json:"project"`
+	// Worktree is the Worktree, with its Domain, Primary Domain and
+	// Aliases.
+	Worktree Worktree `json:"worktree"`
+	// DefaultBranch is the Project's Default Branch (see Project).
+	DefaultBranch string `json:"defaultBranch,omitempty"`
+	// Branch is the branch checked out in the Worktree; empty when it isn't
+	// on one, so its unmerged commits become unreachable when it goes.
+	Branch string `json:"branch,omitempty"`
+	// Merged is true when the Worktree has no unmerged commits, so its
+	// branch is deleted with it.
+	Merged bool `json:"merged"`
+	// Clean is true when the Worktree has no changed files.
+	Clean bool `json:"clean"`
+	// UnmergedCommits are the commits on the Worktree's HEAD that are on
+	// neither the local nor the remote Default Branch (see MergeStatus),
+	// newest first.
+	UnmergedCommits []Commit `json:"unmergedCommits"`
+	// ChangedFiles are the Worktree's uncommitted changes and untracked
+	// files, sorted by path, which removing it discards. Ignored files,
+	// such as .env, aren't listed, and are deleted too.
+	ChangedFiles []ChangedFile `json:"changedFiles"`
+	// Locked is true when the Worktree is locked (`git worktree lock`), so
+	// it can't be removed; LockReason is the reason given, if any.
+	Locked     bool   `json:"locked,omitempty"`
+	LockReason string `json:"lockReason,omitempty"`
+	// Domains are the Domains the Worktree is served at, freed when it
+	// goes: its Primary Domain first, then the others, sorted.
+	Domains []string `json:"domains"`
+	// Orphans are the databases and Buckets that become Orphans when it
+	// goes, as if it went now (Since and Expires are set).
+	Orphans []Orphan `json:"orphans"`
+	// Removed is true once the Worktree's checkout is removed; never for a
+	// preview.
+	Removed bool `json:"removed,omitempty"`
+	// BranchDeleted is true when its branch was deleted too.
+	BranchDeleted bool `json:"branchDeleted,omitempty"`
+	// Warnings are problems that didn't stop the removal, such as a branch
+	// git wouldn't delete.
+	Warnings []string `json:"warnings,omitempty"`
+}
+
+// RemoveAllRequest is the body of POST /v1/worktrees/remove: several
+// removals at once, such as every merged, clean Worktree the developer was
+// shown and agreed to Remove. Each is checked and carried out as
+// POST /v1/worktree/remove would, one after another; one that is refused
+// doesn't stop the rest.
+type RemoveAllRequest struct {
+	// Worktrees are the removals, each as POST /v1/worktree/remove takes
+	// it. For a Worktree that is merged and clean, {Dir: its path, Branch:
+	// its branch} removes it only if it still is.
+	Worktrees []RemoveRequest `json:"worktrees"`
+}
+
+// RemoveAllResponse is the body of POST /v1/worktrees/remove.
+type RemoveAllResponse struct {
+	// Results has one RemoveResult for each of the request's Worktrees, in
+	// the same order.
+	Results []RemoveResult `json:"results"`
+}
+
+// RemoveResult is how one removal of a RemoveAllRequest went: what
+// POST /v1/worktree/remove would have answered. Removed says whether the
+// Worktree went. When it was refused, Error says why, as POST
+// /v1/worktree/remove's error would (such as CodeWorktreeChanged or
+// CodeWorktreeLocked), and the RemoveResponse fields still describe the
+// Worktree as it is now when Laneway got that far.
+type RemoveResult struct {
+	RemoveResponse
+	Error *Error `json:"error,omitempty"`
 }
 
 // ProjectList is the body of GET /v1/projects.
@@ -371,6 +554,17 @@ const (
 	// has something other than the preview the developer confirmed, so
 	// nothing was installed.
 	CodeSourceChanged = "source_changed"
+
+	// CodeMainWorktree: the main Worktree can't be Removed; its Project is
+	// Unlinked instead.
+	CodeMainWorktree = "main_worktree"
+	// CodeWorktreeLocked: the Worktree is locked (`git worktree lock`), so
+	// it wasn't Removed; the message gives git's lock reason.
+	CodeWorktreeLocked = "worktree_locked"
+	// CodeWorktreeChanged: the Worktree isn't as the preview the developer
+	// confirmed showed it (its branch, unmerged commits or changed files
+	// differ), so nothing was removed.
+	CodeWorktreeChanged = "worktree_changed"
 )
 
 // Service is a shared Service, such as redis:7, and how to connect to it.
@@ -476,6 +670,16 @@ type OrphanRef struct {
 }
 
 // GCResponse is what was dropped, or with a preview what would be.
+// LockedError is the error for removing the Worktree named name while it
+// is locked, giving git's lock reason if there is one.
+func LockedError(name, reason string) *Error {
+	msg := fmt.Sprintf("Worktree %q is locked", name)
+	if reason != "" {
+		msg += ": " + reason
+	}
+	return &Error{Code: CodeWorktreeLocked, Message: msg + "; run `git worktree unlock` on it first if it can go"}
+}
+
 type GCResponse struct {
 	Orphans []Orphan `json:"orphans"`
 	// Errors say what couldn't be dropped (or, for a preview, looked for)

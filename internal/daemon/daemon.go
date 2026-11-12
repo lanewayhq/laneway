@@ -191,6 +191,10 @@ type Daemon struct {
 	orphanSweeping bool
 	orphanDropMu   sync.Mutex
 
+	// merges is the last merge status read for each Project and Worktree,
+	// see merge.go.
+	merges mergeCache
+
 	// closing is closed (under syncMu) when Shutdown begins. It ends
 	// streaming responses, and Worktree syncs that start afterwards don't
 	// change anything.

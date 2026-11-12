@@ -1,40 +1,37 @@
-// The Orphans panel: databases and Buckets of removed Worktrees and
-// Unlinked Projects, with the Worktree they belonged to, when they were
-// orphaned and when the daemon drops them (24 hours later). It re-renders on every `orphans`
-// event (and each minute, for the relative times).
+// The Orphans page, at /orphans: databases and Buckets of removed
+// Worktrees and Unlinked Projects, with the Worktree they belonged to, when
+// they were orphaned and when the daemon drops them (24 hours later). It
+// re-renders on every `orphans` event (and each minute, for the relative
+// times).
 //
 // Dropping now matches `lane gc`: "Drop all now" previews (POST /v1/gc
 // with preview, which also finds leftover parallel test copies), asks, then
 // sends exactly the previewed list; "Drop" on a row sends just that one.
-// It also adds "Unlink" to each Project's main Worktree in the Projects
-// panel (DELETE /v1/projects), since Unlinking is what makes a Project's
-// databases and Buckets Orphans. Every one of these asks first.
-import { h } from "../dom.js";
+// Both ask first.
+import { h, pageHeader } from "../dom.js";
 import { absolute, relative } from "../time.js";
 
 export default {
   id: "orphans",
+  path: "/orphans",
   title: "Orphans",
-  mount(el, dash) {
+  show(el, dash) {
     const pending = new Set(); // keys of buttons whose request is in flight
     let last = null;
     let message = ""; // what the last "Drop all now" did
 
-    dash.worktreeActions.push((w, p) => (w.main ? [{ label: "Unlink", run: () => unlink(dash, p) }] : []));
-
     const render = (list) => {
       last = list;
-      const note = h("p", { class: "note" },
-        "Databases and Buckets of removed Worktrees and Unlinked Projects. Laneway drops each 24 hours after it was orphaned; ",
-        "linking the Worktree again before then keeps it.");
-      const header = h("div", { class: "panel-header" }, note,
-        h("span", { class: "status" }, message),
-        button("gc", "Drop all now", async () => (message = await dropAll(dash))));
+      const header = pageHeader("Orphans",
+        ["Databases and Buckets of removed Worktrees and Unlinked Projects. Laneway drops each 24 hours after it was orphaned; " +
+          "linking the Worktree again before then keeps it.",
+        message ? h("span", { class: "status" }, message) : ""],
+        [button("gc", "Drop all now", async () => (message = await dropAll(dash)))]);
       if (list.orphans.length === 0) {
-        el.replaceChildren(header, h("p", { class: "empty" }, "No Orphans."));
+        el.replaceChildren(header, h("div", { class: "body" }, h("p", { class: "empty" }, "No Orphans.")));
         return;
       }
-      el.replaceChildren(header, h("table", {},
+      el.replaceChildren(header, h("table", { class: "tbl" },
         h("thead", {}, h("tr", {}, ...["Name", "Service", "Kind", "Worktree", "Orphaned", "Dropped", ""].map((c) => h("th", {}, c)))),
         h("tbody", {}, ...list.orphans.map(row))));
     };
@@ -50,7 +47,7 @@ export default {
 
     // button runs fn once, disabled until it finishes.
     const button = (key, label, fn) => {
-      const b = h("button", { type: "button", class: "danger", disabled: pending.has(key) }, pending.has(key) ? label + "…" : label);
+      const b = h("button", { type: "button", class: "btn danger", disabled: pending.has(key) }, pending.has(key) ? label + "…" : label);
       b.addEventListener("click", async () => {
         pending.add(key);
         message = "";
@@ -68,7 +65,8 @@ export default {
     };
 
     dash.onOrphans(render);
-    setInterval(() => last && render(last), 60_000);
+    const timer = setInterval(() => last && render(last), 60_000);
+    dash.signal.addEventListener("abort", () => clearInterval(timer));
   },
 };
 
@@ -87,7 +85,7 @@ async function dropOne(dash, o) {
 }
 
 // dropAll does what `lane gc` does: preview, ask, drop what was listed.
-// It returns what happened, for the panel to show.
+// It returns what happened, for the page to show.
 async function dropAll(dash) {
   const preview = await dash.api.post("/v1/gc", { preview: true });
   dash.report(preview.errors?.length ? preview.errors.join("\n") : "");
@@ -119,21 +117,6 @@ async function gc(dash, orphans) {
   });
   dash.report(res.errors?.length ? res.errors.join("\n") : "");
   return res.orphans.length;
-}
-
-// unlink Unlinks Project p after asking.
-async function unlink(dash, p) {
-  const ok = await dash.confirm({
-    title: `Unlink ${p.name}?`,
-    body: [
-      `Laneway stops its Worktrees and forgets its Domains (${p.worktrees.map((w) => w.domain).filter(Boolean).join(", ")}).`,
-      "Its databases and Buckets become Orphans and are dropped in 24 hours unless you link it again. Files, including .env, are left alone.",
-    ],
-    action: "Unlink",
-  });
-  if (ok) {
-    await dash.api.del("/v1/projects?" + new URLSearchParams({ dir: p.path }));
-  }
 }
 
 function describe(o) {

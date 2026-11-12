@@ -84,7 +84,7 @@ var commands = map[string]command{
 	"unlink":   {"Unlink the current Project (its databases and Buckets become Orphans)", runUnlink},
 	"up":       {"Start the current Worktree's Processes (or one Process)", control("up")},
 	"version":  {"Print which version of Laneway this is", runVersion},
-	"worktree": {"Manage Worktrees (add <name> [--branch], ready [--retry], alias <name> [--remove])", runWorktree},
+	"worktree": {"Manage Worktrees (add <name> [--branch], ready [--retry], alias <name> [--remove], remove [name] [--delete-branch] [--force], remove --merged [--all] [--force])", runWorktree},
 }
 
 // usageError makes Run print the error and exit with exitUsage.
