@@ -23,6 +23,7 @@ func (d *Daemon) routes() http.Handler {
 	mux.HandleFunc("GET /v1/logs", d.handleLogs)
 	mux.HandleFunc("POST /v1/worktree/ready", d.handleWorktreeReady)
 	mux.HandleFunc("POST /v1/worktree/remove", d.handleRemoveWorktree)
+	mux.HandleFunc("POST /v1/worktree/unlock", d.handleUnlockWorktree)
 	mux.HandleFunc("POST /v1/worktree/{action}", d.handleControl)
 	mux.HandleFunc("POST /v1/worktrees/remove", d.handleRemoveWorktrees)
 	mux.HandleFunc("POST /v1/aliases", d.handleAddAlias)
@@ -125,6 +126,19 @@ func (d *Daemon) handleRemoveWorktree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := d.removeWorktree(r.Context(), req)
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (d *Daemon) handleUnlockWorktree(w http.ResponseWriter, r *http.Request) {
+	var req api.UnlockRequest
+	if !readJSON(w, r, &req) {
+		return
+	}
+	res, err := d.unlockWorktree(r.Context(), req)
 	if err != nil {
 		d.writeError(w, err)
 		return

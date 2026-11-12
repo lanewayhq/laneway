@@ -283,6 +283,28 @@ type RemoveRequest struct {
 	// DeleteBranch deletes the Worktree's branch even though it has
 	// unmerged commits. A merged branch is deleted anyway.
 	DeleteBranch bool `json:"deleteBranch,omitempty"`
+	// Unlock unlocks a locked Worktree (`git worktree unlock`) once the
+	// rest of the confirmation checks out, then removes it. Without it, a
+	// locked Worktree is refused (CodeWorktreeLocked).
+	Unlock bool `json:"unlock,omitempty"`
+}
+
+// UnlockRequest is the body of POST /v1/worktree/unlock: unlock a locked
+// linked Worktree (`git worktree unlock`) without removing it.
+type UnlockRequest struct {
+	// Dir is an absolute path inside the Linked Project.
+	Dir string `json:"dir"`
+	// Worktree names the Worktree, as in ControlRequest; empty means the
+	// one containing Dir.
+	Worktree string `json:"worktree,omitempty"`
+}
+
+// UnlockResponse says which Worktree was unlocked.
+type UnlockResponse struct {
+	// Worktree is the Worktree's directory.
+	Worktree string `json:"worktree"`
+	// Unlocked is false when it wasn't locked, so nothing changed.
+	Unlocked bool `json:"unlocked"`
 }
 
 // RemoveResponse is what removing a linked Worktree would lose (a preview),
@@ -677,7 +699,7 @@ func LockedError(name, reason string) *Error {
 	if reason != "" {
 		msg += ": " + reason
 	}
-	return &Error{Code: CodeWorktreeLocked, Message: msg + "; run `git worktree unlock` on it first if it can go"}
+	return &Error{Code: CodeWorktreeLocked, Message: msg + "; if whatever locked it is done with it, `lane worktree remove --unlock` unlocks and Removes it"}
 }
 
 type GCResponse struct {
