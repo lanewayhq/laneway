@@ -259,6 +259,15 @@ func (c *Client) UpdateHandAdded(ctx context.Context, name string, req api.Updat
 	return res, err
 }
 
+// RemoveWorktrees carries out several removals, each as RemoveWorktree
+// would, and says how each went, in the same order. One that is refused
+// doesn't stop the rest; its result's Error says why.
+func (c *Client) RemoveWorktrees(ctx context.Context, req api.RemoveAllRequest) (api.RemoveAllResponse, error) {
+	var res api.RemoveAllResponse
+	err := c.do(ctx, http.MethodPost, "/v1/worktrees/remove", req, &res)
+	return res, err
+}
+
 // RemovePlugin removes the installed Plugin called name, unless a Linked
 // Project uses it.
 func (c *Client) RemovePlugin(ctx context.Context, name string) (api.RemovePluginResponse, error) {

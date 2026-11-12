@@ -81,6 +81,22 @@ func (d *Daemon) removeWorktree(ctx context.Context, req api.RemoveRequest) (api
 	return res, nil
 }
 
+// removeWorktrees carries out each removal req asks for, one at a time, as
+// removeWorktree would, and says how each went. One that is refused, or
+// fails, doesn't stop the rest.
+func (d *Daemon) removeWorktrees(ctx context.Context, req api.RemoveAllRequest) api.RemoveAllResponse {
+	res := api.RemoveAllResponse{Results: []api.RemoveResult{}}
+	for _, one := range req.Worktrees {
+		r, err := d.removeWorktree(ctx, one)
+		result := api.RemoveResult{RemoveResponse: r}
+		if err != nil {
+			result.Error = d.apiError(err)
+		}
+		res.Results = append(res.Results, result)
+	}
+	return res
+}
+
 // linkedWorktree is the Project p's linked Worktree at dir, as recorded.
 func (d *Daemon) linkedWorktree(ctx context.Context, p registry.Project, dir string) (registry.Worktree, error) {
 	find := func() (registry.Worktree, bool) {

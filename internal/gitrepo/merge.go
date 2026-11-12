@@ -267,6 +267,26 @@ func linkedGitDir(dir string) (string, bool) {
 	return relativeTo(dir, strings.TrimSpace(gitDir)), true
 }
 
+// Lock says whether the linked Worktree whose root is dir is locked (`git
+// worktree lock`), and the reason given, if any, read from its git dir
+// without running git, as Worktrees reports them. The lock `git worktree
+// add` holds while it checks out doesn't count.
+func Lock(dir string) (locked bool, reason string) {
+	gitDir, ok := linkedGitDir(dir)
+	if !ok {
+		return false, ""
+	}
+	data, err := os.ReadFile(filepath.Join(gitDir, "locked"))
+	if err != nil {
+		return false, ""
+	}
+	reason = strings.TrimSpace(string(data))
+	if reason == "initializing" {
+		return false, ""
+	}
+	return true, reason
+}
+
 // run runs git in dir and returns its output with the trailing newline
 // removed.
 func run(ctx context.Context, dir string, args ...string) (string, error) {

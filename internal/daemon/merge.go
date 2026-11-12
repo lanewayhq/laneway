@@ -120,7 +120,11 @@ func (d *Daemon) mergeStatus(main, defaultBranch, dir string) *api.MergeStatus {
 			}
 		})
 	}
-	return e.status()
+	s := e.status()
+	// Read every time: it is one small file, and locking a Worktree
+	// changes nothing MergeKey looks at.
+	s.Locked, s.LockReason = gitrepo.Lock(dir)
+	return s
 }
 
 // status is the API's view of what e last read. The caller holds e.mu.

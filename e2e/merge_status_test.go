@@ -80,6 +80,32 @@ func TestAFreshWorktreeIsMergedAndCleanOnItsBranch(t *testing.T) {
 	}
 }
 
+func TestALockedWorktreesMergeStatusSaysSoWithItsReason(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	repo, wt := mergeProject(t, d, "merge-locked", "feature")
+	if m := mergeOf(t, d, "merge-locked", "feature"); m.Locked || m.LockReason != "" {
+		t.Fatalf("merge status of an unlocked Worktree = %+v, want not locked", m)
+	}
+
+	repo.Git("worktree", "lock", "--reason", "an agent is working here", wt.Dir)
+
+	m := mergeOf(t, d, "merge-locked", "feature")
+	if !m.Locked || m.LockReason != "an agent is working here" || !m.Merged || !m.Clean {
+		t.Fatalf("merge status = %+v, want merged and clean, but locked with its reason", m)
+	}
+
+	repo.Git("worktree", "unlock", wt.Dir)
+	repo.Git("worktree", "lock", wt.Dir)
+	if m := mergeOf(t, d, "merge-locked", "feature"); !m.Locked || m.LockReason != "" {
+		t.Fatalf("merge status after locking without a reason = %+v, want locked, no reason", m)
+	}
+	repo.Git("worktree", "unlock", wt.Dir)
+	if m := mergeOf(t, d, "merge-locked", "feature"); m.Locked {
+		t.Fatalf("merge status after unlocking = %+v, want not locked", m)
+	}
+}
+
 func TestAWorktreeListsItsCommitsThatAreNotOnTheDefaultBranch(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)

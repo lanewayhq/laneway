@@ -18,10 +18,15 @@ import (
 // (unless --force). Otherwise (a script, an agent) it goes ahead only when
 // nothing is lost: the Worktree is clean, and its commits not on the
 // Default Branch stay on its branch.
+//
+// With --merged it Removes every merged, clean Worktree of the current
+// Project (of every Project with --all) instead; see removeMerged.
 func runWorktreeRemove(ctx context.Context, env Env, args []string) error {
 	fs := newFlags(env, "worktree remove [name]")
 	deleteBranch := fs.Bool("delete-branch", false, "also delete the branch when it has commits not on the Default Branch")
 	force := fs.Bool("force", false, "remove it without asking, even if commits or changes are lost")
+	merged := fs.Bool("merged", false, "remove every merged, clean Worktree of the current Project instead")
+	all := fs.Bool("all", false, "with --merged, those of every Project")
 	// The name may come before or after the flags.
 	if err := fs.Parse(args); err != nil {
 		return parseFlags(fs, args)
@@ -39,9 +44,20 @@ func runWorktreeRemove(ctx context.Context, env Env, args []string) error {
 			name = filepath.Join(env.Dir, name)
 		}
 	}
+	switch {
+	case *merged && name != "":
+		return usageError{"--merged removes every merged, clean Worktree, so it takes no name"}
+	case *merged && *deleteBranch:
+		return usageError{"--merged removes merged Worktrees, whose branches are deleted anyway, so it takes no --delete-branch"}
+	case *all && !*merged:
+		return usageError{"--all goes with --merged: `lane worktree remove --merged --all`"}
+	}
 	c, err := apiClient(env)
 	if err != nil {
 		return err
+	}
+	if *merged {
+		return removeMerged(ctx, env, c, *all, *force)
 	}
 	preview, err := c.RemoveWorktree(ctx, api.RemoveRequest{Dir: env.Dir, Worktree: name, Preview: true})
 	if err != nil {

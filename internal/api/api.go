@@ -24,6 +24,9 @@
 //	POST /v1/worktree/remove   RemoveRequest -> RemoveResponse  (Remove a linked Worktree:
 //	                    with preview, only say what removing it would lose; otherwise
 //	                    remove it, if it is still as the preview showed)
+//	POST /v1/worktrees/remove  RemoveAllRequest -> RemoveAllResponse  (Remove several
+//	                    Worktrees, each as POST /v1/worktree/remove would, one at a
+//	                    time, with a result for each; always 200 once the body is read)
 //	POST   /v1/aliases  AliasRequest -> AliasResponse  (add an Alias to the Worktree containing dir)
 //	DELETE /v1/aliases/{name}?dir=<abs path> -> AliasResponse  (remove one)
 //	GET  /v1/services   -> ServiceList
@@ -140,6 +143,11 @@ type MergeStatus struct {
 	// ChangedFiles are those files, sorted by path, at most MergeListLimit
 	// of them.
 	ChangedFiles []ChangedFile `json:"changedFiles,omitempty"`
+	// Locked is true when the Worktree is locked (`git worktree lock`), so
+	// Laneway won't Remove it however merged and clean it is; LockReason
+	// is the reason given, if any.
+	Locked     bool   `json:"locked,omitempty"`
+	LockReason string `json:"lockReason,omitempty"`
 	// Error is why git couldn't say, such as a Project with no Default
 	// Branch. Merged and Clean are false then.
 	Error string `json:"error,omitempty"`
@@ -318,6 +326,36 @@ type RemoveResponse struct {
 	// Warnings are problems that didn't stop the removal, such as a branch
 	// git wouldn't delete.
 	Warnings []string `json:"warnings,omitempty"`
+}
+
+// RemoveAllRequest is the body of POST /v1/worktrees/remove: several
+// removals at once, such as every merged, clean Worktree the developer was
+// shown and agreed to Remove. Each is checked and carried out as
+// POST /v1/worktree/remove would, one after another; one that is refused
+// doesn't stop the rest.
+type RemoveAllRequest struct {
+	// Worktrees are the removals, each as POST /v1/worktree/remove takes
+	// it. For a Worktree that is merged and clean, {Dir: its path, Branch:
+	// its branch} removes it only if it still is.
+	Worktrees []RemoveRequest `json:"worktrees"`
+}
+
+// RemoveAllResponse is the body of POST /v1/worktrees/remove.
+type RemoveAllResponse struct {
+	// Results has one RemoveResult for each of the request's Worktrees, in
+	// the same order.
+	Results []RemoveResult `json:"results"`
+}
+
+// RemoveResult is how one removal of a RemoveAllRequest went: what
+// POST /v1/worktree/remove would have answered. Removed says whether the
+// Worktree went. When it was refused, Error says why, as POST
+// /v1/worktree/remove's error would (such as CodeWorktreeChanged or
+// CodeWorktreeLocked), and the RemoveResponse fields still describe the
+// Worktree as it is now when Laneway got that far.
+type RemoveResult struct {
+	RemoveResponse
+	Error *Error `json:"error,omitempty"`
 }
 
 // ProjectList is the body of GET /v1/projects.
