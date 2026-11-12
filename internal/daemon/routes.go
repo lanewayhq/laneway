@@ -24,6 +24,7 @@ func (d *Daemon) routes() http.Handler {
 	mux.HandleFunc("POST /v1/worktree/ready", d.handleWorktreeReady)
 	mux.HandleFunc("POST /v1/worktree/remove", d.handleRemoveWorktree)
 	mux.HandleFunc("POST /v1/worktree/{action}", d.handleControl)
+	mux.HandleFunc("POST /v1/worktrees/remove", d.handleRemoveWorktrees)
 	mux.HandleFunc("POST /v1/aliases", d.handleAddAlias)
 	mux.HandleFunc("DELETE /v1/aliases/{name}", d.handleRemoveAlias)
 	mux.HandleFunc("GET /v1/services", d.handleListServices)
@@ -129,6 +130,14 @@ func (d *Daemon) handleRemoveWorktree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+func (d *Daemon) handleRemoveWorktrees(w http.ResponseWriter, r *http.Request) {
+	var req api.RemoveAllRequest
+	if !readJSON(w, r, &req) {
+		return
+	}
+	writeJSON(w, http.StatusOK, d.removeWorktrees(r.Context(), req))
 }
 
 func (d *Daemon) handleControl(w http.ResponseWriter, r *http.Request) {
@@ -269,16 +278,23 @@ var statusFor = map[string]int{
 // writeError sends err to the client. An *api.Error is passed through as is;
 // anything else is logged and reported as an internal error.
 func (d *Daemon) writeError(w http.ResponseWriter, err error) {
-	var apiErr *api.Error
-	if !errors.As(err, &apiErr) {
-		d.log.Error("request failed", "err", err)
-		apiErr = &api.Error{Code: api.CodeInternal, Message: err.Error()}
-	}
+	apiErr := d.apiError(err)
 	status, ok := statusFor[apiErr.Code]
 	if !ok {
 		status = http.StatusInternalServerError
 	}
 	writeJSON(w, status, api.ErrorResponse{Error: *apiErr})
+}
+
+// apiError is err as the API reports it: an *api.Error as is, anything
+// else logged and reported as an internal error.
+func (d *Daemon) apiError(err error) *api.Error {
+	var apiErr *api.Error
+	if !errors.As(err, &apiErr) {
+		d.log.Error("request failed", "err", err)
+		apiErr = &api.Error{Code: api.CodeInternal, Message: err.Error()}
+	}
+	return apiErr
 }
 
 // queryDir is the directory of the Worktree a GET or DELETE request acts on,
