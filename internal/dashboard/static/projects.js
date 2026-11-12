@@ -2,9 +2,11 @@
 // `projects` event) that the sidebar and several pages show the same way.
 // Pure functions of that data: no DOM, no requests.
 
-// projectHref is the path of Project name's page.
-export function projectHref(name) {
-  return "/projects/" + encodeURIComponent(name);
+// projectHref is the path of Project name's page, opening with linked
+// Worktree worktree's row expanded when one is given (?worktree=<name>).
+export function projectHref(name, worktree) {
+  const href = "/projects/" + encodeURIComponent(name);
+  return worktree?.name && !worktree.main ? href + "?" + new URLSearchParams({ worktree: worktree.name }) : href;
 }
 
 // worktreeName is how the Dashboard names Worktree w: git's name for a

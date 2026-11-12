@@ -17,11 +17,19 @@
 // (dash.removeWorktree). A row expands into its Processes with their own
 // controls (and dash.processActions) and the last lines of their output
 // (GET /v1/logs without follow), linking to the Logs page for that
-// Worktree.
+// Worktree. A linked Worktree with changed files or commits not on the
+// Default Branch lists them there too, as the merge status in the
+// `projects` event has them (at most 50 of each, with the full counts);
+// clicking one shows its diff (diff.js).
+// /projects/<name>?worktree=<git name> opens with that Worktree's row
+// expanded and scrolled to.
 //
 // It re-renders on every `projects` event, keeping which rows are expanded,
 // which menu is open, which requests are in flight and where the focus is.
 import { attentionNeeded, byAttention, failed } from "../attention.js";
+import { commitRow, fileRow } from "../changes.js";
+import { list as rows } from "../confirm.js";
+import { showDiff } from "../diff.js";
 import { h, pageHeader } from "../dom.js";
 import { icon } from "../icons.js";
 import { pluginActions, pluginBadges, pluginLinks } from "../pluginitems.js";
@@ -57,6 +65,8 @@ export default {
     let tab = "all";
     let last = null;
     let project = null;
+    let wanted = route.query.get("worktree"); // a Worktree to open, from the URL
+    let scrollTo = null; // path of a row to scroll to once rendered
 
     const header = h("div");
     const warnings = h("div");
@@ -80,6 +90,14 @@ export default {
       if (!el.contains(list)) {
         el.replaceChildren(header, warnings, bar, list);
       }
+      if (wanted) {
+        const w = p.worktrees.find((w) => !w.main && w.name === wanted);
+        if (w) {
+          open.add(w.path);
+          scrollTo = w.path;
+        }
+        wanted = null;
+      }
       const focused = document.activeElement?.closest?.("[data-focus]")?.dataset.focus;
       loadRecipe(p);
       header.replaceChildren(projectHeader(p));
@@ -102,6 +120,10 @@ export default {
         if (open.has(w.path)) {
           loadRecent(w);
         }
+      }
+      if (scrollTo) {
+        list.querySelector(`[data-path="${CSS.escape(scrollTo)}"]`)?.scrollIntoView({ block: "start" });
+        scrollTo = null;
       }
       // Re-rendering replaced the element that had the focus; give it to
       // its replacement, or to the first item of a menu just opened.
@@ -239,9 +261,9 @@ export default {
       const expanded = open.has(key);
       const label = worktreeName(w);
       const chev = h("button", { type: "button", class: "ib chev", "aria-expanded": String(expanded), "data-focus": `${key}:expand`,
-        "aria-label": `${expanded ? "Hide" : "Show"} ${label}'s Processes and recent output` }, icon(expanded ? "collapse" : "expand"));
+        "aria-label": `${expanded ? "Hide" : "Show"} ${label}'s details` }, icon(expanded ? "collapse" : "expand"));
       chev.addEventListener("click", () => toggle(w));
-      const r = h("div", { class: expanded ? "grid r open" : "grid r", role: "listitem", "data-domain": w.domain ?? "" },
+      const r = h("div", { class: expanded ? "grid r open" : "grid r", role: "listitem", "data-domain": w.domain ?? "", "data-path": w.path },
         chev,
         h("div", { class: "wt" }, h("b", { title: w.path }, label), branchLine(p, w)),
         h("div", { class: "dom" }, domains(w), plugins(w)),
@@ -267,6 +289,7 @@ export default {
 
     const expansion = (p, w) => h("div", { class: "x" },
       failed(w) ? failure(w.setup) : "",
+      changes(dash, p, w),
       h("div", { class: "xin" },
         h("section", { class: "box" }, h("h4", {}, "Processes"), ...processRows(p, w)),
         h("section", { class: "box" },
@@ -481,6 +504,48 @@ function mergeStatus(w) {
     pills.push(h("span", { class: "pill ok" }, icon("check"), "Merged"));
   }
   return pills;
+}
+
+// changes lists linked Worktree w's changed files and its commits that
+// aren't on the Default Branch, when it has any, each opening its diff. The
+// event carries at most 50 of each, so the rest are counted.
+function changes(dash, p, w) {
+  const m = w.merge;
+  if (w.main || !m || m.error || (m.changedCount === 0 && m.unmergedCount === 0)) {
+    return "";
+  }
+  const boxes = [];
+  if (m.changedCount > 0) {
+    boxes.push(h("section", { class: "box" },
+      h("h4", {}, "Changed files", h("span", { class: "c" }, String(m.changedCount))),
+      changeList(m.changedFiles, m.changedCount, opens(fileRow, (f) => showDiff(dash, p, w, { path: f.path }), (f) => `Show the changes to ${f.path}`), "git status")));
+  }
+  if (m.unmergedCount > 0) {
+    boxes.push(h("section", { class: "box" },
+      h("h4", {}, p.defaultBranch ? ["Commits not on ", h("code", {}, p.defaultBranch)] : "Unmerged commits",
+        h("span", { class: "c" }, String(m.unmergedCount))),
+      changeList(m.unmergedCommits, m.unmergedCount, opens(commitRow, (c) => showDiff(dash, p, w, { commit: c }), (c) => `Show commit ${c.hash.slice(0, 7)}`), "git log")));
+  }
+  return h("div", { class: boxes.length === 2 ? "xin changes" : "xin changes one" }, ...boxes);
+}
+
+// opens makes row a button that calls open with its item.
+function opens(row, open, label) {
+  return (item) => {
+    const b = h("button", { type: "button", class: "row-open", title: label(item) }, ...row(item));
+    b.addEventListener("click", () => open(item));
+    return b;
+  };
+}
+
+// changeList lists items with row, then says how many of total it left out
+// and which git command shows them all.
+function changeList(items, total, row, command) {
+  const l = rows(items ?? [], row, { className: "flat" });
+  if (total > (items?.length ?? 0)) {
+    l.append(h("div", { class: "row more" }, `and ${total - (items?.length ?? 0)} more: run `, h("code", {}, command), " in the Worktree to see them all"));
+  }
+  return l;
 }
 
 // processesOf is the Worktree's declared Processes, the Primary Process
