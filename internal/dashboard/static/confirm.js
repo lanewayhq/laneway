@@ -14,39 +14,57 @@
 // action stays disabled (what was confirmed may no longer be true) and
 // confirm resolves false once the dialog is closed. A dialog asking about
 // several things at once (Orphans' "Drop all now") lists them with list().
+//
+// also ({ label, busy, run }) adds a second, milder button before action,
+// run the same way; confirm then resolves false, as action didn't happen
+// (the Remove dialog's "Unlock only").
 import { h } from "./dom.js";
 
-export function confirm({ title, subtitle, body = [], action, busy, run, className = "" }) {
+export function confirm({ title, subtitle, body = [], action, busy, run, also, className = "" }) {
   return new Promise((resolve) => {
     const yes = h("button", { type: "button", class: "danger" }, action);
     const no = h("button", { type: "button" }, "Cancel");
+    const other = also ? h("button", { type: "button" }, also.label) : null;
     const error = h("p", { class: "dlg-error", role: "alert", hidden: true });
-    const dialog = modal({ title, subtitle, body, className, footer: [error, no, yes] });
-    let running = null; // the promise of run, once action is chosen
-    yes.addEventListener("click", async () => {
-      if (!run) {
-        running = Promise.resolve(true);
+    const dialog = modal({ title, subtitle, body, className, footer: [error, no, other ?? "", yes] });
+    let running = null; // the promise of what was chosen, once chosen
+    // choose runs fn for button (labelled label) with the dialog open, then
+    // closes it, so confirm resolves result; if fn throws, the error is
+    // shown and only Close is left.
+    const choose = async (button, label, busyLabel, fn, result) => {
+      if (!fn) {
+        running = Promise.resolve(result);
         dialog.close();
         return;
       }
-      yes.disabled = true;
-      no.disabled = true;
-      yes.textContent = busy ?? action + "…";
+      for (const b of [yes, no, other]) {
+        if (b) {
+          b.disabled = true;
+        }
+      }
+      button.textContent = busyLabel ?? label + "…";
       error.hidden = true;
-      running = run().then(() => true, (err) => {
+      let done = false;
+      running = fn().then(() => {
+        done = true;
+        return result;
+      }, (err) => {
         error.textContent = err.message;
         error.hidden = false;
-        yes.textContent = action;
+        button.textContent = label;
         no.textContent = "Close";
         no.disabled = false;
         no.focus();
         running = null;
         return false;
       });
-      if (await running) {
+      await running;
+      if (done) {
         dialog.close();
       }
-    });
+    };
+    yes.addEventListener("click", () => choose(yes, action, busy, run, true));
+    other?.addEventListener("click", () => choose(other, also.label, also.busy, also.run, false));
     no.addEventListener("click", () => dialog.close());
     // While run is in flight, Escape can't close the dialog: what it
     // resolves must say whether the action happened.
