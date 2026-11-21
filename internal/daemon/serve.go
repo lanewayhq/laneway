@@ -20,7 +20,6 @@ import (
 	"github.com/lanewayhq/laneway/internal/proxy"
 	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/registry"
-	"github.com/lanewayhq/laneway/internal/rootdomain"
 	"github.com/lanewayhq/laneway/internal/supervisor"
 )
 
@@ -116,22 +115,6 @@ type startAttempt struct {
 	release func()
 }
 
-// rootDomain is the Root Domain every Laneway name is under (ADR-0009). Every
-// name is derived from it when it's needed, never stored, so reading it here
-// is all a name needs to follow it.
-func (d *Daemon) rootDomain() string {
-	return d.cfg.RootDomain
-}
-
-// dashboardDomain is where the Dashboard is served: laneway.<Root Domain>,
-// unless Config.DashboardDomain says otherwise.
-func (d *Daemon) dashboardDomain() string {
-	if d.cfg.DashboardDomain != "" {
-		return d.cfg.DashboardDomain
-	}
-	return rootdomain.Dashboard(d.rootDomain())
-}
-
 // domainOf is the main Worktree's Domain: <project>.<Root Domain>.
 func (d *Daemon) domainOf(p registry.Project) string {
 	return naming.DomainLabel(p.Name) + "." + d.rootDomain()
@@ -156,7 +139,7 @@ func (d *Daemon) serveWorktree(p registry.Project, w worktreeRef) {
 	s.ctx, s.cancel = context.WithCancel(d.stopping)
 	s.activity = activity.New(d.cfg.Clock, DefaultIdleTimeout, func() { d.goIdle(s) })
 	d.servedMu.Lock()
-	d.served[w.domain] = s
+	d.served[w.dir] = s
 	d.servedMu.Unlock()
 	d.serveServicesOf(w.dir)
 	d.startAlways(s)
@@ -232,7 +215,7 @@ func (d *Daemon) specs(s *served, cfg worktreeConfig, procs []recipe.Process) []
 			Command: command,
 			HTTP:    proc.HTTP,
 			Dir:     s.dir,
-			LogFile: filepath.Join(d.cfg.Paths.Logs(), s.domain, proc.Name+".log"),
+			LogFile: filepath.Join(d.cfg.Paths.Logs(), s.domain(), proc.Name+".log"),
 		})
 	}
 	if primary == "" {
@@ -259,12 +242,12 @@ func (d *Daemon) startProcess(s *served, spec supervisor.Spec, restartFailed boo
 	return true, nil
 }
 
-// stopWorktree stops serving domain and stops the Processes of the Worktree
-// at dir, including a start in progress.
-func (d *Daemon) stopWorktree(ctx context.Context, domain, dir string) {
+// stopWorktree stops serving the Worktree at dir and stops its Processes,
+// including a start in progress.
+func (d *Daemon) stopWorktree(ctx context.Context, dir string) {
 	d.servedMu.Lock()
-	s := d.served[domain]
-	delete(d.served, domain)
+	s := d.served[dir]
+	delete(d.served, dir)
 	d.servedMu.Unlock()
 	if s != nil {
 		s.activity.Reset()
@@ -458,7 +441,7 @@ func (d *Daemon) goIdle(s *served) {
 		return
 	}
 	st.releaseServices()
-	d.log.Info("Worktree is Idle", "project", s.project, "domain", s.domain)
+	d.log.Info("Worktree is Idle", "project", s.project, "domain", s.domain())
 	d.stopProcesses(s, st.lazy)
 	d.servedHooks(plugin.EventIdle, s)
 }
@@ -608,10 +591,10 @@ func (r router) RedirectTarget(domain string) (string, bool) {
 
 var _ proxy.StaticRouter = router{}
 
-// worktreeState is the state of the Worktree served at domain.
-func (d *Daemon) worktreeState(domain string) string {
+// worktreeState is the state of the Worktree at dir.
+func (d *Daemon) worktreeState(dir string) string {
 	d.servedMu.Lock()
-	s, ok := d.served[domain]
+	s, ok := d.served[dir]
 	d.servedMu.Unlock()
 	if !ok {
 		return ""
@@ -655,8 +638,12 @@ func (d *Daemon) servedAt(domain string) (*served, bool) {
 	}
 	d.servedMu.Lock()
 	defer d.servedMu.Unlock()
-	s, ok := d.served[domain]
-	return s, ok
+	for _, s := range d.served {
+		if s.domain() == domain {
+			return s, true
+		}
+	}
+	return nil, false
 }
 
 // routesProcess reports whether process is one of the Worktree's HTTP Processes

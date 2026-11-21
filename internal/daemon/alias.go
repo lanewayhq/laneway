@@ -33,13 +33,13 @@ func (d *Daemon) aliasDomains(p registry.Project, worktree string) []string {
 // newest Alias's Domain, or its own Domain if it has none. It is "" while
 // w's Domain is (a Worktree not discovered yet).
 func (d *Daemon) primaryDomain(p registry.Project, w worktreeRef) string {
-	if w.domain == "" {
+	if w.domain() == "" {
 		return ""
 	}
 	if a, ok := d.registry.NewestAlias(p.Path, w.name); ok {
 		return d.aliasDomain(p, a)
 	}
-	return w.domain
+	return w.domain()
 }
 
 // servedPrimaryDomain is the Primary Domain of the served Worktree s; false
@@ -81,7 +81,7 @@ func (d *Daemon) changeAliases(p registry.Project, w worktreeRef, change func() 
 	// Every Alias is an origin its Buckets allow, newest or not.
 	d.worktreeOriginsChanged(p, w)
 	if before != after {
-		d.primaryDomainMoved(w.domain)
+		d.primaryDomainMoved(w.dir)
 		d.primaryDomainChanged(p, w, before)
 	}
 	return before != after, nil

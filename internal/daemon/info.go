@@ -24,7 +24,7 @@ func (d *Daemon) info(ctx context.Context, dir string) (api.Info, error) {
 		Domain:           wt.Domain,
 		URL:              wt.URL,
 		Aliases:          []api.InfoAlias{},
-		State:            d.worktreeState(wt.Domain),
+		State:            d.worktreeState(wt.Worktree.Path),
 		Processes:        []api.InfoProcess{},
 		Buckets:          []api.InfoBucket{},
 		Services:         []api.InfoService{},

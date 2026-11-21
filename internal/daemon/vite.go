@@ -34,12 +34,12 @@ func (d *Daemon) withViteConfig(s *served, proc recipe.Process) (string, error) 
 	}
 	host, ok := d.servedPrimaryDomain(s)
 	if !ok {
-		host = s.domain
+		host = s.domain()
 	}
 	if !proc.Primary {
 		host = proc.Name + "." + host
 	}
-	path := filepath.Join(d.cfg.Paths.StateDir, "vite", s.domain, proc.Name+".config.mjs")
+	path := filepath.Join(d.cfg.Paths.StateDir, "vite", s.domain(), proc.Name+".config.mjs")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", err
 	}

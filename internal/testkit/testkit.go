@@ -280,3 +280,17 @@ func (d *Daemon) MustRunCLI(dir string, args ...string) CLIResult {
 	}
 	return res
 }
+
+// SetRootDomain changes the running daemon's Root Domain, as the API will
+// for `lane root-domain set`, and returns what that did.
+func (d *Daemon) SetRootDomain(root string) daemon.RootDomainChange {
+	d.t.Helper()
+	if d.running == nil {
+		d.t.Fatal("testkit: the daemon isn't running")
+	}
+	change, err := d.running.SetRootDomain(context.Background(), root)
+	if err != nil {
+		d.t.Fatalf("testkit: setting the Root Domain: %v", err)
+	}
+	return change
+}

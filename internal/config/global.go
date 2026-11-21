@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/lanewayhq/laneway/internal/rootdomain"
 )
 
 // Global is the global config file (paths.Paths.GlobalConfig): defaults for
@@ -28,6 +30,10 @@ type Global struct {
 	// Plugins are the machine-wide Plugins (added with `lane plugin add
 	// --global`) turned on in every Project, by name.
 	Plugins []string `toml:"plugins"`
+	// RootDomain is the domain every name Laneway serves is under
+	// (ADR-0009), such as "lw.example.com"; rootdomain.Default if unset.
+	// Only personal config sets it: a Project's config can't.
+	RootDomain *string `toml:"root_domain"`
 	// Warnings are problems that don't stop the file loading, such as
 	// unknown keys, each prefixed with the file's path.
 	Warnings []string `toml:"-"`
@@ -59,6 +65,11 @@ func LoadGlobal(path string) (Global, error) {
 	}
 	if err := checkPluginNames(g.Plugins); err != nil {
 		return Global{}, fmt.Errorf("%s: %w", path, err)
+	}
+	if g.RootDomain != nil {
+		if err := rootdomain.Check(*g.RootDomain); err != nil {
+			return Global{}, fmt.Errorf("%s: root_domain %w", path, err)
+		}
 	}
 	for _, key := range md.Undecoded() {
 		g.Warnings = append(g.Warnings, fmt.Sprintf("%s: unknown key %q", path, key.String()))
