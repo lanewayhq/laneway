@@ -22,8 +22,9 @@ import (
 
 // Every daemon in this test binary serves a Dashboard, and Caddy's
 // certificate cache is shared by name (see "Serving Domains in tests"), so
-// only TestTheDashboardIsServedAtLanewayLocalhost uses the default Domain;
-// the other tests give theirs a unique one with dashboardDaemon.
+// only TestTheDashboardIsServedAtLanewayLocalhost uses the default Domain,
+// under a custom Root Domain too; the other tests give theirs a unique one
+// with dashboardDaemon.
 
 func TestTheDashboardIsServedAtLanewayLocalhost(t *testing.T) {
 	t.Parallel()
@@ -39,6 +40,15 @@ func TestTheDashboardIsServedAtLanewayLocalhost(t *testing.T) {
 	}
 	if !strings.Contains(page.Body, "<title>Laneway</title>") {
 		t.Fatalf("not the Dashboard:\n%s", page.Body)
+	}
+
+	// Under a custom Root Domain, laneway.localhost names the Dashboard's
+	// new URL instead, until the Root Domain is localhost again.
+	d.SetRootDomain("rd-dash-moved.example.test")
+	assertMovedPage(t, d, "https://laneway.localhost/", "https://laneway.rd-dash-moved.example.test/")
+	d.SetRootDomain("localhost")
+	if page := d.Navigate("https://laneway.localhost/"); !strings.Contains(page.Body, "<title>Laneway</title>") {
+		t.Fatalf("with the Root Domain back to localhost, status %d, want the Dashboard:\n%s", page.StatusCode, page.Body)
 	}
 }
 
