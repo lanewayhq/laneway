@@ -17,7 +17,7 @@ import (
 func (d *Daemon) serviceItems(st service.Status) api.PluginItems {
 	var items api.PluginItems
 	vars := map[string]string{
-		"dashboard_domain": d.cfg.DashboardDomain,
+		"dashboard_domain": d.dashboardDomain(),
 		"service":          st.Name(),
 		"engine":           st.Engine.Name,
 		"version":          st.Version,
@@ -38,7 +38,7 @@ func (d *Daemon) serviceItems(st service.Status) api.PluginItems {
 func (d *Daemon) worktreeItems(scope string, project string, w api.Worktree, cfg recipe.Resolved) api.PluginItems {
 	var items api.PluginItems
 	vars := map[string]string{
-		"dashboard_domain": d.cfg.DashboardDomain,
+		"dashboard_domain": d.dashboardDomain(),
 		"project":          project,
 		"worktree":         w.Name,
 		"domain":           w.PrimaryDomain,

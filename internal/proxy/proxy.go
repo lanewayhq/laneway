@@ -1,5 +1,5 @@
 // Package proxy is the HTTPS front door: Caddy, embedded as a library
-// (ADR-0003), terminating TLS for every *.localhost Domain with certificates
+// (ADR-0003), terminating TLS for every Domain under the Root Domain with certificates
 // from Laneway's local CA and reverse-proxying each request (WebSockets
 // included) to the Process a Router picks.
 //
@@ -31,6 +31,8 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+
+	"github.com/lanewayhq/laneway/internal/rootdomain"
 
 	// The Caddy modules the config below uses.
 	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
@@ -128,6 +130,10 @@ type Config struct {
 	// StorageDir holds the local CA and the certificates issued from it.
 	StorageDir string
 	Router     Router
+	// RootDomain is the Root Domain (ADR-0009), read whenever a certificate
+	// is asked for, so it may change while the Proxy runs;
+	// rootdomain.Default if nil.
+	RootDomain func() string
 	// LogErrors sends Caddy's own error logs to stderr. Otherwise they are
 	// discarded.
 	LogErrors bool
@@ -152,18 +158,21 @@ func Start(cfg Config) (*Proxy, error) {
 	if cfg.Router == nil {
 		return nil, errors.New("proxy: no Router")
 	}
+	if cfg.RootDomain == nil {
+		cfg.RootDomain = func() string { return rootdomain.Default }
+	}
 	var caddyCfg caddy.Config
 	p := &Proxy{id: strconv.FormatInt(nextID.Add(1), 10)}
 	if err := json.Unmarshal(caddyConfig(p.id, cfg), &caddyCfg); err != nil {
 		return nil, fmt.Errorf("proxy: building Caddy config: %w", err)
 	}
-	routers.Store(p.id, cfg.Router)
+	configs.Store(p.id, cfg)
 
 	lifecycleMu.Lock()
 	defer lifecycleMu.Unlock()
 	ctx, err := caddy.ProvisionContext(&caddyCfg)
 	if err != nil {
-		routers.Delete(p.id)
+		configs.Delete(p.id)
 		return nil, fmt.Errorf("starting the HTTPS proxy: %w", err)
 	}
 	for _, name := range appNames {
@@ -218,7 +227,7 @@ func (p *Proxy) stop() error {
 		}
 	}
 	p.apps = nil
-	routers.Delete(p.id)
+	configs.Delete(p.id)
 	return errors.Join(errs...)
 }
 
@@ -239,15 +248,15 @@ var (
 	lifecycleMu sync.Mutex
 
 	nextID  atomic.Int64
-	routers sync.Map // Proxy id → Router, for the Caddy modules to find
+	configs sync.Map // Proxy id → Config, for the Caddy modules to find
 )
 
-func routerFor(id string) (Router, error) {
-	r, ok := routers.Load(id)
+func configFor(id string) (Config, error) {
+	c, ok := configs.Load(id)
 	if !ok {
-		return nil, fmt.Errorf("no Laneway proxy with id %q", id)
+		return Config{}, fmt.Errorf("no Laneway proxy with id %q", id)
 	}
-	return r.(Router), nil
+	return c.(Config), nil
 }
 
 // upstreamVar is the Caddy request variable the routing handler stores the
@@ -285,7 +294,7 @@ func caddyConfig(id string, cfg Config) []byte {
 						"on_demand": true,
 					}},
 					"on_demand": map[string]any{
-						"permission": map[string]any{"module": "laneway"},
+						"permission": map[string]any{"module": "laneway", "proxy": id},
 					},
 				},
 				// Storage cleaning stamps an instance ID into Caddy's data

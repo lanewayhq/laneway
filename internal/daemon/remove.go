@@ -206,7 +206,7 @@ func (d *Daemon) removal(ctx context.Context, p registry.Project, w registry.Wor
 		res.Warnings = append(res.Warnings, fmt.Sprintf("Laneway can't tell which databases and Buckets become Orphans: %v", err))
 		return res, nil
 	}
-	for _, o := range d.worktreeOrphans(p, linkedWorktreeRef(p, w), cfg, d.cfg.Clock.Now()) {
+	for _, o := range d.worktreeOrphans(p, d.linkedWorktreeRef(p, w), cfg, d.cfg.Clock.Now()) {
 		res.Orphans = append(res.Orphans, apiOrphan(o))
 	}
 	return res, nil

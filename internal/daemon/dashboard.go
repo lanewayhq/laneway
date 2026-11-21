@@ -14,7 +14,7 @@ import (
 
 // The Dashboard is served on a Unix socket next to the API socket (so the
 // directory's 0700 keeps other users out), and the proxy forwards
-// d.cfg.DashboardDomain to it (router.Upstream). Its handler mounts the API
+// d.dashboardDomain() to it (router.Upstream). Its handler mounts the API
 // routes under /api.
 
 // dashboardSocket is where the Dashboard's server listens.
@@ -39,7 +39,7 @@ func (d *Daemon) startDashboard() error {
 		return fmt.Errorf("securing the Dashboard socket: %w", err)
 	}
 	d.dashboard = &http.Server{
-		Handler:           dashboard.Handler(d.cfg.DashboardDomain, d.routes()),
+		Handler:           dashboard.Handler(d.dashboardDomain, d.routes()),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go d.dashboard.Serve(ln)

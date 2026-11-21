@@ -247,7 +247,7 @@ func (c WorktreeChanges) Empty() bool { return len(c.Added) == 0 && len(c.Remove
 // New Worktrees get their name's DomainLabel, or that label plus a hash of
 // their name if another Worktree or an Alias of the Project already uses it,
 // or it is one of reserved (the names of the main Worktree's HTTP Processes,
-// served at <process>.<project>.localhost).
+// served at <process>.<project>.<Root Domain>).
 func (r *Registry) PlanWorktrees(project string, found []Found, reserved []string) WorktreeChanges {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -343,7 +343,7 @@ func (r *Registry) ApplyWorktrees(c WorktreeChanges) error {
 	return nil
 }
 
-// Alias is an extra Domain of a Worktree: <name>.<project>.localhost.
+// Alias is an extra Domain of a Worktree: <name>.<project>.<Root Domain>.
 type Alias struct {
 	// Project is the owning Project's Path.
 	Project string `json:"project"`

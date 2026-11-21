@@ -15,6 +15,8 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+
+	"github.com/lanewayhq/laneway/internal/rootdomain"
 )
 
 // Two small Caddy modules connect the fixed Caddy config to Laneway: a handler
@@ -41,8 +43,8 @@ func (routeHandler) CaddyModule() caddy.ModuleInfo {
 }
 
 func (h *routeHandler) Provision(caddy.Context) error {
-	r, err := routerFor(h.Proxy)
-	h.router = r
+	cfg, err := configFor(h.Proxy)
+	h.router = cfg.Router
 	return err
 }
 
@@ -136,24 +138,37 @@ func writePage(w http.ResponseWriter, status int, title string, paragraphs ...st
 }
 
 // certPermission (tls.permission.laneway) allows on-demand certificates for
-// localhost and its subdomains only. Unknown *.localhost names get a
+// the Root Domain and names under it only. Unknown names under it get a
 // certificate too, so they can be shown the "nothing is served here" page.
-type certPermission struct{}
+type certPermission struct {
+	// Proxy is the id of the Proxy whose Root Domain to ask.
+	Proxy string `json:"proxy"`
+
+	rootDomain func() string
+}
 
 func (certPermission) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{ID: "tls.permission.laneway", New: func() caddy.Module { return new(certPermission) }}
 }
 
-func (certPermission) CertificateAllowed(_ context.Context, name string) error {
+func (c *certPermission) Provision(caddy.Context) error {
+	cfg, err := configFor(c.Proxy)
+	c.rootDomain = cfg.RootDomain
+	return err
+}
+
+func (c *certPermission) CertificateAllowed(_ context.Context, name string) error {
 	name = strings.ToLower(name)
-	if name == "localhost" || strings.HasSuffix(name, ".localhost") {
+	root := c.rootDomain()
+	if rootdomain.Covers(root, name) {
 		return nil
 	}
-	return fmt.Errorf("%s is not a .localhost name", name)
+	return fmt.Errorf("%s is not %s or a name under it", name, root)
 }
 
 var (
 	_ caddyhttp.MiddlewareHandler = (*routeHandler)(nil)
 	_ caddy.Provisioner           = (*routeHandler)(nil)
 	_ caddytls.OnDemandPermission = (*certPermission)(nil)
+	_ caddy.Provisioner           = (*certPermission)(nil)
 )

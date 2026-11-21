@@ -12,9 +12,9 @@ import (
 	"github.com/lanewayhq/laneway/internal/registry"
 )
 
-// aliasDomain is an Alias's Domain: <alias>.<project>.localhost.
-func aliasDomain(p registry.Project, a registry.Alias) string {
-	return a.Name + "." + domainOf(p)
+// aliasDomain is an Alias's Domain: <alias>.<project>.<Root Domain>.
+func (d *Daemon) aliasDomain(p registry.Project, a registry.Alias) string {
+	return a.Name + "." + d.domainOf(p)
 }
 
 // aliasDomains are the Domains of the Aliases of the Project's Worktree
@@ -23,7 +23,7 @@ func (d *Daemon) aliasDomains(p registry.Project, worktree string) []string {
 	var out []string
 	for _, a := range d.registry.Aliases(p.Path) {
 		if a.Worktree == worktree {
-			out = append(out, aliasDomain(p, a))
+			out = append(out, d.aliasDomain(p, a))
 		}
 	}
 	return out
@@ -37,7 +37,7 @@ func (d *Daemon) primaryDomain(p registry.Project, w worktreeRef) string {
 		return ""
 	}
 	if a, ok := d.registry.NewestAlias(p.Path, w.name); ok {
-		return aliasDomain(p, a)
+		return d.aliasDomain(p, a)
 	}
 	return w.domain
 }
@@ -94,7 +94,7 @@ func (d *Daemon) aliasTarget(host string) (string, bool) {
 		return "", false
 	}
 	for _, p := range d.registry.Projects() {
-		if domainOf(p) != rest {
+		if d.domainOf(p) != rest {
 			continue
 		}
 		for _, a := range d.registry.Aliases(p.Path) {
@@ -109,7 +109,7 @@ func (d *Daemon) aliasTarget(host string) (string, bool) {
 
 // reservedLabels are the names a linked Worktree's label or an Alias must
 // not take: the main Worktree's HTTP Processes other than the Primary
-// Process, which are served at <process>.<project>.localhost.
+// Process, which are served at <process>.<project>.<Root Domain>.
 func (d *Daemon) reservedLabels(p registry.Project) []string {
 	cfg, err := d.plugins.ResolveDir(p.Path)
 	if err != nil {
@@ -167,7 +167,7 @@ func (d *Daemon) addAlias(ctx context.Context, dir, name string) (api.AliasRespo
 			return &api.Error{
 				Code: api.CodeAliasTaken,
 				Message: fmt.Sprintf("%s can't be an Alias: it is where the main Worktree's %q Process is served; "+
-					"choose another name", aliasDomain(p, alias), name),
+					"choose another name", d.aliasDomain(p, alias), name),
 			}
 		}
 		return d.registry.AddAlias(alias)
@@ -180,14 +180,14 @@ func (d *Daemon) addAlias(ctx context.Context, dir, name string) (api.AliasRespo
 		return api.AliasResponse{}, &api.Error{
 			Code: api.CodeAliasTaken,
 			Message: fmt.Sprintf("%s is already %s of %s in Project %q; choose another name",
-				aliasDomain(p, alias), what, describeWorktree(taken.Worktree), p.Name),
+				d.aliasDomain(p, alias), what, describeWorktree(taken.Worktree), p.Name),
 		}
 	}
 	if err != nil {
 		return api.AliasResponse{}, err
 	}
 	info, err := d.worktreeInfo(ctx, dir)
-	return api.AliasResponse{Domain: aliasDomain(p, alias), Worktree: info, Moved: moved, Existed: existed}, err
+	return api.AliasResponse{Domain: d.aliasDomain(p, alias), Worktree: info, Moved: moved, Existed: existed}, err
 }
 
 // removeAlias removes the Alias name from the Worktree containing dir.
@@ -206,12 +206,12 @@ func (d *Daemon) removeAlias(ctx context.Context, dir, name string) (api.AliasRe
 		}
 		return api.AliasResponse{}, &api.Error{
 			Code:    api.CodeUnknownAlias,
-			Message: fmt.Sprintf("%s has no Alias %s; %s", describeWorktree(checkout.Name), aliasDomain(p, alias), has),
+			Message: fmt.Sprintf("%s has no Alias %s; %s", describeWorktree(checkout.Name), d.aliasDomain(p, alias), has),
 		}
 	}
 	if err != nil {
 		return api.AliasResponse{}, err
 	}
 	info, err := d.worktreeInfo(ctx, dir)
-	return api.AliasResponse{Domain: aliasDomain(p, alias), Worktree: info, Moved: moved}, err
+	return api.AliasResponse{Domain: d.aliasDomain(p, alias), Worktree: info, Moved: moved}, err
 }

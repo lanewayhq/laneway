@@ -76,7 +76,7 @@ func (d *Daemon) serviceVars(services []recipe.Service) map[string]string {
 		for k, v := range e.Values(d.serviceHost(), rs.Port) {
 			vars[k] = v
 		}
-		for k, v := range e.DomainValues(d.cfg.DashboardDomain) {
+		for k, v := range e.DomainValues(d.dashboardDomain()) {
 			vars[k] = v
 		}
 	}

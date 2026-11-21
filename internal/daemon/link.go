@@ -68,11 +68,11 @@ func (d *Daemon) link(ctx context.Context, req api.LinkRequest) (api.LinkRespons
 		project = existing
 	} else if taken, ok := d.nameTaken(name); ok {
 		return api.LinkResponse{}, nameTakenError(name, taken)
-	} else if domainOf(project) == d.cfg.DashboardDomain {
+	} else if dash := d.dashboardDomain(); d.domainOf(project) == dash {
 		return api.LinkResponse{}, &api.Error{
 			Code: api.CodeNameTaken,
 			Message: fmt.Sprintf("the Project name %q would be served at https://%s, where the Dashboard is; "+
-				"choose a different one with --name <name>", name, d.cfg.DashboardDomain),
+				"choose a different one with --name <name>", name, dash),
 		}
 	}
 	// Every Worktree's Env Patch is worked out (and, unless previewing,
@@ -191,11 +191,11 @@ func (d *Daemon) linkEnvPatch(ctx context.Context, p registry.Project, apply boo
 // apiProject describes p and its Worktrees, the main one first.
 func (d *Daemon) apiProject(p registry.Project) api.Project {
 	res := api.Project{Name: p.Name, Path: p.Path, Worktrees: []api.Worktree{
-		{Path: p.Path, Main: true, Domain: domainOf(p), Aliases: d.aliasDomains(p, ""),
-			PrimaryDomain: d.primaryDomain(p, mainWorktreeRef(p))},
+		{Path: p.Path, Main: true, Domain: d.domainOf(p), Aliases: d.aliasDomains(p, ""),
+			PrimaryDomain: d.primaryDomain(p, d.mainWorktreeRef(p))},
 	}}
 	for _, w := range d.registry.Worktrees(p.Path) {
-		ref := linkedWorktreeRef(p, w)
+		ref := d.linkedWorktreeRef(p, w)
 		res.Worktrees = append(res.Worktrees, api.Worktree{
 			Name: w.Name, Path: w.Path, Domain: ref.domain, Aliases: d.aliasDomains(p, w.Name),
 			PrimaryDomain: d.primaryDomain(p, ref),
