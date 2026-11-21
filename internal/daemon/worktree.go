@@ -45,7 +45,7 @@ func domainURL(domain string) string {
 // Worktree Watcher hasn't recorded it yet.
 func (d *Daemon) checkoutDomain(p registry.Project, c gitrepo.Checkout) string {
 	if c.Main() {
-		return domainOf(p)
+		return d.domainOf(p)
 	}
 	return d.namedWorktreeDomain(p, c.Name)
 }
@@ -54,11 +54,11 @@ func (d *Daemon) checkoutDomain(p registry.Project, c gitrepo.Checkout) string {
 // ("" for the main Worktree), or "" if there is no such Worktree.
 func (d *Daemon) namedWorktreeDomain(p registry.Project, name string) string {
 	if name == "" {
-		return domainOf(p)
+		return d.domainOf(p)
 	}
 	for _, w := range d.registry.Worktrees(p.Path) {
 		if w.Name == name {
-			return worktreeDomain(p, w)
+			return d.worktreeDomain(p, w)
 		}
 	}
 	return ""

@@ -172,7 +172,7 @@ func (d *Daemon) worktreeHooks(event string, p registry.Project, w worktreeRef) 
 // projectHooks is an occurrence of event in the whole Project p, whose
 // hooks' warnings join its main Worktree's setup's.
 func (d *Daemon) projectHooks(event string, p registry.Project) occurrence {
-	o := d.worktreeHooks(event, p, mainWorktreeRef(p))
+	o := d.worktreeHooks(event, p, d.mainWorktreeRef(p))
 	o.wholeProject = true
 	return o
 }

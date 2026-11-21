@@ -510,7 +510,7 @@ type AliasRequest struct {
 	// Worktree names the Worktree instead of Dir, as in ControlRequest.
 	Worktree string `json:"worktree,omitempty"`
 	// Name is the Alias's part of the Domain: "api-v2" adds
-	// api-v2.<project>.localhost.
+	// api-v2.<project>.<Root Domain>.
 	Name string `json:"name"`
 }
 

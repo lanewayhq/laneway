@@ -8,21 +8,24 @@ import (
 	"net/netip"
 	"strings"
 	"time"
+
+	"github.com/lanewayhq/laneway/internal/rootdomain"
 )
 
 // Redirect is the plain HTTP listener that sends browsers to the same URL
-// over HTTPS, so typing shop.localhost (which a browser may try as
-// http://) still reaches the Domain.
+// over HTTPS, so typing a Domain such as shop.localhost (which a browser may
+// try as http://) still reaches it.
 type Redirect struct {
 	server   *http.Server
 	listener *fanIn
 }
 
 // StartRedirect listens on addr, a loopback address, and redirects every
-// request for localhost or a *.localhost name to https:// on httpsPort
+// request for the Root Domain or a name under it to https:// on httpsPort
 // (left out of the URL when it is 443). Requests for other names get a 404:
-// Laneway serves nothing else.
-func StartRedirect(addr string, httpsPort string) (*Redirect, error) {
+// Laneway serves nothing else. rootDomain is read on every request, so it
+// may change while the listener runs.
+func StartRedirect(addr string, httpsPort string, rootDomain func() string) (*Redirect, error) {
 	if err := checkLoopback(addr); err != nil {
 		return nil, err
 	}
@@ -31,7 +34,7 @@ func StartRedirect(addr string, httpsPort string) (*Redirect, error) {
 		return nil, err
 	}
 	r := &Redirect{listener: newFanIn(ln), server: &http.Server{
-		Handler:           redirectHandler(httpsPort),
+		Handler:           redirectHandler(httpsPort, rootDomain),
 		ReadHeaderTimeout: 10 * time.Second,
 	}}
 	go func() {
@@ -42,15 +45,15 @@ func StartRedirect(addr string, httpsPort string) (*Redirect, error) {
 	return r, nil
 }
 
-func redirectHandler(httpsPort string) http.Handler {
+func redirectHandler(httpsPort string, rootDomain func() string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		host := req.Host
 		if h, _, err := net.SplitHostPort(host); err == nil {
 			host = h
 		}
 		host = strings.ToLower(strings.TrimSuffix(host, "."))
-		if host != "localhost" && !strings.HasSuffix(host, ".localhost") {
-			http.Error(w, "Laneway only serves localhost Domains", http.StatusNotFound)
+		if root := rootDomain(); !rootdomain.Covers(root, host) {
+			http.Error(w, "Laneway only serves Domains under "+root, http.StatusNotFound)
 			return
 		}
 		if httpsPort != "443" {

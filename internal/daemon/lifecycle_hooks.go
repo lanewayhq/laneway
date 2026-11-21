@@ -23,7 +23,7 @@ func (d *Daemon) projectLinked(p registry.Project) {
 // Unlinked. It has no setup left to show their warnings, and no .env
 // Laneway manages.
 func (d *Daemon) projectUnlinked(p registry.Project) {
-	o := d.loggedHooks(plugin.EventUnlink, p, mainWorktreeRef(p), "the Project was Unlinked")
+	o := d.loggedHooks(plugin.EventUnlink, p, d.mainWorktreeRef(p), "the Project was Unlinked")
 	o.wholeProject = true
 	d.fireHooks(o)
 }
