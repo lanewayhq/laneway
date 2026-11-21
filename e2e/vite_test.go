@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -316,4 +317,46 @@ func TestViteKeepsItsDefaultHostsAndOriginsUnderLocalhost(t *testing.T) {
 
 	assertNotContains(t, config, "allowedHosts")
 	assertNotContains(t, config, "cors")
+}
+
+func TestChangingTheRootDomainRewritesTheViteConfigBeforeViteRestarts(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	viteStubs(t, d)
+	repo := laravelViteRepo(t, "lara-vite-live")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	viteConfig(t, d, "vite.lara-vite-live.localhost")
+
+	d.SetRootDomain("rd-vite-live.example.test")
+
+	_, config := viteConfig(t, d, "vite.lara-vite-live.rd-vite-live.example.test")
+	assertContains(t, config, "host: "+strconv.Quote("vite.lara-vite-live.rd-vite-live.example.test")+",")
+	assertContains(t, config, `[...(server.allowedHosts ?? []), ".rd-vite-live.example.test"],`)
+}
+
+// A Vite whose Worktree has no Env Patch still restarts: its config names
+// its host.
+func TestChangingTheRootDomainRestartsARunningViteWithoutAnEnvPatch(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	server := testkit.TestServer(t)
+	vite := testkit.WriteExecutable(t, gitfixture.TempDir(t), "vite", `exec `+server+` --name "vite $*"`+"\n")
+	repo := gitfixture.New(t, "vite-root").
+		WriteFile("laneway.toml", processConfig(server+" --name web")+
+			"\n[processes.vite]\ncommand = \""+vite+" --config {vite_config}\"\nhttp = true\n").
+		Commit("a web and a vite Process")
+	d.MustRunCLI(repo.Dir, "link")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	d.GetServer("https://vite.vite-root.localhost/")
+
+	change := d.SetRootDomain("rd-vite-env.example.test")
+
+	if got := change.Restarted[repo.Dir]; !slices.Contains(got, "vite") {
+		t.Errorf("the change restarted %v, want vite", got)
+	}
+	_, path, _ := strings.Cut(d.GetServer("https://vite.vite-root.rd-vite-env.example.test/").Name, "--config ")
+	config := readFile(t, path)
+	assertContains(t, config, "host: "+strconv.Quote("vite.vite-root.rd-vite-env.example.test")+",")
+	assertContains(t, config, `[...(server.allowedHosts ?? []), ".rd-vite-env.example.test"],`)
 }

@@ -14,9 +14,19 @@ import (
 // changed its .env, with cfg, the config they start from now, and returns
 // their names. The caller holds s.lifecycle.
 func (d *Daemon) restartForEnv(s *served, cfg worktreeConfig) []string {
+	return d.restartRunningOf(s, cfg, func(recipe.Process) bool { return true }, "restarting Processes for the changed .env")
+}
+
+// restartRunningOf restarts the Worktree's running Processes that which
+// selects, with cfg, the config they start from now, and returns their
+// names; why is what the log says. The caller holds s.lifecycle.
+func (d *Daemon) restartRunningOf(s *served, cfg worktreeConfig, which func(recipe.Process) bool, why string) []string {
 	var procs []recipe.Process
 	var names []string
 	for _, proc := range cfg.Processes {
+		if !which(proc) {
+			continue
+		}
 		if p, ok := d.supervisor.Process(s.group, proc.Name); ok && p.State() != supervisor.StateFailed {
 			procs = append(procs, proc)
 			names = append(names, proc.Name)
@@ -25,11 +35,11 @@ func (d *Daemon) restartForEnv(s *served, cfg worktreeConfig) []string {
 	if len(procs) == 0 {
 		return nil
 	}
-	d.log.Info("restarting Processes for the changed .env", "project", s.project, "dir", s.dir, "processes", names)
+	d.log.Info(why, "project", s.project, "dir", s.dir, "processes", names)
 	d.stopProcesses(s, names)
 	for _, spec := range d.specs(s, cfg, procs) {
 		if _, err := d.startProcess(s, spec, true); err != nil {
-			d.log.Error("restarting Process for the changed .env", "project", s.project, "dir", s.dir, "err", err)
+			d.log.Error(why, "project", s.project, "dir", s.dir, "err", err)
 		}
 	}
 	return names
