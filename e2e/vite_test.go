@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -251,4 +252,68 @@ func TestAnotherHTTPProcessThatExitsDoesNotFailTheStart(t *testing.T) {
 	if web := d.GetServer("https://start-vite-exits.localhost/"); web.Name != "web" {
 		t.Errorf("the Domain reached %q, want web", web.Name)
 	}
+}
+
+// viteCORSOrigins is the regular expression the Vite config allows CORS
+// origins with, compiled: the JavaScript regex literal Laneway writes is
+// also valid RE2.
+func viteCORSOrigins(t *testing.T, config string) *regexp.Regexp {
+	t.Helper()
+	_, rest, ok := strings.Cut(config, "cors: server.cors ?? { origin: /")
+	if !ok {
+		t.Fatalf("the Vite config sets no CORS origin pattern:\n%s", config)
+	}
+	pattern, _, _ := strings.Cut(rest, "/ },")
+	return regexp.MustCompile(pattern)
+}
+
+func TestViteAllowsHostsAndOriginsUnderACustomRootDomain(t *testing.T) {
+	t.Parallel()
+	d := personalRootDomainDaemon(t, "rd-vite.example.test")
+	viteStubs(t, d)
+	repo := laravelViteRepo(t, "lara-vite")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	wt := repo.AddWorktree("feature")
+	d.MustRunCLI(wt.Dir, "worktree", "ready")
+	_, proxyPort, _ := net.SplitHostPort(d.ProxyAddr())
+
+	for _, tt := range []struct{ vite, page string }{
+		{"vite.lara-vite.rd-vite.example.test", "https://lara-vite.rd-vite.example.test"},
+		{"vite.feature.lara-vite.rd-vite.example.test", "https://feature.lara-vite.rd-vite.example.test"},
+	} {
+		_, config := viteConfig(t, d, tt.vite)
+
+		assertContains(t, config, "host: "+strconv.Quote(tt.vite)+",")
+		assertContains(t, config, `allowedHosts: server.allowedHosts === true ? true : [...(server.allowedHosts ?? []), ".rd-vite.example.test"],`)
+		origins := viteCORSOrigins(t, config)
+		for _, origin := range []string{tt.page, tt.page + ":" + proxyPort, "https://rd-vite.example.test", "https://a.b.rd-vite.example.test:443"} {
+			if !origins.MatchString(origin) {
+				t.Errorf("%s: Vite refuses CORS from %s (pattern %s)", tt.vite, origin, origins)
+			}
+		}
+		for _, origin := range []string{"http://lara-vite.rd-vite.example.test", "https://lara-vite.rd-vite.example.test.evil.test",
+			"https://evil-rd-vite.example.test", "https://lara-vite.localhost", "https://lara-vite.rd-vitexexample.test"} {
+			if origins.MatchString(origin) {
+				t.Errorf("%s: Vite allows CORS from %s (pattern %s)", tt.vite, origin, origins)
+			}
+		}
+	}
+}
+
+// With the Root Domain localhost, Vite's and laravel-vite-plugin's
+// defaults already allow every *.localhost host and origin (and the
+// plugin, APP_URL), so the config leaves them alone.
+func TestViteKeepsItsDefaultHostsAndOriginsUnderLocalhost(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	viteStubs(t, d)
+	repo := laravelViteRepo(t, "lara-vite-lh")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+
+	_, config := viteConfig(t, d, "vite.lara-vite-lh.localhost")
+
+	assertNotContains(t, config, "allowedHosts")
+	assertNotContains(t, config, "cors")
 }
