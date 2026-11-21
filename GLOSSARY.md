@@ -48,8 +48,12 @@ _Avoid_: Storage, disk, volume
 A database (including a Test Database) or Bucket left behind by a removed Worktree, kept for a grace period before it is dropped.
 _Avoid_: Stale database, leftover
 
+**Root Domain**:
+The domain every Domain is under: `localhost`, unless the developer sets their own, such as `lw.example.com`, to reach their Worktrees from their other devices. A machine has one Root Domain at a time.
+_Avoid_: TLD, suffix, base domain
+
 **Domain**:
-The local hostname a Worktree is served at, or, once it has a different Primary Domain, redirects browsers from. The main Worktree uses `<project>.localhost`. Every other Worktree uses `<worktree>.<project>.localhost`, named after git's name for the Worktree, not its branch.
+The hostname a Worktree is served at, or, once it has a different Primary Domain, redirects browsers from. The main Worktree uses `<project>.<Root Domain>`. Every other Worktree uses `<worktree>.<project>.<Root Domain>`, named after git's name for the Worktree, not its branch.
 _Avoid_: URL, host, site
 
 **Alias**:
