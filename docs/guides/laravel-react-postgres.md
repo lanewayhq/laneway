@@ -401,6 +401,10 @@ lane exec bun run build
 
 lane services               # shared Services and their state
 lane services up postgres   # start or stop one by hand
+
+lane root-domain            # the Root Domain, the addresses Laneway listens on, and whether DNS reaches them
+lane root-domain set lw.example.com   # move every name under a domain you own (checks DNS first)
+lane root-domain reset      # back to localhost
 ```
 
 Every command acts on the Worktree containing the current directory. `--worktree <name|domain|path>` picks another one.
@@ -408,6 +412,9 @@ Every command acts on the Worktree containing the current directory. `--worktree
 Things to know:
 
 - **Lazy and Idle.** After 15 minutes with no requests and no open connections, the Worktree's lazy Processes stop. The next request starts them again. Services stop too, 15 minutes after their last connection once no running Worktree uses them. Change these globally in `~/.config/laneway/config.toml` (`idle_timeout = "30m"`, `service_idle_timeout = "1h"`) or per Project in `laneway.toml`.
+- **Your other devices.** Every name is under the Root Domain, `localhost` unless you set one, which only this machine resolves. Two keys in your personal config, `~/.config/laneway/config.toml`, let your phone reach your Worktrees at the same URLs. Neither can go in a Project's `laneway.toml` or `laneway.local.toml`:
+  - `root_domain = "lw.example.com"`: a domain you own, with a wildcard record `*.lw.example.com` pointing at an address your devices reach this machine on. `lane root-domain set` writes it, keeping the rest of the file, after checking that DNS sends names under it to Laneway, and applies it without a restart: Env Patches are applied again and running Processes restart. If you edit it by hand, it applies when the daemon restarts.
+  - `listen = ["tailscale"]`: addresses Laneway listens on beside loopback, on ports 443 and 80. Each is an IP address or `tailscale`, for this machine's Tailscale IPv4 address. Never `0.0.0.0`: Laneway doesn't listen on every interface. Laneway picks up changes within seconds, and keeps trying an address that isn't up yet.
 - **Changing `.env` yourself:** `artisan serve` runs with `--no-reload`, so run `lane restart` afterwards. When Laneway changes `.env` itself, it restarts the Processes for you.
 - **Edited Blade views and PHP** show on the next request: Laneway's PHP ini turns off OPcache's revalidation delay.
 - **Without the `vite` Process** (`lane down vite`), Laravel loads built assets, so run `lane exec bun run build` first, or pages fail with "Vite manifest not found".

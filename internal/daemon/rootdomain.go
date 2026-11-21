@@ -4,9 +4,11 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
+	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/config"
 	"github.com/lanewayhq/laneway/internal/prepare"
 	"github.com/lanewayhq/laneway/internal/rootdomain"
@@ -32,6 +34,12 @@ func (d *Daemon) dashboardDomain() string {
 		return d.cfg.DashboardDomain
 	}
 	return rootdomain.Dashboard(d.rootDomain())
+}
+
+// caPage is where other devices install Laneway's CA, over plain HTTP so
+// it works before they trust it.
+func (d *Daemon) caPage() string {
+	return "http://" + d.dashboardDomain() + "/ca"
 }
 
 // serves reports whether Laneway serves anything at name: a Worktree's
@@ -97,6 +105,27 @@ func (d *Daemon) SetRootDomain(ctx context.Context, root string) (RootDomainChan
 	d.root.Store(&root)
 	d.log.Info("Root Domain changed", "from", previous, "to", root)
 	return d.applyRootDomain(ctx, previous), nil
+}
+
+// setRootDomain is SetRootDomain as POST /v1/root-domain reports it.
+func (d *Daemon) setRootDomain(ctx context.Context, root string) (api.RootDomainResponse, error) {
+	change, err := d.SetRootDomain(ctx, root)
+	if err != nil {
+		return api.RootDomainResponse{}, &api.Error{Code: api.CodeBadRequest, Message: err.Error()}
+	}
+	res := api.RootDomainResponse{
+		Previous: change.Previous, RootDomain: change.Current,
+		Dashboard: domainURL(d.dashboardDomain()), CAPage: d.caPage(),
+		Patched: change.Patched, Restarted: []api.RestartedProcesses{},
+	}
+	for _, dir := range slices.Sorted(maps.Keys(change.Restarted)) {
+		r := api.RestartedProcesses{Worktree: dir, Processes: change.Restarted[dir]}
+		if s := d.servedWorktree(dir); s != nil {
+			r.Domain = s.domain()
+		}
+		res.Restarted = append(res.Restarted, r)
+	}
+	return res, nil
 }
 
 // applyRootDomain brings what Laneway gave out under the Root Domain from

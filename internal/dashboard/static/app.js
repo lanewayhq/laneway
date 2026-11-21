@@ -23,8 +23,10 @@
 //       /v1/logs?follow=true, one parsed object per call.
 //   dash.onProjects(fn)  fn(list) with every ProjectList from GET /v1/events:
 //       the latest one at once if there is one, then each change.
-//   dash.onServices(fn) / dash.onOrphans(fn)  the same for the ServiceList and
-//       OrphanList (the `services` and `orphans` events).
+//   dash.onServices(fn) / dash.onOrphans(fn) / dash.onDaemon(fn)  the same
+//       for the ServiceList, OrphanList and DaemonInfo (the `services`,
+//       `orphans` and `daemon` events; DaemonInfo has the Root Domain and
+//       the listen addresses).
 //   dash.onPlugins(fn)  the same for GET /v1/plugins, read when the
 //       Dashboard opens and again, at most once a minute, on a `projects`
 //       event (Linking can fetch Plugins).
@@ -53,6 +55,7 @@
 import pages from "./pages/index.js";
 import { confirm } from "./confirm.js";
 import { removeWorktree } from "./remove.js";
+import { h } from "./dom.js";
 import { createRouter } from "./router.js";
 import { mountSidebar } from "./sidebar.js";
 
@@ -187,6 +190,7 @@ function scoped(signal, parent = dash) {
     onProjects: (fn) => live("projects", fn, signal),
     onServices: (fn) => live("services", fn, signal),
     onOrphans: (fn) => live("orphans", fn, signal),
+    onDaemon: (fn) => live("daemon", fn, signal),
     onPlugins: (fn) => live("plugins", fn, signal),
   });
 }
@@ -201,9 +205,22 @@ const setConnection = (state, label) => {
 const events = new EventSource("/api/v1/events");
 events.addEventListener("open", () => setConnection("live", "live"));
 events.addEventListener("error", () => setConnection("down", "reconnecting…"));
-for (const name of ["projects", "services", "orphans"]) {
+for (const name of ["projects", "services", "orphans", "daemon"]) {
   events.addEventListener(name, (e) => publish(name, JSON.parse(e.data)));
 }
+
+// When the Root Domain changes, the Dashboard moves to laneway.<Root
+// Domain>, and the name this page was opened at stops being served: say
+// where it is now.
+const moved = document.getElementById("moved");
+dash.onDaemon((info) => {
+  const url = info.dashboard ? new URL(info.dashboard) : null;
+  moved.hidden = !url || url.hostname === location.hostname;
+  if (!moved.hidden) {
+    moved.replaceChildren(`The Root Domain is now ${info.rootDomain}, so the Dashboard is at `,
+      h("a", { href: url.href }, url.href), ".");
+  }
+});
 
 // Plugins aren't a live event: read them now, and again at most once a
 // minute when Projects change.
