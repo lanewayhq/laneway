@@ -22,9 +22,10 @@ type Redirect struct {
 
 // StartRedirect listens on addr, a loopback address, and redirects every
 // request for the Root Domain or a name under it to https:// on httpsPort
-// (left out of the URL when it is 443). Requests for other names get a 404:
-// Laneway serves nothing else. rootDomain is read on every request, so it
-// may change while the listener runs.
+// (left out of the URL when it is 443). So are .localhost names under any
+// Root Domain, where HTTPS shows a page naming their new URL. Requests for
+// other names get a 404: Laneway serves nothing else. rootDomain is read on
+// every request, so it may change while the listener runs.
 //
 // plain picks the requests served over plain HTTP instead of redirected,
 // such as the CA page a device opens before it trusts Laneway's CA: it
@@ -57,7 +58,7 @@ func redirectHandler(httpsPort string, rootDomain func() string, plain func(host
 			host = h
 		}
 		host = strings.ToLower(strings.TrimSuffix(host, "."))
-		if root := rootDomain(); !rootdomain.Covers(root, host) {
+		if root := rootDomain(); !rootdomain.Covers(root, host) && !rootdomain.Covers(rootdomain.Default, host) {
 			http.Error(w, "Laneway only serves Domains under "+root, http.StatusNotFound)
 			return
 		}
