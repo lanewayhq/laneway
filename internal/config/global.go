@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/lanewayhq/laneway/internal/rootdomain"
 )
 
 // Global is the global config file (paths.Paths.GlobalConfig): defaults for
@@ -29,6 +31,10 @@ type Global struct {
 	// Plugins are the machine-wide Plugins (added with `lane plugin add
 	// --global`) turned on in every Project, by name.
 	Plugins []string `toml:"plugins"`
+	// RootDomain is the domain every name Laneway serves is under
+	// (ADR-0009), such as "lw.example.com"; rootdomain.Default if unset.
+	// Only personal config sets it: a Project's config can't.
+	RootDomain *string `toml:"root_domain"`
 	// Listen are the addresses Laneway listens on beside loopback, so
 	// the developer's other devices reach it (ADR-0009): each an IP
 	// address, or ListenTailscale for the machine's Tailscale IPv4
@@ -65,6 +71,11 @@ func LoadGlobal(path string) (Global, error) {
 	}
 	if err := checkPluginNames(g.Plugins); err != nil {
 		return Global{}, fmt.Errorf("%s: %w", path, err)
+	}
+	if g.RootDomain != nil {
+		if err := rootdomain.Check(*g.RootDomain); err != nil {
+			return Global{}, fmt.Errorf("%s: root_domain %w", path, err)
+		}
 	}
 	for _, l := range g.Listen {
 		if err := checkListen(l); err != nil {

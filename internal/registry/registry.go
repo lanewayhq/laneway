@@ -5,6 +5,7 @@
 package registry
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/naming"
+	"github.com/lanewayhq/laneway/internal/rootdomain"
 	"github.com/lanewayhq/laneway/internal/service"
 )
 
@@ -56,6 +58,12 @@ type state struct {
 	// Project's config has declared ([buckets]) while Laneway made its
 	// Buckets.
 	DeclaredBuckets map[string][]string `json:"declaredBuckets,omitempty"`
+	// RootDomain is the Root Domain Env Patches were last applied with;
+	// "" is rootdomain.Default, so an install from before Root Domains
+	// has applied them with it. PreviousRootDomain is the one before it,
+	// "" if there was none.
+	RootDomain         string `json:"rootDomain,omitempty"`
+	PreviousRootDomain string `json:"previousRootDomain,omitempty"`
 }
 
 const currentVersion = 1
@@ -175,6 +183,33 @@ func (r *Registry) RecordDeclaredBuckets(path string, names []string) error {
 		next.DeclaredBuckets = map[string][]string{}
 	}
 	next.DeclaredBuckets[path] = merged
+	if err := r.save(next); err != nil {
+		return err
+	}
+	r.state = next
+	return nil
+}
+
+// RootDomain is the Root Domain Env Patches were last applied with
+// (RecordRootDomain), and the one before it ("" if none).
+func (r *Registry) RootDomain() (current, previous string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return cmp.Or(r.state.RootDomain, rootdomain.Default), r.state.PreviousRootDomain
+}
+
+// RecordRootDomain records that Env Patches are now applied with the Root
+// Domain root, and persists the change. The one they were applied with
+// before becomes the previous one, unless it is root.
+func (r *Registry) RecordRootDomain(root string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	current := cmp.Or(r.state.RootDomain, rootdomain.Default)
+	if current == root {
+		return nil
+	}
+	next := r.state
+	next.RootDomain, next.PreviousRootDomain = root, current
 	if err := r.save(next); err != nil {
 		return err
 	}

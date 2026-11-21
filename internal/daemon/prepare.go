@@ -58,7 +58,7 @@ func (d *Daemon) setupPlan(p registry.Project, w worktreeRef) prepare.Plan {
 		}
 		steps = append(steps, d.bucketSteps(p, w, cfg)...)
 		steps = append(steps, prepare.Step{Name: "env", Run: func(ctx context.Context, _ io.Writer) error {
-			defer d.lockLifecycle(w.domain)()
+			defer d.lockLifecycle(w.dir)()
 			plan, err := d.planEnvPatch(p, w)
 			if err != nil {
 				return fmt.Errorf("the Env Patch for %s: %w", w.dir, err)
@@ -171,7 +171,7 @@ func (d *Daemon) worktreeReady(ctx context.Context, req api.ReadyRequest) (api.W
 	d.prepare(p, w, req.Retry)
 	if retried {
 		// The always Processes didn't start while setup was Failed.
-		if s := d.servedWorktree(w.domain); s != nil {
+		if s := d.servedWorktree(w.dir); s != nil {
 			d.startAlways(s)
 		}
 	}

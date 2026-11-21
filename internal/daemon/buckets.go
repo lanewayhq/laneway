@@ -189,7 +189,7 @@ func (d *Daemon) prepareNewBuckets(p registry.Project) {
 // worktreeOrigins are the origins browsers reach the Worktree w at: its own
 // Domain's, then its Aliases', which its Buckets allow CORS from.
 func (d *Daemon) worktreeOrigins(p registry.Project, w worktreeRef) []string {
-	origins := []string{strings.TrimSuffix(domainURL(w.domain), "/")}
+	origins := []string{strings.TrimSuffix(domainURL(w.domain()), "/")}
 	for _, a := range d.aliasDomains(p, w.name) {
 		origins = append(origins, strings.TrimSuffix(domainURL(a), "/"))
 	}
@@ -215,7 +215,7 @@ func configureBucket(ctx context.Context, c bucket.Commands, b worktreeBucket, o
 // Aliases changed. A Worktree that isn't Ready yet gets them when its
 // Buckets are made, and a Failed one when it is prepared again.
 func (d *Daemon) worktreeOriginsChanged(p registry.Project, w worktreeRef) {
-	s := d.servedWorktree(w.domain)
+	s := d.servedWorktree(w.dir)
 	if s == nil {
 		return
 	}

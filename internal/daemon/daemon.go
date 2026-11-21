@@ -31,7 +31,6 @@ import (
 	"github.com/lanewayhq/laneway/internal/prepare"
 	"github.com/lanewayhq/laneway/internal/proxy"
 	"github.com/lanewayhq/laneway/internal/registry"
-	"github.com/lanewayhq/laneway/internal/rootdomain"
 	"github.com/lanewayhq/laneway/internal/service"
 	"github.com/lanewayhq/laneway/internal/supervisor"
 	"github.com/lanewayhq/laneway/internal/watcher"
@@ -84,7 +83,9 @@ type Config struct {
 	// means the real one for this machine.
 	Platform platform.Platform
 	// RootDomain is the domain every Laneway name is under (ADR-0009),
-	// rootdomain.Default if empty.
+	// overriding the personal config's root_domain (rootdomain.Default if
+	// that is unset too). Tests set it to serve under a Root Domain of
+	// their own without writing config.
 	RootDomain string
 	// DashboardDomain is where the Dashboard is served, overriding
 	// laneway.<Root Domain> (rootdomain.Dashboard). Tests running several
@@ -136,7 +137,12 @@ type Daemon struct {
 	proxy      *proxy.Proxy
 	redirect   *proxy.Redirect // nil if HTTPAddr couldn't be bound
 	servedMu   sync.Mutex
-	served     map[string]*served // Domain → what is served there
+	served     map[string]*served // Worktree directory → what is served there
+
+	// root is the Root Domain (see rootdomain.go). rootChange serialises
+	// changing it.
+	root       atomic.Pointer[string]
+	rootChange sync.Mutex
 
 	// Worktree starts run in the background. Shutdown cancels stopping and
 	// waits for them, so none starts Processes after StopAll.
@@ -227,9 +233,6 @@ func Start(cfg Config) (*Daemon, error) {
 	if cfg.HTTPAddr == "" {
 		cfg.HTTPAddr = DefaultHTTPAddr
 	}
-	if cfg.RootDomain == "" {
-		cfg.RootDomain = rootdomain.Default
-	}
 	if cfg.Clock == nil {
 		cfg.Clock = clock.Real()
 	}
@@ -290,6 +293,7 @@ func Start(cfg Config) (*Daemon, error) {
 		catalog:     source,
 		lastCatalog: lastCatalog,
 	}
+	d.root.Store(new(d.startRootDomain()))
 	d.supervisor = supervisor.New(log, supervisor.Options{Clock: cfg.Clock, LogMaxBytes: cfg.LogFileMaxBytes,
 		OnEvent: d.processEvent})
 	d.preparer = prov
@@ -314,6 +318,7 @@ func Start(cfg Config) (*Daemon, error) {
 		StorageDir: cfg.Paths.CertStorage(),
 		Router:     router{d},
 		RootDomain: d.rootDomain,
+		Serves:     d.serves,
 		LogErrors:  cfg.Logger != nil,
 	})
 	if err != nil {
@@ -351,6 +356,10 @@ func Start(cfg Config) (*Daemon, error) {
 		d.syncWorktrees(ctx, p)
 		d.serveKnownWorktrees(p)
 	}
+	// Every Env Patch was applied with the Root Domain above; a hand edit
+	// of root_domain since the last start also moves Bucket origins.
+	applied, _ := reg.RootDomain()
+	d.applyRootDomain(context.Background(), applied)
 	d.serveOrphans()
 	d.fetchLinkedProjectsPlugins()
 	d.server = &http.Server{

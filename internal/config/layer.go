@@ -150,6 +150,14 @@ var movedKeys = map[string]string{
 	"inherit_setup": "inherit_setup",
 }
 
+// personalKeys are the top-level keys only the personal (global) config may
+// set: they are the developer's own, never a Project's to force on its
+// developers.
+var personalKeys = map[string]bool{
+	"root_domain": true,
+	"listen":      true,
+}
+
 // DatabaseLayer is the [database] table: the database each Worktree gets.
 type DatabaseLayer struct {
 	// Engine is the database engine: sqlite, or an Engine with database
@@ -276,6 +284,9 @@ func ParseLayer(source string, data []byte) (Layer, error) {
 		// would silently go without their setup.
 		if moved, ok := movedKeys[key.String()]; ok {
 			return Layer{}, fmt.Errorf("%s: %s moved into the [worktree] table: write it as %s under [worktree]", source, key, moved)
+		}
+		if personalKeys[key.String()] {
+			return Layer{}, fmt.Errorf("%s: %s is personal: set it in your own config, ~/.config/laneway/config.toml, not a Project's", source, key)
 		}
 		// A Bucket has nothing else to set, so anything else is a mistake.
 		if len(key) > 2 && key[0] == "buckets" {

@@ -2,7 +2,13 @@
 // Laneway serves is under, and the names it gives directly under it.
 package rootdomain
 
-import "strings"
+import (
+	"errors"
+	"fmt"
+	"net"
+	"regexp"
+	"strings"
+)
 
 // Default is the Root Domain unless the developer sets their own.
 const Default = "localhost"
@@ -17,3 +23,38 @@ func Dashboard(root string) string {
 func Covers(root, host string) bool {
 	return host == root || strings.HasSuffix(host, "."+root)
 }
+
+// Check returns why root can't be a Root Domain, or nil if it can: a
+// lowercase hostname of one or more labels of letters, digits and hyphens
+// (not starting or ending with a hyphen, at most 63 characters each), with
+// no scheme, port, path or trailing dot, and not an IP address. It doesn't
+// have to be a registrable domain: dev.internal is fine.
+func Check(root string) error {
+	switch {
+	case root == "":
+		return errors.New("is empty")
+	case strings.Contains(root, "://"):
+		return fmt.Errorf("%q has a scheme: give the domain alone, such as lw.example.com", root)
+	case strings.ContainsAny(root, "/?#"):
+		return fmt.Errorf("%q has a path: give the domain alone, such as lw.example.com", root)
+	case strings.Contains(root, ":"):
+		return fmt.Errorf("%q has a port: Laneway serves it on 443 and 80", root)
+	case net.ParseIP(root) != nil:
+		return fmt.Errorf("%q is an IP address, not a domain: name a domain whose wildcard record points at it", root)
+	case strings.HasSuffix(root, "."):
+		return fmt.Errorf("%q ends with a dot: leave it out", root)
+	case root != strings.ToLower(root):
+		return fmt.Errorf("%q isn't lowercase", root)
+	case len(root) > 253:
+		return fmt.Errorf("%q is longer than a domain name may be", root)
+	}
+	for label := range strings.SplitSeq(root, ".") {
+		if !validLabel.MatchString(label) {
+			return fmt.Errorf("%q has an invalid label %q: labels are letters, digits and hyphens, "+
+				"not starting or ending with a hyphen, at most 63 characters", root, label)
+		}
+	}
+	return nil
+}
+
+var validLabel = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)

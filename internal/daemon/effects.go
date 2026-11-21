@@ -185,7 +185,7 @@ func (d *Daemon) envEffect(t *effectTarget, env map[string]string, warn func(str
 	if len(values) == 0 {
 		return nil
 	}
-	defer d.lockLifecycle(t.worktree.domain)()
+	defer d.lockLifecycle(t.worktree.dir)()
 	plan, err := envpatch.Prepare(envFileOf(t.project, t.worktree), values)
 	if err != nil {
 		return err

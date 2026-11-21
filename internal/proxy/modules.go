@@ -138,13 +138,16 @@ func writePage(w http.ResponseWriter, status int, title string, paragraphs ...st
 }
 
 // certPermission (tls.permission.laneway) allows on-demand certificates for
-// the Root Domain and names under it only. Unknown names under it get a
-// certificate too, so they can be shown the "nothing is served here" page.
+// .localhost names, so they can always be shown a page, and, under any other
+// Root Domain, for the names Laneway serves (Config.Serves) only. Under
+// localhost, unknown names get a certificate too, so they can be shown the
+// "nothing is served here" page.
 type certPermission struct {
 	// Proxy is the id of the Proxy whose Root Domain to ask.
 	Proxy string `json:"proxy"`
 
 	rootDomain func() string
+	serves     func(string) bool
 }
 
 func (certPermission) CaddyModule() caddy.ModuleInfo {
@@ -153,17 +156,22 @@ func (certPermission) CaddyModule() caddy.ModuleInfo {
 
 func (c *certPermission) Provision(caddy.Context) error {
 	cfg, err := configFor(c.Proxy)
-	c.rootDomain = cfg.RootDomain
+	c.rootDomain, c.serves = cfg.RootDomain, cfg.Serves
 	return err
 }
 
 func (c *certPermission) CertificateAllowed(_ context.Context, name string) error {
 	name = strings.ToLower(name)
 	root := c.rootDomain()
-	if rootdomain.Covers(root, name) {
+	switch {
+	case rootdomain.Covers(rootdomain.Default, name):
 		return nil
+	case !rootdomain.Covers(root, name):
+		return fmt.Errorf("%s is not %s or a name under it", name, root)
+	case c.serves != nil && !c.serves(name):
+		return fmt.Errorf("Laneway serves nothing at %s", name)
 	}
-	return fmt.Errorf("%s is not %s or a name under it", name, root)
+	return nil
 }
 
 var (

@@ -48,7 +48,7 @@ func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
 	changes := d.registry.PlanWorktrees(p.Path, found, d.reservedLabels(p))
 	for _, w := range changes.Removed {
 		d.log.Info("Worktree removed", "project", p.Name, "worktree", w.Name, "path", w.Path)
-		d.stopWorktree(ctx, d.worktreeDomain(p, w), w.Path)
+		d.stopWorktree(ctx, w.Path)
 		d.teardown(p, d.linkedWorktreeRef(p, w))
 		d.worktreeRemoved(p, d.linkedWorktreeRef(p, w))
 		// A moved Worktree is removed and added again: its databases
@@ -66,7 +66,7 @@ func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
 	if err := d.registry.ApplyWorktrees(changes); err != nil {
 		d.log.Error("recording Worktrees", "project", p.Name, "err", err)
 		for _, w := range changes.Added {
-			d.stopWorktree(ctx, d.worktreeDomain(p, w), w.Path)
+			d.stopWorktree(ctx, w.Path)
 		}
 		return
 	}
@@ -124,7 +124,7 @@ func (d *Daemon) serveKnownWorktrees(p registry.Project) {
 	for _, w := range d.registry.Worktrees(p.Path) {
 		ref := d.linkedWorktreeRef(p, w)
 		d.servedMu.Lock()
-		_, ok := d.served[ref.domain]
+		_, ok := d.served[ref.dir]
 		d.servedMu.Unlock()
 		if !ok {
 			d.applyEnvPatch(p, ref)
