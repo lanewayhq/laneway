@@ -155,6 +155,7 @@ var movedKeys = map[string]string{
 // developers.
 var personalKeys = map[string]bool{
 	"root_domain": true,
+	"listen":      true,
 }
 
 // DatabaseLayer is the [database] table: the database each Worktree gets.

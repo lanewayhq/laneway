@@ -181,23 +181,25 @@ func TestEveryNameUnderTheLocalhostRootDomainStillGetsACertificate(t *testing.T)
 	}
 }
 
-func TestAProjectsConfigCantSetTheRootDomain(t *testing.T) {
+func TestAProjectsConfigCantSetTheRootDomainOrListenAddresses(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
-	for _, file := range []string{"laneway.toml", "laneway.local.toml"} {
-		repo := gitfixture.New(t, "rd-project-config").
-			WriteFile("laneway.toml", processConfig("serve")).
-			Commit("declare web Process").
-			WriteFile(file, "root_domain = \"lw.example.test\"\n"+processConfig("serve"))
+	for _, key := range []string{"root_domain = \"lw.example.test\"", "listen = [\"tailscale\"]"} {
+		for _, file := range []string{"laneway.toml", "laneway.local.toml"} {
+			repo := gitfixture.New(t, "rd-project-config").
+				WriteFile("laneway.toml", processConfig("serve")).
+				Commit("declare web Process").
+				WriteFile(file, key+"\n"+processConfig("serve"))
 
-		res := d.RunCLI(repo.Dir, "link")
+			res := d.RunCLI(repo.Dir, "link")
 
-		if res.ExitCode == 0 {
-			t.Fatalf("link succeeded with root_domain in %s:\n%s", file, res.Output())
+			if res.ExitCode == 0 {
+				t.Fatalf("link succeeded with %s in %s:\n%s", key, file, res.Output())
+			}
+			assertContains(t, res.Stderr, file)
+			assertContains(t, res.Stderr, strings.Fields(key)[0])
+			assertContains(t, res.Stderr, "config.toml")
 		}
-		assertContains(t, res.Stderr, file)
-		assertContains(t, res.Stderr, "root_domain")
-		assertContains(t, res.Stderr, "config.toml")
 	}
 }
 
