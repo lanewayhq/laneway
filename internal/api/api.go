@@ -124,9 +124,24 @@ type Worktree struct {
 	// add`); zero for the main Worktree, which is the clone itself. Only
 	// GET /v1/projects and GET /v1/events fill it in.
 	Created time.Time `json:"created,omitzero"`
+	// StaleEnvKeys are the keys in the Worktree's env files, outside its
+	// Env Patch, whose values name a host under a Root Domain Laneway no
+	// longer serves (as in Info). Never their values. Only GET /v1/projects
+	// and GET /v1/events fill them in.
+	StaleEnvKeys []StaleEnvKey `json:"staleEnvKeys,omitempty"`
 	// PluginItems are what Plugins the Worktree uses show on it; only
 	// GET /v1/projects and GET /v1/events fill them in.
 	PluginItems
+}
+
+// StaleEnvKey is a key in one of a Worktree's env files whose value still
+// names a Root Domain Laneway no longer serves.
+type StaleEnvKey struct {
+	// Key is the key's name, such as "VITE_WEBSITE_URL".
+	Key string `json:"key"`
+	// File is the env file holding it, relative to the Worktree's
+	// directory, such as ".env".
+	File string `json:"file"`
 }
 
 // MergeStatus is whether a linked Worktree's work is safe on its Project's
@@ -537,6 +552,12 @@ type DaemonInfo struct {
 	PID int `json:"pid"`
 	// ProxyAddr is the address the HTTPS proxy is listening on.
 	ProxyAddr string `json:"proxyAddr"`
+	// RootDomain is the Root Domain every Laneway name is under, such as
+	// "localhost" or "lw.example.com".
+	RootDomain string `json:"rootDomain"`
+	// CAPage is the plain-HTTP URL of the page another device installs
+	// Laneway's root CA from: http://laneway.<Root Domain>/ca.
+	CAPage string `json:"caPage"`
 	// HTTPAddr is the address plain HTTP is redirected to HTTPS from; ""
 	// if the daemon couldn't bind it.
 	HTTPAddr string `json:"httpAddr,omitempty"`
@@ -547,15 +568,9 @@ type DaemonInfo struct {
 	// such as an address that isn't an IP. The addresses already listened
 	// on stay as they were.
 	ListenError string `json:"listenError,omitempty"`
-	// RootDomain is the domain every name Laneway serves is under, such
-	// as "lw.example.com"; "localhost" unless one is set (ADR-0009).
-	RootDomain string `json:"rootDomain"`
 	// Dashboard is the Dashboard's URL, such as
 	// "https://laneway.lw.example.com/".
 	Dashboard string `json:"dashboard"`
-	// CAPage is where other devices install Laneway's CA, over plain
-	// HTTP: "http://laneway.<Root Domain>/ca".
-	CAPage string `json:"caPage"`
 }
 
 // RootDomainRequest is the body of POST /v1/root-domain.

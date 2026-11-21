@@ -39,7 +39,7 @@ func (d *Daemon) startDashboard() error {
 		return fmt.Errorf("securing the Dashboard socket: %w", err)
 	}
 	d.dashboard = &http.Server{
-		Handler:           dashboard.Handler(d.dashboardDomain, d.routes()),
+		Handler:           dashboard.Handler(d.dashboardDomain, d.routes(), d.caPage),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go d.dashboard.Serve(ln)

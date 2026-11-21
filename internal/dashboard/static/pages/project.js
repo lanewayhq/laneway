@@ -21,6 +21,9 @@
 // Default Branch lists them there too, as the merge status in the
 // `projects` event has them (at most 50 of each, with the full counts);
 // clicking one shows its diff (diff.js).
+// Under the header, a warning lists each Worktree's env file keys whose
+// values still name .localhost or the previous Root Domain (staleEnvKeys
+// in the `projects` event: key names and files, never values).
 // /projects/<name>?worktree=<git name> opens with that Worktree's row
 // expanded and scrolled to.
 //
@@ -104,7 +107,8 @@ export default {
       header.replaceChildren(projectHeader(p));
       // Problems with the whole Project, such as Catalog Plugins it needs
       // that Laneway couldn't fetch when it started.
-      warnings.replaceChildren(...(p.warnings ?? []).map((w) => h("p", { class: "warning" }, "warning: ", w)));
+      warnings.replaceChildren(...(p.warnings ?? []).map((w) => h("p", { class: "warning" }, "warning: ", w)),
+        staleEnvKeys(p));
       counts.replaceChildren(...tabs.map((t) => tabButton(t, p.worktrees.filter(t.has).length)));
       const current = tabs.find((t) => t.id === tab);
       const shown = p.worktrees.filter(current.has).filter(matches(query.value));
@@ -468,6 +472,28 @@ function readiness(s) {
     default:
       return h("span", { class: "st off" }, h("i"), s.state === "discovered" ? "Found" : s.state);
   }
+}
+
+// staleEnvKeys warns about the env file keys of p's Worktrees whose values
+// still name .localhost or the previous Root Domain, by Worktree and file.
+// Laneway only changes the Env Patch's keys, so the developer has to.
+function staleEnvKeys(p) {
+  const items = p.worktrees.flatMap((w) => {
+    const byFile = new Map();
+    for (const k of w.staleEnvKeys ?? []) {
+      byFile.set(k.file, [...(byFile.get(k.file) ?? []), k.key]);
+    }
+    return [...byFile].map(([file, keys]) => h("li", {},
+      h("b", { title: w.path }, worktreeName(w)), " ", h("code", {}, file), ": ",
+      ...keys.flatMap((k, i) => [i ? ", " : "", h("code", {}, k)])));
+  });
+  if (items.length === 0) {
+    return "";
+  }
+  return h("div", { class: "warning stale-env" },
+    h("p", {}, "warning: these env keys still name .localhost or the previous Root Domain. ",
+      "Laneway only changes the keys in the Env Patch, so change these to the Worktree's URLs:"),
+    h("ul", {}, ...items));
 }
 
 // created says when git created linked Worktree w: how long ago, then the

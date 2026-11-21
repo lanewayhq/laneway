@@ -236,12 +236,17 @@ func (d *Daemon) handleDaemonInfo(w http.ResponseWriter, r *http.Request) {
 
 // daemonInfo is the body of GET /v1/daemon and of each `daemon` event.
 func (d *Daemon) daemonInfo() api.DaemonInfo {
-	info := api.DaemonInfo{PID: os.Getpid(), ProxyAddr: d.proxy.Addr().String()}
+	info := api.DaemonInfo{
+		PID:        os.Getpid(),
+		ProxyAddr:  d.proxy.Addr().String(),
+		RootDomain: d.rootDomain(),
+		Dashboard:  domainURL(d.dashboardDomain()),
+		CAPage:     d.caPageURL(),
+	}
 	if addr := d.HTTPAddr(); addr != nil {
 		info.HTTPAddr = addr.String()
 	}
 	info.Listen, info.ListenError = d.listenStatus()
-	info.RootDomain, info.Dashboard, info.CAPage = d.rootDomain(), domainURL(d.dashboardDomain()), d.caPage()
 	return info
 }
 

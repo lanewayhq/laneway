@@ -5,6 +5,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -251,4 +253,110 @@ func TestAnotherHTTPProcessThatExitsDoesNotFailTheStart(t *testing.T) {
 	if web := d.GetServer("https://start-vite-exits.localhost/"); web.Name != "web" {
 		t.Errorf("the Domain reached %q, want web", web.Name)
 	}
+}
+
+// viteCORSOrigins is the regular expression the Vite config allows CORS
+// origins with, compiled: the JavaScript regex literal Laneway writes is
+// also valid RE2.
+func viteCORSOrigins(t *testing.T, config string) *regexp.Regexp {
+	t.Helper()
+	_, rest, ok := strings.Cut(config, "cors: server.cors ?? { origin: /")
+	if !ok {
+		t.Fatalf("the Vite config sets no CORS origin pattern:\n%s", config)
+	}
+	pattern, _, _ := strings.Cut(rest, "/ },")
+	return regexp.MustCompile(pattern)
+}
+
+func TestViteAllowsHostsAndOriginsUnderACustomRootDomain(t *testing.T) {
+	t.Parallel()
+	d := personalRootDomainDaemon(t, "rd-vite.example.test")
+	viteStubs(t, d)
+	repo := laravelViteRepo(t, "lara-vite")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	wt := repo.AddWorktree("feature")
+	d.MustRunCLI(wt.Dir, "worktree", "ready")
+	_, proxyPort, _ := net.SplitHostPort(d.ProxyAddr())
+
+	for _, tt := range []struct{ vite, page string }{
+		{"vite.lara-vite.rd-vite.example.test", "https://lara-vite.rd-vite.example.test"},
+		{"vite.feature.lara-vite.rd-vite.example.test", "https://feature.lara-vite.rd-vite.example.test"},
+	} {
+		_, config := viteConfig(t, d, tt.vite)
+
+		assertContains(t, config, "host: "+strconv.Quote(tt.vite)+",")
+		assertContains(t, config, `allowedHosts: server.allowedHosts === true ? true : [...(server.allowedHosts ?? []), ".rd-vite.example.test"],`)
+		origins := viteCORSOrigins(t, config)
+		for _, origin := range []string{tt.page, tt.page + ":" + proxyPort, "https://rd-vite.example.test", "https://a.b.rd-vite.example.test:443"} {
+			if !origins.MatchString(origin) {
+				t.Errorf("%s: Vite refuses CORS from %s (pattern %s)", tt.vite, origin, origins)
+			}
+		}
+		for _, origin := range []string{"http://lara-vite.rd-vite.example.test", "https://lara-vite.rd-vite.example.test.evil.test",
+			"https://evil-rd-vite.example.test", "https://lara-vite.localhost", "https://lara-vite.rd-vitexexample.test"} {
+			if origins.MatchString(origin) {
+				t.Errorf("%s: Vite allows CORS from %s (pattern %s)", tt.vite, origin, origins)
+			}
+		}
+	}
+}
+
+// With the Root Domain localhost, Vite's and laravel-vite-plugin's
+// defaults already allow every *.localhost host and origin (and the
+// plugin, APP_URL), so the config leaves them alone.
+func TestViteKeepsItsDefaultHostsAndOriginsUnderLocalhost(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	viteStubs(t, d)
+	repo := laravelViteRepo(t, "lara-vite-lh")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+
+	_, config := viteConfig(t, d, "vite.lara-vite-lh.localhost")
+
+	assertNotContains(t, config, "allowedHosts")
+	assertNotContains(t, config, "cors")
+}
+
+func TestChangingTheRootDomainRewritesTheViteConfigBeforeViteRestarts(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	viteStubs(t, d)
+	repo := laravelViteRepo(t, "lara-vite-live")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	viteConfig(t, d, "vite.lara-vite-live.localhost")
+
+	d.SetRootDomain("rd-vite-live.example.test")
+
+	_, config := viteConfig(t, d, "vite.lara-vite-live.rd-vite-live.example.test")
+	assertContains(t, config, "host: "+strconv.Quote("vite.lara-vite-live.rd-vite-live.example.test")+",")
+	assertContains(t, config, `[...(server.allowedHosts ?? []), ".rd-vite-live.example.test"],`)
+}
+
+// A Vite whose Worktree has no Env Patch still restarts: its config names
+// its host.
+func TestChangingTheRootDomainRestartsARunningViteWithoutAnEnvPatch(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	server := testkit.TestServer(t)
+	vite := testkit.WriteExecutable(t, gitfixture.TempDir(t), "vite", `exec `+server+` --name "vite $*"`+"\n")
+	repo := gitfixture.New(t, "vite-root").
+		WriteFile("laneway.toml", processConfig(server+" --name web")+
+			"\n[processes.vite]\ncommand = \""+vite+" --config {vite_config}\"\nhttp = true\n").
+		Commit("a web and a vite Process")
+	d.MustRunCLI(repo.Dir, "link")
+	d.MustRunCLI(repo.Dir, "worktree", "ready")
+	d.GetServer("https://vite.vite-root.localhost/")
+
+	change := d.SetRootDomain("rd-vite-env.example.test")
+
+	if got := change.Restarted[repo.Dir]; !slices.Contains(got, "vite") {
+		t.Errorf("the change restarted %v, want vite", got)
+	}
+	_, path, _ := strings.Cut(d.GetServer("https://vite.vite-root.rd-vite-env.example.test/").Name, "--config ")
+	config := readFile(t, path)
+	assertContains(t, config, "host: "+strconv.Quote("vite.vite-root.rd-vite-env.example.test")+",")
+	assertContains(t, config, `[...(server.allowedHosts ?? []), ".rd-vite-env.example.test"],`)
 }

@@ -136,6 +136,7 @@ type Daemon struct {
 	supervisor *supervisor.Supervisor
 	proxy      *proxy.Proxy
 	redirect   *proxy.Redirect // nil if HTTPAddr couldn't be bound
+	caPage     http.Handler    // see capage.go
 	servedMu   sync.Mutex
 	served     map[string]*served // Worktree directory → what is served there
 
@@ -313,6 +314,7 @@ func Start(cfg Config) (*Daemon, error) {
 	})
 	d.serveRecordedServices()
 	d.stopping, d.stop = context.WithCancel(context.Background())
+	d.caPage = d.newCAPage()
 	d.proxy, err = proxy.Start(proxy.Config{
 		Addr:       cfg.ProxyAddr,
 		StorageDir: cfg.Paths.CertStorage(),
@@ -327,7 +329,7 @@ func Start(cfg Config) (*Daemon, error) {
 		return nil, err
 	}
 	_, httpsPort, _ := net.SplitHostPort(d.proxy.Addr().String())
-	if d.redirect, err = proxy.StartRedirect(cfg.HTTPAddr, httpsPort, d.rootDomain); err != nil {
+	if d.redirect, err = proxy.StartRedirect(cfg.HTTPAddr, httpsPort, d.rootDomain, d.plainHTTP); err != nil {
 		log.Error("not redirecting plain HTTP to HTTPS", "addr", cfg.HTTPAddr, "err", err)
 	}
 	d.reconcileListen()

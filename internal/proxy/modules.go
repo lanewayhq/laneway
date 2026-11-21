@@ -29,13 +29,16 @@ func init() {
 }
 
 // routeHandler (http.handlers.laneway) runs before reverse_proxy. It answers
-// requests for unknown Domains itself, and otherwise tells reverse_proxy which
+// requests for unknown Domains itself, and for .localhost names while the
+// Root Domain is another one, and otherwise tells reverse_proxy which
 // upstream to dial.
 type routeHandler struct {
 	// Proxy is the id of the Proxy whose Router to ask.
 	Proxy string `json:"proxy"`
 
-	router Router
+	router     Router
+	rootDomain func() string
+	serves     func(string) bool
 }
 
 func (routeHandler) CaddyModule() caddy.ModuleInfo {
@@ -44,12 +47,16 @@ func (routeHandler) CaddyModule() caddy.ModuleInfo {
 
 func (h *routeHandler) Provision(caddy.Context) error {
 	cfg, err := configFor(h.Proxy)
-	h.router = cfg.Router
+	h.router, h.rootDomain, h.serves = cfg.Router, cfg.RootDomain, cfg.Serves
 	return err
 }
 
 func (h *routeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	domain := requestDomain(r)
+	if root := h.rootDomain(); root != rootdomain.Default && rootdomain.Covers(rootdomain.Default, domain) {
+		writeLocalhost(w, r, domain, root, h.serves)
+		return nil
+	}
 	if isPageLoad(r) {
 		if primary, ok := h.router.RedirectTarget(domain); ok {
 			redirectToPrimaryDomain(w, r, primary)

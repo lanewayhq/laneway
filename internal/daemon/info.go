@@ -28,6 +28,7 @@ func (d *Daemon) info(ctx context.Context, dir string) (api.Info, error) {
 		Processes:        []api.InfoProcess{},
 		Buckets:          []api.InfoBucket{},
 		Services:         []api.InfoService{},
+		StaleEnvKeys:     []api.InfoStaleEnvKey{},
 		Integrations:     []string{},
 		IntegrationRules: []api.InfoIntegrationRule{},
 	}
@@ -62,6 +63,9 @@ func (d *Daemon) info(ctx context.Context, dir string) (api.Info, error) {
 		info.Integrations = orEmpty(cfg.Integrations)
 		for _, name := range cfg.Integrations {
 			info.IntegrationRules = append(info.IntegrationRules, api.InfoIntegrationRule{Name: name, Rule: cfg.IntegrationRules[name]})
+		}
+		for _, k := range d.staleEnvKeys(dir, wt.Worktree.Main, cfg) {
+			info.StaleEnvKeys = append(info.StaleEnvKeys, api.InfoStaleEnvKey{Key: k.Key, File: k.File})
 		}
 	} else {
 		info.ConfigError = cfgErr.Error()

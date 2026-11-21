@@ -58,3 +58,41 @@ func Check(root string) error {
 }
 
 var validLabel = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+
+// NamesStale reports whether value (such as an env file's value) names a
+// host under a Root Domain Laneway no longer serves: one under localhost
+// when current isn't localhost, or under previous (unless it is "" or
+// current). Only names under them count, not localhost or previous
+// themselves, so http://localhost:8000 doesn't. When current is under
+// the old one, names under current don't count either.
+func NamesStale(value, current, previous string) bool {
+	value = strings.ToLower(value)
+	for _, old := range []string{Default, previous} {
+		if old == "" || old == current {
+			continue
+		}
+		for i := 0; ; {
+			j := strings.Index(value[i:], "."+old)
+			if j < 0 {
+				break
+			}
+			start, end := i+j, i+j+1+len(old)
+			i = end
+			if end < len(value) && (hostByte(value[end]) || value[end] == '.' && end+1 < len(value) && hostByte(value[end+1])) {
+				continue // a longer name, such as shop.localhost.example.com
+			}
+			for start > 0 && (hostByte(value[start-1]) || value[start-1] == '.') {
+				start--
+			}
+			if host := value[start:end]; !Covers(old, current) || !Covers(current, host) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hostByte reports whether b may be in a hostname's label.
+func hostByte(b byte) bool {
+	return b >= 'a' && b <= 'z' || b >= '0' && b <= '9' || b == '-'
+}

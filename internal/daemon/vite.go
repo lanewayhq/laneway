@@ -6,10 +6,12 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/lanewayhq/laneway/internal/recipe"
+	"github.com/lanewayhq/laneway/internal/rootdomain"
 )
 
 // viteConfigVar is replaced, in an HTTP Process's command, with the path of
@@ -83,10 +85,9 @@ export default async (env) => {
             ...server,
             // Laneway's proxy terminates TLS.
             https: false,
-            // laravel-vite-plugin derives public/hot from %[3]s.* and, unless
-            // origin is set, allows every *.localhost origin (CORS).
+            // laravel-vite-plugin derives public/hot from %[3]s.*.
             origin: undefined,
-            %[3]s: hmrOff ? false : {
+%[6]s            %[3]s: hmrOff ? false : {
                 ...(typeof server.%[3]s === 'object' ? server.%[3]s : {}),
                 protocol: 'wss',
                 host: %[4]s,
@@ -95,7 +96,23 @@ export default async (env) => {
         },
     };
 };
-`, host, project, key, jsString(host), port)
+`, host, project, key, jsString(host), port, rootDomainServer(d.rootDomain()))
+}
+
+// rootDomainServer is the Vite server settings that let pages under the
+// Root Domain root use Vite: its names as hosts (Vite answers any other with
+// "Blocked request. This host is not allowed"), and its https origins for
+// CORS, unless the Project sets its own. Under localhost it is empty: Vite
+// allows *.localhost hosts, and laravel-vite-plugin *.localhost origins
+// and APP_URL, by default.
+func rootDomainServer(root string) string {
+	if root == rootdomain.Default {
+		return ""
+	}
+	return fmt.Sprintf(`            // Laneway serves the Worktree under the Root Domain %[1]s.
+            allowedHosts: server.allowedHosts === true ? true : [...(server.allowedHosts ?? []), %[2]s],
+            cors: server.cors ?? { origin: /^https:\/\/([a-z0-9-]+\.)*%[3]s(:\d+)?$/ },
+`, root, jsString("."+root), regexp.QuoteMeta(root))
 }
 
 // viteMajor is the major version of the Vite installed in dir, 0 if unknown.
