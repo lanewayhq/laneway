@@ -372,8 +372,9 @@ func TestEveryFileTheDashboardLoadsIsBuiltIn(t *testing.T) {
 	contentTypes := map[string]string{".js": "text/javascript", ".css": "text/css", ".html": "text/html"}
 	seen := map[string]bool{}
 	// A page's own path, nested like /projects/shop, loads the same files
-	// as /, so the page refers to them by absolute paths.
-	queue := []string{"/", "/projects/shop"}
+	// as /, so the page refers to them by absolute paths. The CA page
+	// loads only its own files too.
+	queue := []string{"/", "/projects/shop", "/ca"}
 	for len(queue) > 0 {
 		file := queue[0]
 		queue = queue[1:]
@@ -399,7 +400,7 @@ func TestEveryFileTheDashboardLoadsIsBuiltIn(t *testing.T) {
 	for _, want := range []string{"/app.js", "/style.css", "/router.js", "/sidebar.js", "/icons.js", "/dom.js",
 		"/pages/index.js", "/pages/overview.js", "/pages/project.js", "/pages/logs.js", "/pages/services.js",
 		"/pages/orphans.js", "/pages/plugins.js", "/confirm.js", "/remove.js", "/time.js", "/pluginitems.js",
-		"/attention.js", "/projects.js", "/changes.js", "/diff.js"} {
+		"/attention.js", "/projects.js", "/changes.js", "/diff.js", "/ca", "/ca/style.css"} {
 		if !seen[want] {
 			t.Errorf("the Dashboard never loads %s (loaded: %v)", want, slices.Sorted(maps.Keys(seen)))
 		}

@@ -230,7 +230,12 @@ func (d *Daemon) handleGC(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Daemon) handleDaemonInfo(w http.ResponseWriter, r *http.Request) {
-	info := api.DaemonInfo{PID: os.Getpid(), ProxyAddr: d.proxy.Addr().String()}
+	info := api.DaemonInfo{
+		PID:        os.Getpid(),
+		ProxyAddr:  d.proxy.Addr().String(),
+		RootDomain: d.rootDomain(),
+		CAPage:     d.caPageURL(),
+	}
 	if addr := d.HTTPAddr(); addr != nil {
 		info.HTTPAddr = addr.String()
 	}
