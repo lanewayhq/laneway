@@ -24,7 +24,6 @@ import (
 	"github.com/lanewayhq/laneway/internal/catalog"
 	"github.com/lanewayhq/laneway/internal/clock"
 	"github.com/lanewayhq/laneway/internal/container"
-	"github.com/lanewayhq/laneway/internal/dashboard"
 	"github.com/lanewayhq/laneway/internal/github"
 	"github.com/lanewayhq/laneway/internal/paths"
 	"github.com/lanewayhq/laneway/internal/platform"
@@ -32,6 +31,7 @@ import (
 	"github.com/lanewayhq/laneway/internal/prepare"
 	"github.com/lanewayhq/laneway/internal/proxy"
 	"github.com/lanewayhq/laneway/internal/registry"
+	"github.com/lanewayhq/laneway/internal/rootdomain"
 	"github.com/lanewayhq/laneway/internal/service"
 	"github.com/lanewayhq/laneway/internal/supervisor"
 	"github.com/lanewayhq/laneway/internal/watcher"
@@ -83,9 +83,13 @@ type Config struct {
 	// Platform tells who holds a port a Service can't listen on. Nil
 	// means the real one for this machine.
 	Platform platform.Platform
-	// DashboardDomain is where the Dashboard is served,
-	// dashboard.DefaultDomain if empty. Tests running several daemons at
-	// once give each its own, since Caddy's certificate cache is shared.
+	// RootDomain is the domain every Laneway name is under (ADR-0009),
+	// rootdomain.Default if empty.
+	RootDomain string
+	// DashboardDomain is where the Dashboard is served, overriding
+	// laneway.<Root Domain> (rootdomain.Dashboard). Tests running several
+	// daemons at once give each its own, since Caddy's certificate cache is
+	// shared.
 	DashboardDomain string
 	// PluginTimeout is how long one call to a Plugin's module may take;
 	// plugin.DefaultTimeout if 0.
@@ -217,8 +221,8 @@ func Start(cfg Config) (*Daemon, error) {
 	if cfg.HTTPAddr == "" {
 		cfg.HTTPAddr = DefaultHTTPAddr
 	}
-	if cfg.DashboardDomain == "" {
-		cfg.DashboardDomain = dashboard.DefaultDomain
+	if cfg.RootDomain == "" {
+		cfg.RootDomain = rootdomain.Default
 	}
 	if cfg.Clock == nil {
 		cfg.Clock = clock.Real()
@@ -303,6 +307,7 @@ func Start(cfg Config) (*Daemon, error) {
 		Addr:       cfg.ProxyAddr,
 		StorageDir: cfg.Paths.CertStorage(),
 		Router:     router{d},
+		RootDomain: d.rootDomain,
 		LogErrors:  cfg.Logger != nil,
 	})
 	if err != nil {
@@ -311,7 +316,7 @@ func Start(cfg Config) (*Daemon, error) {
 		return nil, err
 	}
 	_, httpsPort, _ := net.SplitHostPort(d.proxy.Addr().String())
-	if d.redirect, err = proxy.StartRedirect(cfg.HTTPAddr, httpsPort); err != nil {
+	if d.redirect, err = proxy.StartRedirect(cfg.HTTPAddr, httpsPort, d.rootDomain); err != nil {
 		log.Error("not redirecting plain HTTP to HTTPS", "addr", cfg.HTTPAddr, "err", err)
 	}
 	if err := d.startDashboard(); err != nil {

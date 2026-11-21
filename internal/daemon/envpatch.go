@@ -31,19 +31,19 @@ type worktreeRef struct {
 	main   bool
 }
 
-func mainWorktreeRef(p registry.Project) worktreeRef {
-	return worktreeRef{dir: p.Path, domain: domainOf(p), main: true}
+func (d *Daemon) mainWorktreeRef(p registry.Project) worktreeRef {
+	return worktreeRef{dir: p.Path, domain: d.domainOf(p), main: true}
 }
 
-func linkedWorktreeRef(p registry.Project, w registry.Worktree) worktreeRef {
-	return worktreeRef{name: w.Name, label: w.Label, dir: w.Path, domain: worktreeDomain(p, w)}
+func (d *Daemon) linkedWorktreeRef(p registry.Project, w registry.Worktree) worktreeRef {
+	return worktreeRef{name: w.Name, label: w.Label, dir: w.Path, domain: d.worktreeDomain(p, w)}
 }
 
 // worktreesOf are the Project p's Worktrees, its main one first.
 func (d *Daemon) worktreesOf(p registry.Project) []worktreeRef {
-	worktrees := []worktreeRef{mainWorktreeRef(p)}
+	worktrees := []worktreeRef{d.mainWorktreeRef(p)}
 	for _, w := range d.registry.Worktrees(p.Path) {
-		worktrees = append(worktrees, linkedWorktreeRef(p, w))
+		worktrees = append(worktrees, d.linkedWorktreeRef(p, w))
 	}
 	return worktrees
 }
@@ -231,14 +231,14 @@ func (d *Daemon) projectWorktreeRefs(ctx context.Context, p registry.Project) ([
 	for _, w := range changes.Removed {
 		removed[w.Path] = true
 	}
-	out := []worktreeRef{mainWorktreeRef(p)}
+	out := []worktreeRef{d.mainWorktreeRef(p)}
 	for _, w := range d.registry.Worktrees(p.Path) {
 		if !removed[w.Path] {
-			out = append(out, linkedWorktreeRef(p, w))
+			out = append(out, d.linkedWorktreeRef(p, w))
 		}
 	}
 	for _, w := range changes.Added {
-		out = append(out, linkedWorktreeRef(p, w))
+		out = append(out, d.linkedWorktreeRef(p, w))
 	}
 	return out, nil
 }

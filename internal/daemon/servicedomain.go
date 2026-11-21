@@ -21,7 +21,7 @@ import (
 // serviceDomainLabel is the label of the Service Domain domain would be:
 // the one label before the Dashboard's Domain.
 func (d *Daemon) serviceDomainLabel(domain string) (string, bool) {
-	label, ok := strings.CutSuffix(domain, "."+d.cfg.DashboardDomain)
+	label, ok := strings.CutSuffix(domain, "."+d.dashboardDomain())
 	if !ok || label == "" || strings.Contains(label, ".") {
 		return "", false
 	}

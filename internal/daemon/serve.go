@@ -20,6 +20,7 @@ import (
 	"github.com/lanewayhq/laneway/internal/proxy"
 	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/registry"
+	"github.com/lanewayhq/laneway/internal/rootdomain"
 	"github.com/lanewayhq/laneway/internal/supervisor"
 )
 
@@ -115,15 +116,31 @@ type startAttempt struct {
 	release func()
 }
 
-// domainOf is the main Worktree's Domain.
-func domainOf(p registry.Project) string {
-	return naming.DomainLabel(p.Name) + ".localhost"
+// rootDomain is the Root Domain every Laneway name is under (ADR-0009). Every
+// name is derived from it when it's needed, never stored, so reading it here
+// is all a name needs to follow it.
+func (d *Daemon) rootDomain() string {
+	return d.cfg.RootDomain
+}
+
+// dashboardDomain is where the Dashboard is served: laneway.<Root Domain>,
+// unless Config.DashboardDomain says otherwise.
+func (d *Daemon) dashboardDomain() string {
+	if d.cfg.DashboardDomain != "" {
+		return d.cfg.DashboardDomain
+	}
+	return rootdomain.Dashboard(d.rootDomain())
+}
+
+// domainOf is the main Worktree's Domain: <project>.<Root Domain>.
+func (d *Daemon) domainOf(p registry.Project) string {
+	return naming.DomainLabel(p.Name) + "." + d.rootDomain()
 }
 
 // serveProject applies the main Worktree's Env Patch, serves it at its
 // Domain and begins preparing it if it isn't Ready.
 func (d *Daemon) serveProject(p registry.Project) {
-	w := mainWorktreeRef(p)
+	w := d.mainWorktreeRef(p)
 	d.applyEnvPatch(p, w)
 	d.serveWorktree(p, w)
 	d.reclaimOrphans(p, w)
@@ -487,7 +504,7 @@ func (r router) Begin(domain string) func() {
 
 func (r router) Upstream(ctx context.Context, domain string, waitForPreparation bool) (string, error) {
 	d := r.d
-	if domain == d.cfg.DashboardDomain {
+	if domain == d.dashboardDomain() {
 		return d.dashboardUpstream(), nil
 	}
 	if label, ok := d.serviceDomainLabel(domain); ok {

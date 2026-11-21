@@ -8,9 +8,9 @@ import (
 	"github.com/lanewayhq/laneway/internal/registry"
 )
 
-// worktreeDomain is a linked Worktree's Domain: <worktree>.<project>.localhost.
-func worktreeDomain(p registry.Project, w registry.Worktree) string {
-	return w.Label + "." + domainOf(p)
+// worktreeDomain is a linked Worktree's Domain: <worktree>.<project>.<Root Domain>.
+func (d *Daemon) worktreeDomain(p registry.Project, w registry.Worktree) string {
+	return w.Label + "." + d.domainOf(p)
 }
 
 // worktreesChanged is the Worktree Watcher's callback.
@@ -48,32 +48,32 @@ func (d *Daemon) syncWorktrees(ctx context.Context, p registry.Project) {
 	changes := d.registry.PlanWorktrees(p.Path, found, d.reservedLabels(p))
 	for _, w := range changes.Removed {
 		d.log.Info("Worktree removed", "project", p.Name, "worktree", w.Name, "path", w.Path)
-		d.stopWorktree(ctx, worktreeDomain(p, w), w.Path)
-		d.teardown(p, linkedWorktreeRef(p, w))
-		d.worktreeRemoved(p, linkedWorktreeRef(p, w))
+		d.stopWorktree(ctx, d.worktreeDomain(p, w), w.Path)
+		d.teardown(p, d.linkedWorktreeRef(p, w))
+		d.worktreeRemoved(p, d.linkedWorktreeRef(p, w))
 		// A moved Worktree is removed and added again: its databases
 		// stay its own.
 		if !slices.ContainsFunc(changes.Added, func(a registry.Worktree) bool { return a.Name == w.Name }) {
-			d.orphanWorktree(p, linkedWorktreeRef(p, w))
+			d.orphanWorktree(p, d.linkedWorktreeRef(p, w))
 		}
 	}
 	for _, w := range changes.Added {
 		d.log.Info("Worktree discovered", "project", p.Name, "worktree", w.Name, "path", w.Path)
-		ref := linkedWorktreeRef(p, w)
+		ref := d.linkedWorktreeRef(p, w)
 		d.applyEnvPatch(p, ref)
 		d.serveWorktree(p, ref)
 	}
 	if err := d.registry.ApplyWorktrees(changes); err != nil {
 		d.log.Error("recording Worktrees", "project", p.Name, "err", err)
 		for _, w := range changes.Added {
-			d.stopWorktree(ctx, worktreeDomain(p, w), w.Path)
+			d.stopWorktree(ctx, d.worktreeDomain(p, w), w.Path)
 		}
 		return
 	}
 	// Setup begins once the Registry knows the Worktree, so its setup
 	// steps see it as `lane` reports it.
 	for _, w := range changes.Added {
-		ref := linkedWorktreeRef(p, w)
+		ref := d.linkedWorktreeRef(p, w)
 		d.reclaimOrphans(p, ref)
 		d.prepare(p, ref, false)
 	}
@@ -122,7 +122,7 @@ func (d *Daemon) serveKnownWorktrees(p registry.Project) {
 	d.syncMu.Lock()
 	defer d.syncMu.Unlock()
 	for _, w := range d.registry.Worktrees(p.Path) {
-		ref := linkedWorktreeRef(p, w)
+		ref := d.linkedWorktreeRef(p, w)
 		d.servedMu.Lock()
 		_, ok := d.served[ref.domain]
 		d.servedMu.Unlock()

@@ -214,11 +214,11 @@ func isClosing(c <-chan struct{}) bool {
 // worktreeRefOf is the Project's Worktree at dir, if the Registry knows it.
 func (d *Daemon) worktreeRefOf(p registry.Project, dir string) (worktreeRef, bool) {
 	if dir == p.Path {
-		return mainWorktreeRef(p), true
+		return d.mainWorktreeRef(p), true
 	}
 	for _, w := range d.registry.Worktrees(p.Path) {
 		if w.Path == dir {
-			return linkedWorktreeRef(p, w), true
+			return d.linkedWorktreeRef(p, w), true
 		}
 	}
 	return worktreeRef{}, false
