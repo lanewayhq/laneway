@@ -85,6 +85,15 @@ Run this before a release, and after changing Service Domains, Buckets, or the `
 - [ ] In the Linked Project, `lane open` opens `https://<project>.localhost/` in the default browser. On WSL2 that's the Windows default browser, and no console window or "UNC paths are not supported" message appears.
 - [ ] In a directory outside any Linked Project, `lane open` fails and tells you to run `lane link`.
 
+## Listening on another address
+
+Needs a machine on a tailnet. On WSL2, Tailscale runs on Windows and WSL must use mirrored networking. Add `listen = ["tailscale"]` at the top of `~/.config/laneway/config.toml` and restart the daemon (`systemctl --user restart laneway`).
+
+- [ ] `curl -s --unix-socket $XDG_RUNTIME_DIR/laneway/laneway.sock http://lane/v1/daemon` lists `tailscale` with the address `tailscale ip -4` prints (WSL2: `tailscale.exe ip -4`) and `"listening":true`. `ss -ltn` shows Laneway on that address at 443 and 80, beside `127.0.0.1`.
+- [ ] From another device on the tailnet, `curl -k https://<that address>/` gets an answer from Laneway (the Root Domain isn't set yet, so the name doesn't matter), and `curl -i http://<that address>/` a redirect or 404 from Laneway, not a timeout. On WSL2, a timeout means Windows' Hyper-V firewall blocks it: note the rule that fixed it.
+- [ ] Stop Tailscale (`sudo tailscale down`; Windows: Disconnect in the tray). Within ten seconds the API status says why, with Tailscale's own words, and the daemon keeps serving on `127.0.0.1`. Start it again: within ten seconds Laneway listens on it again, without a restart.
+- [ ] `listen = ["0.0.0.0"]`: after a restart, the API status has a `listenError` naming the config file, and `ss -ltn` shows Laneway only on `127.0.0.1`. Remove the line afterwards.
+
 ## Running it again
 
 - [ ] `lane install` again: no sudo prompt, no Windows dialog, every step says "already". The daemon isn't restarted (`systemctl --user status laneway` shows the same start time).
