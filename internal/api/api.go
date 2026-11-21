@@ -536,6 +536,29 @@ type DaemonInfo struct {
 	// HTTPAddr is the address plain HTTP is redirected to HTTPS from; ""
 	// if the daemon couldn't bind it.
 	HTTPAddr string `json:"httpAddr,omitempty"`
+	// Listen is each address the global config's listen names, beside
+	// loopback, in order, with its state.
+	Listen []ListenAddress `json:"listen,omitempty"`
+	// ListenError is why listen couldn't be read from the global config,
+	// such as an address that isn't an IP. The addresses already listened
+	// on stay as they were.
+	ListenError string `json:"listenError,omitempty"`
+}
+
+// ListenAddress is one of the extra addresses the daemon listens on, beside
+// loopback, at the same ports.
+type ListenAddress struct {
+	// Name is the address as the config names it: an IP address or
+	// "tailscale".
+	Name string `json:"name"`
+	// IP is the address it resolved to; "" if it didn't, such as when
+	// Tailscale isn't running.
+	IP string `json:"ip,omitempty"`
+	// Listening is true while the HTTPS proxy listens on IP.
+	Listening bool `json:"listening"`
+	// Error says why it isn't listening, or, while Listening, why plain
+	// HTTP isn't redirected there. Laneway keeps trying.
+	Error string `json:"error,omitempty"`
 }
 
 // LogLine is one line of a Process's output, from GET /v1/logs.

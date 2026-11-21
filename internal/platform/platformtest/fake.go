@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"net/netip"
 	"slices"
 	"sync"
 
@@ -38,6 +39,9 @@ type Fake struct {
 	actions   []string
 	installed string // the exe InstallService was given
 	onInstall func()
+	tailscale netip.Addr
+	noTS      string                  // why there is no Tailscale address
+	hosts     map[string][]netip.Addr // hostname → addresses
 }
 
 // New returns a Fake for a plain Linux machine where nothing is set up yet.
@@ -47,7 +51,41 @@ func New() *Fake {
 		ports:   platform.PortPermission{Detail: "net.ipv4.ip_unprivileged_port_start is 1024"},
 		trusted: map[string]map[[32]byte]bool{},
 		holders: map[int][]platform.Holder{},
+		noTS:    "Tailscale isn't installed (fake)",
+		hosts:   map[string][]netip.Addr{},
 	}
+}
+
+// SetTailscaleIPv4 makes ip the machine's Tailscale IPv4 address, such as
+// "127.0.0.2" in tests.
+func (f *Fake) SetTailscaleIPv4(ip string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.tailscale, f.noTS = netip.MustParseAddr(ip), ""
+}
+
+// SetNoTailscale makes the machine have no Tailscale address, for the
+// reason given, such as "Tailscale is stopped." It starts that way, as not
+// installed.
+func (f *Fake) SetNoTailscale(reason string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.tailscale, f.noTS = netip.Addr{}, reason
+}
+
+// SetHost makes name resolve to ips; with none, name doesn't resolve.
+func (f *Fake) SetHost(name string, ips ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(ips) == 0 {
+		delete(f.hosts, name)
+		return
+	}
+	var addrs []netip.Addr
+	for _, ip := range ips {
+		addrs = append(addrs, netip.MustParseAddr(ip))
+	}
+	f.hosts[name] = addrs
 }
 
 // SetWSL2 makes the Fake a WSL2 machine, which adds the Windows trust store.
@@ -200,6 +238,25 @@ func (f *Fake) OpenURL(_ context.Context, url string) error {
 	defer f.mu.Unlock()
 	f.opened = append(f.opened, url)
 	return nil
+}
+
+func (f *Fake) TailscaleIPv4(context.Context) (netip.Addr, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.noTS != "" {
+		return netip.Addr{}, errors.New(f.noTS)
+	}
+	return f.tailscale, nil
+}
+
+func (f *Fake) LookupHost(_ context.Context, name string) ([]netip.Addr, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	ips, ok := f.hosts[name]
+	if !ok {
+		return nil, fmt.Errorf("lookup %s: no such host (fake)", name)
+	}
+	return slices.Clone(ips), nil
 }
 
 // store is one of the Fake's trust stores.
