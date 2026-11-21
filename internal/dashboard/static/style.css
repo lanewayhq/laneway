@@ -157,6 +157,9 @@ button.danger:hover, .btn.danger:hover { background: var(--color-bad-soft); bord
 .actions { white-space: nowrap; text-align: right; }
 .actions > button, .actions > .plugin-link { margin-left: 4px; }
 .warning { padding: 0 32px 8px; color: var(--color-warn); white-space: pre-wrap; overflow-wrap: anywhere; }
+.warning.stale-env { white-space: normal; }
+.warning.stale-env ul { margin: 4px 0 0; padding-left: 18px; }
+.warning.stale-env b, .warning.stale-env code { color: var(--color-ink); }
 .notice { color: var(--color-warn); }
 .error { color: var(--color-bad); font-size: var(--text-sm); }
 .status { color: var(--color-muted); }

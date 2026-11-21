@@ -34,6 +34,7 @@ func (d *Daemon) projectList() api.ProjectList {
 			if cfg, err := d.plugins.ResolveDir(w.Path); err == nil {
 				w.Declared = declaredProcesses(cfg)
 				w.PluginItems = d.worktreeItems(plugin.ScopeWorktree, ap.Name, w, cfg)
+				w.StaleEnvKeys = d.staleEnvKeys(w.Path, w.Main, cfg)
 				if w.Main {
 					ap.PluginItems = d.worktreeItems(plugin.ScopeProject, ap.Name, w, cfg)
 				}

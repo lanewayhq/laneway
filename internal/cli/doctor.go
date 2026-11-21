@@ -98,6 +98,9 @@ func runDoctor(ctx context.Context, env Env, args []string) error {
 	}
 	checkPortPermission(ctx, r, plat)
 	checkCA(ctx, r, plat, p.CARootCert())
+	if daemonErr == nil {
+		checkStaleEnvKeys(daemonCtx, r, daemon)
+	}
 
 	if e, err := plat.ContainerEngine(ctx); err != nil {
 		r.check(statusFail, "container engine", err.Error(),
@@ -336,4 +339,39 @@ func executable() (string, error) {
 		return "", err
 	}
 	return filepath.EvalSymlinks(exe)
+}
+
+// checkStaleEnvKeys lists, for every Worktree's env file, the keys outside
+// its Env Patch whose values still name .localhost or the previous Root
+// Domain, which Laneway doesn't change. Never their values: env files hold
+// secrets.
+func checkStaleEnvKeys(ctx context.Context, r *report, daemon *client.Client) {
+	const name = "stale env keys"
+	projects, err := daemon.Projects(ctx)
+	if err != nil {
+		r.check(statusWarn, name, "can't list the Projects: "+err.Error(), "")
+		return
+	}
+	found := false
+	for _, p := range projects {
+		for _, w := range p.Worktrees {
+			var files []string
+			keys := map[string][]string{}
+			for _, k := range w.StaleEnvKeys {
+				if _, ok := keys[k.File]; !ok {
+					files = append(files, k.File)
+				}
+				keys[k.File] = append(keys[k.File], k.Key)
+			}
+			for _, file := range files {
+				found = true
+				r.check(statusWarn, name, filepath.Join(w.Path, file)+": "+strings.Join(keys[file], ", "),
+					"their values still name .localhost or the previous Root Domain; Laneway only changes the "+
+						"Env Patch's keys, so change these to the Worktree's URLs (`lane info` shows them)")
+			}
+		}
+	}
+	if !found {
+		r.check(statusOK, name, "none", "")
+	}
 }
