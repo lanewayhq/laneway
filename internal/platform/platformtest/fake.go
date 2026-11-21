@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/netip"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/lanewayhq/laneway/internal/platform"
@@ -73,7 +74,9 @@ func (f *Fake) SetNoTailscale(reason string) {
 	f.tailscale, f.noTS = netip.Addr{}, reason
 }
 
-// SetHost makes name resolve to ips; with none, name doesn't resolve.
+// SetHost makes name resolve to ips; with none, name doesn't resolve. A
+// name such as "*.lw.example.test" is a wildcard record: it answers for
+// every name under lw.example.test that has no record of its own.
 func (f *Fake) SetHost(name string, ips ...string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -252,11 +255,16 @@ func (f *Fake) TailscaleIPv4(context.Context) (netip.Addr, error) {
 func (f *Fake) LookupHost(_ context.Context, name string) ([]netip.Addr, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	ips, ok := f.hosts[name]
-	if !ok {
-		return nil, fmt.Errorf("lookup %s: no such host (fake)", name)
+	if ips, ok := f.hosts[name]; ok {
+		return slices.Clone(ips), nil
 	}
-	return slices.Clone(ips), nil
+	for parent := name; strings.Contains(parent, "."); {
+		_, parent, _ = strings.Cut(parent, ".")
+		if ips, ok := f.hosts["*."+parent]; ok {
+			return slices.Clone(ips), nil
+		}
+	}
+	return nil, fmt.Errorf("lookup %s: no such host (fake)", name)
 }
 
 // store is one of the Fake's trust stores.

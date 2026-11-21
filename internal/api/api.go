@@ -7,14 +7,18 @@
 //
 //	GET  /v1/projects   -> ProjectList
 //	GET  /v1/events     -> server-sent events: "projects" (data = ProjectList),
-//	                    "services" (ServiceList) and "orphans" (OrphanList) at
-//	                    once and whenever one changes (the Dashboard's live view)
+//	                    "services" (ServiceList), "orphans" (OrphanList) and
+//	                    "daemon" (DaemonInfo) at once and whenever one changes
+//	                    (the Dashboard's live view)
 //	POST /v1/projects   LinkRequest -> LinkResponse   (Link a repository and apply
 //	                    its Env Patch; with preview, only report the Env Patch)
 //	GET  /v1/worktree?dir=<abs path> -> WorktreeInfo  (the Worktree containing dir)
 //	GET  /v1/info?dir=<abs path> -> Info  (everything about the Worktree containing
 //	                    dir: the stable contract `lane info --json` prints)
 //	GET  /v1/daemon     -> DaemonInfo
+//	POST /v1/root-domain  RootDomainRequest -> RootDomainResponse  (make it the Root Domain
+//	                    now: names move, Env Patches are applied again, running
+//	                    Processes restart; the caller writes the personal config)
 //	GET  /v1/logs?dir=&process=&follow=  -> stream of LogLine, one JSON object per line
 //	POST /v1/worktree/up       ControlRequest -> Worktree  (start it, or one Process)
 //	POST /v1/worktree/down     ControlRequest -> Worktree  (stop it, or one Process)
@@ -564,6 +568,41 @@ type DaemonInfo struct {
 	// such as an address that isn't an IP. The addresses already listened
 	// on stay as they were.
 	ListenError string `json:"listenError,omitempty"`
+	// Dashboard is the Dashboard's URL, such as
+	// "https://laneway.lw.example.com/".
+	Dashboard string `json:"dashboard"`
+}
+
+// RootDomainRequest is the body of POST /v1/root-domain.
+type RootDomainRequest struct {
+	// RootDomain is the new Root Domain, such as "lw.example.com", or
+	// "localhost".
+	RootDomain string `json:"rootDomain"`
+}
+
+// RootDomainResponse is what changing the Root Domain did.
+type RootDomainResponse struct {
+	// Previous and RootDomain are the Root Domains before and after.
+	Previous   string `json:"previous"`
+	RootDomain string `json:"rootDomain"`
+	// Dashboard and CAPage are as in DaemonInfo, under the new Root Domain.
+	Dashboard string `json:"dashboard"`
+	CAPage    string `json:"caPage"`
+	// Patched are the Worktrees whose Env Patch was applied again: every
+	// Ready one, running or not. Others get it when they are Ready.
+	Patched []string `json:"patched"`
+	// Restarted are the Worktrees whose running Processes were restarted
+	// to read the new .env, and which.
+	Restarted []RestartedProcesses `json:"restarted"`
+}
+
+// RestartedProcesses are the Processes of one Worktree that were
+// restarted.
+type RestartedProcesses struct {
+	// Worktree is the Worktree's directory, Domain its Domain now.
+	Worktree  string   `json:"worktree"`
+	Domain    string   `json:"domain"`
+	Processes []string `json:"processes"`
 }
 
 // ListenAddress is one of the extra addresses the daemon listens on, beside

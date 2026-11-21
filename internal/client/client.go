@@ -113,6 +113,14 @@ func (c *Client) Daemon(ctx context.Context) (api.DaemonInfo, error) {
 	return info, err
 }
 
+// SetRootDomain makes root the Root Domain now (see
+// api.RootDomainRequest). It doesn't write the personal config.
+func (c *Client) SetRootDomain(ctx context.Context, root string) (api.RootDomainResponse, error) {
+	var res api.RootDomainResponse
+	err := c.do(ctx, http.MethodPost, "/v1/root-domain", api.RootDomainRequest{RootDomain: root}, &res)
+	return res, err
+}
+
 // Control acts on a Worktree or one of its Processes: action is "up", "down"
 // or "restart". It returns the Worktree afterwards.
 func (c *Client) Control(ctx context.Context, action string, req api.ControlRequest) (api.Worktree, error) {

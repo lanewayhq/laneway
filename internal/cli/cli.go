@@ -64,27 +64,28 @@ type command struct {
 }
 
 var commands = map[string]command{
-	"daemon":   {"Run the Laneway daemon in the foreground", runDaemon},
-	"doctor":   {"Check that Laneway is set up and working", runDoctor},
-	"down":     {"Stop the current Worktree's Processes (or one Process)", control("down")},
-	"exec":     {"Run a command in the current Worktree with its Runtimes", runExec},
-	"gc":       {"Drop Orphans (databases and Buckets of removed Worktrees) now", runGC},
-	"generate": {"Merge a Plugin's Generator config into the current Worktree's files (generate <plugin>)", runGenerate},
-	"harness":  {"Add Laneway config for a Harness (add <claude|t3>), like generate", runHarness},
-	"info":     {"Show the current Worktree's URL, Processes, databases, Buckets and Services (--json for scripts)", runInfo},
-	"init":     {"Write the resolved config to laneway.toml", runInit},
-	"install":  {"Set up Laneway on this machine (service, ports 80/443, CA trust)", runInstall},
-	"link":     {"Link the current git repository as a Project", runLink},
-	"logs":     {"Show (or follow with -f) Process output", runLogs},
-	"plugin":   {"Add, list, update, remove and test Plugins (add <dir|github.com/<owner>/<repo>> [--yes] [--global], list, update [name] [--yes], remove <name>, test [--update])", runPlugin},
-	"open":     {"Open the current Worktree's Domain in the browser", runOpen},
-	"restart":  {"Restart the current Worktree's Processes (or one Process)", control("restart")},
-	"services": {"List shared Services, or start/stop them (services [ls|up|down] [name])", runServices},
-	"status":   {"List Linked Projects and their Processes", runStatus},
-	"unlink":   {"Unlink the current Project (its databases and Buckets become Orphans)", runUnlink},
-	"up":       {"Start the current Worktree's Processes (or one Process)", control("up")},
-	"version":  {"Print which version of Laneway this is", runVersion},
-	"worktree": {"Manage Worktrees (add <name> [--branch], ready [--retry], alias <name> [--remove], remove [name] [--delete-branch] [--unlock] [--force], remove --merged [--all] [--force])", runWorktree},
+	"daemon":      {"Run the Laneway daemon in the foreground", runDaemon},
+	"doctor":      {"Check that Laneway is set up and working", runDoctor},
+	"down":        {"Stop the current Worktree's Processes (or one Process)", control("down")},
+	"exec":        {"Run a command in the current Worktree with its Runtimes", runExec},
+	"gc":          {"Drop Orphans (databases and Buckets of removed Worktrees) now", runGC},
+	"generate":    {"Merge a Plugin's Generator config into the current Worktree's files (generate <plugin>)", runGenerate},
+	"harness":     {"Add Laneway config for a Harness (add <claude|t3>), like generate", runHarness},
+	"info":        {"Show the current Worktree's URL, Processes, databases, Buckets and Services (--json for scripts)", runInfo},
+	"init":        {"Write the resolved config to laneway.toml", runInit},
+	"install":     {"Set up Laneway on this machine (service, ports 80/443, CA trust)", runInstall},
+	"link":        {"Link the current git repository as a Project", runLink},
+	"logs":        {"Show (or follow with -f) Process output", runLogs},
+	"plugin":      {"Add, list, update, remove and test Plugins (add <dir|github.com/<owner>/<repo>> [--yes] [--global], list, update [name] [--yes], remove <name>, test [--update])", runPlugin},
+	"open":        {"Open the current Worktree's Domain in the browser", runOpen},
+	"root-domain": {"Show the Root Domain, or change it (set <domain> [--skip-dns-check], reset)", runRootDomain},
+	"restart":     {"Restart the current Worktree's Processes (or one Process)", control("restart")},
+	"services":    {"List shared Services, or start/stop them (services [ls|up|down] [name])", runServices},
+	"status":      {"List Linked Projects and their Processes", runStatus},
+	"unlink":      {"Unlink the current Project (its databases and Buckets become Orphans)", runUnlink},
+	"up":          {"Start the current Worktree's Processes (or one Process)", control("up")},
+	"version":     {"Print which version of Laneway this is", runVersion},
+	"worktree":    {"Manage Worktrees (add <name> [--branch], ready [--retry], alias <name> [--remove], remove [name] [--delete-branch] [--unlock] [--force], remove --merged [--all] [--force])", runWorktree},
 }
 
 // usageError makes Run print the error and exit with exitUsage.
@@ -148,12 +149,14 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Commands:")
 	names := make([]string, 0, len(commands))
+	width := 0
 	for name := range commands {
 		names = append(names, name)
+		width = max(width, len(name))
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		fmt.Fprintf(w, "  %-8s %s\n", name, commands[name].summary)
+		fmt.Fprintf(w, "  %-*s %s\n", width, name, commands[name].summary)
 	}
 }
 
