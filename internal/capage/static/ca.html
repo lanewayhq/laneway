@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trust Laneway on this device</title>
+<link rel="stylesheet" href="{{.Style}}">
+</head>
+<body>
+<main>
+<p class="brand">Laneway</p>
+<h1>Trust Laneway on this device</h1>
+<p class="lede">Laneway's Worktrees, Dashboard and Service Domains use certificates from its own certificate authority, on the PC it runs on. Install that authority's root certificate once on each of your devices, and their browsers open every Domain without a warning.</p>
+
+<section>
+<h2>iPhone and iPad</h2>
+<ol>
+<li>Open this page in Safari, tap <a class="dl" href="{{.Profile}}">Download the profile</a>, then <b>Allow</b>.</li>
+<li>Open <b>Settings</b>, tap <b>Profile Downloaded</b> near the top (or <b>General</b> → <b>VPN &amp; Device Management</b>), tap <b>Laneway</b>, then <b>Install</b>.</li>
+<li>Go to <b>Settings</b> → <b>General</b> → <b>About</b> → <b>Certificate Trust Settings</b> and turn on full trust for <b>{{.Name}}</b>.</li>
+</ol>
+</section>
+
+<section>
+<h2>Android</h2>
+<ol>
+<li>Tap <a class="dl" href="{{.Cert}}">Download the certificate</a>.</li>
+<li>Open <b>Settings</b> and search for <b>CA certificate</b>. On most phones it's under <b>Security &amp; privacy</b> → <b>More security settings</b> → <b>Encryption &amp; credentials</b> → <b>Install a certificate</b> → <b>CA certificate</b>.</li>
+<li>Tap <b>Install anyway</b> and pick <b>laneway-root.crt</b> from your downloads.</li>
+</ol>
+<p>Chrome and most other browsers then trust it.</p>
+</section>
+
+<section>
+<h2>Firefox on Android</h2>
+<p>Firefox keeps its own list, so install the certificate as above, then:</p>
+<ol>
+<li>In Firefox, go to <b>Settings</b> → <b>About Firefox</b> and tap the Firefox logo until it says the debug menu is on.</li>
+<li>Back in <b>Settings</b>, open <b>Secret Settings</b> and turn on <b>Use third party CA certificates</b>.</li>
+</ol>
+</section>
+
+<p class="note">Only the public root certificate is offered here: its private key never leaves the PC. Install it only on devices you own, since a device that trusts it trusts every certificate Laneway issues.</p>
+</main>
+</body>
+</html>

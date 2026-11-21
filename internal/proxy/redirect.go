@@ -26,7 +26,12 @@ type Redirect struct {
 // Root Domain, where HTTPS shows a page naming their new URL. Requests for
 // other names get a 404: Laneway serves nothing else. rootDomain is read on
 // every request, so it may change while the listener runs.
-func StartRedirect(addr string, httpsPort string, rootDomain func() string) (*Redirect, error) {
+//
+// plain picks the requests served over plain HTTP instead of redirected,
+// such as the CA page a device opens before it trusts Laneway's CA: it
+// returns their handler, or nil to redirect. A nil plain redirects every
+// request.
+func StartRedirect(addr string, httpsPort string, rootDomain func() string, plain func(host, path string) http.Handler) (*Redirect, error) {
 	if err := checkLoopback(addr); err != nil {
 		return nil, err
 	}
@@ -35,7 +40,7 @@ func StartRedirect(addr string, httpsPort string, rootDomain func() string) (*Re
 		return nil, err
 	}
 	r := &Redirect{listener: newFanIn(ln), server: &http.Server{
-		Handler:           redirectHandler(httpsPort, rootDomain),
+		Handler:           redirectHandler(httpsPort, rootDomain, plain),
 		ReadHeaderTimeout: 10 * time.Second,
 	}}
 	go func() {
@@ -46,7 +51,7 @@ func StartRedirect(addr string, httpsPort string, rootDomain func() string) (*Re
 	return r, nil
 }
 
-func redirectHandler(httpsPort string, rootDomain func() string) http.Handler {
+func redirectHandler(httpsPort string, rootDomain func() string, plain func(host, path string) http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		host := req.Host
 		if h, _, err := net.SplitHostPort(host); err == nil {
@@ -56,6 +61,12 @@ func redirectHandler(httpsPort string, rootDomain func() string) http.Handler {
 		if root := rootDomain(); !rootdomain.Covers(root, host) && !rootdomain.Covers(rootdomain.Default, host) {
 			http.Error(w, "Laneway only serves Domains under "+root, http.StatusNotFound)
 			return
+		}
+		if plain != nil {
+			if h := plain(host, req.URL.Path); h != nil {
+				h.ServeHTTP(w, req)
+				return
+			}
 		}
 		if httpsPort != "443" {
 			host = net.JoinHostPort(host, httpsPort)

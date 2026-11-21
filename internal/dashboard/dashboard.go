@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/capage"
 )
 
 //go:embed static
@@ -30,14 +31,17 @@ var static embed.FS
 // request so it may change while the Dashboard runs: its files, and routes (the
 // daemon's API routes) under /api, so GET /api/v1/projects is GET
 // /v1/projects. Requests that can change state only reach routes from the
-// Dashboard's own pages (see sameOrigin).
-func Handler(domain func() string, routes http.Handler) http.Handler {
+// Dashboard's own pages (see sameOrigin). ca is the CA page (package capage),
+// at /ca and under /ca/.
+func Handler(domain func() string, routes http.Handler, ca http.Handler) http.Handler {
 	files, err := fs.Sub(static, "static")
 	if err != nil {
 		panic(err)
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/api/", sameOrigin(domain, http.StripPrefix("/api", routes)))
+	mux.Handle(capage.Path, ca)
+	mux.Handle(capage.Path+"/", ca)
 	mux.Handle("/", pageHeaders(pages(files)))
 	return mux
 }

@@ -491,6 +491,19 @@ dialog.remove .dlg-list.ready b { font-weight: 600; }
 .ov-card > h2 + .ov-svc { border-top: 0; }
 .ov-svc .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ov-svc .port { color: var(--color-muted); text-align: right; font-family: var(--font-mono); font-size: 12px; }
+.ov-addr { display: flex; align-items: center; gap: 12px; padding: 9px 16px; border-top: 1px solid var(--color-line); }
+.ov-card > h2 + .ov-addr { border-top: 0; }
+.ov-addr .t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ov-addr .sub { color: var(--color-muted); font-size: var(--text-sm); }
+.ov-addr .sub.mono { color: var(--color-ink); }
+.ov-addr .bad { color: var(--color-bad); font-weight: 600; }
+.ov-addr .st { flex: none; }
+.ov-card > .ov-addr + .note { padding: 0 16px 10px; }
+.ov-qr { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-top: 1px solid var(--color-line); }
+.ov-qr .code { flex: none; width: 132px; height: 132px; border-radius: var(--radius-sm); image-rendering: pixelated; background: #fff; }
+.ov-qr .t { min-width: 0; overflow-wrap: anywhere; }
+.ov-qr .t b { font-weight: 600; }
+.ov-qr .sub { color: var(--color-muted); font-size: var(--text-sm); margin-top: 2px; }
 .ov-lnk { display: flex; align-items: center; gap: 10px; padding: 9px 16px; border-top: 1px solid var(--color-line); color: var(--color-ink); min-width: 0; }
 a.ov-lnk:hover { background: var(--color-sunken); text-decoration: none; }
 .ov-card > h2 + .ov-lnk { border-top: 0; }

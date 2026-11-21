@@ -548,6 +548,12 @@ type DaemonInfo struct {
 	PID int `json:"pid"`
 	// ProxyAddr is the address the HTTPS proxy is listening on.
 	ProxyAddr string `json:"proxyAddr"`
+	// RootDomain is the Root Domain every Laneway name is under, such as
+	// "localhost" or "lw.example.com".
+	RootDomain string `json:"rootDomain"`
+	// CAPage is the plain-HTTP URL of the page another device installs
+	// Laneway's root CA from: http://laneway.<Root Domain>/ca.
+	CAPage string `json:"caPage"`
 	// HTTPAddr is the address plain HTTP is redirected to HTTPS from; ""
 	// if the daemon couldn't bind it.
 	HTTPAddr string `json:"httpAddr,omitempty"`
