@@ -9,6 +9,7 @@ import (
 
 	"github.com/lanewayhq/laneway/internal/config"
 	"github.com/lanewayhq/laneway/internal/prepare"
+	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/rootdomain"
 )
 
@@ -82,8 +83,9 @@ type RootDomainChange struct {
 // SetRootDomain makes root the Root Domain while the daemon runs, in the
 // order the spec gives: the names served change at once, then every Ready
 // Worktree's Env Patch is applied again and its running Processes restart
-// (which rewrites the per-Process files that embed a host, such as the Vite
-// config), and its Buckets' allowed origins follow (in the background). The
+// if .env changed, and its running Processes with a Vite config in any case
+// (which rewrites that config, with its hosts, as they start), and its
+// Buckets' allowed origins follow (in the background). The
 // Root Domain is recorded as the one Env Patches were applied with, and the
 // one before it as the previous one. It doesn't write the personal config:
 // the caller does, so the next start keeps root.
@@ -139,12 +141,18 @@ func (d *Daemon) applyRootDomain(ctx context.Context, from string) RootDomainCha
 	return change
 }
 
-// reapplyEnvPatch applies the served Worktree s's Env Patch again and, if
-// it changed .env, restarts its running Processes, which it returns.
+// reapplyEnvPatch applies the served Worktree s's Env Patch again and
+// restarts its running Processes, which it returns: all of them if it
+// changed .env, else those with a Vite config (which names their host, so
+// it is rewritten as they start).
 func (d *Daemon) reapplyEnvPatch(s *served) []string {
 	s.lifecycle.Lock()
 	defer s.lifecycle.Unlock()
-	if s.ctx.Err() != nil || !d.applyServedEnvPatch(s) || len(d.supervisor.Processes(s.group)) == 0 {
+	if s.ctx.Err() != nil {
+		return nil
+	}
+	envChanged := d.applyServedEnvPatch(s)
+	if len(d.supervisor.Processes(s.group)) == 0 {
 		return nil
 	}
 	cfg, err := d.resolveWorktree(s.ctx, s.dir)
@@ -152,5 +160,9 @@ func (d *Daemon) reapplyEnvPatch(s *served) []string {
 		d.log.Error("restarting Processes for the new Root Domain", "project", s.project, "dir", s.dir, "err", err)
 		return nil
 	}
-	return d.restartForEnv(s, cfg)
+	if envChanged {
+		return d.restartForEnv(s, cfg)
+	}
+	return d.restartRunningOf(s, cfg, func(proc recipe.Process) bool { return strings.Contains(proc.Command, viteConfigVar) },
+		"restarting Processes for the new Root Domain")
 }
