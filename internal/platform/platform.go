@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
+	"net/netip"
 )
 
 // Platform is the OS-specific behaviour Laneway needs. Methods that change the
@@ -56,6 +57,13 @@ type Platform interface {
 	// OpenURL opens url in the user's default browser (on WSL2, the Windows
 	// one) and returns without waiting for the browser.
 	OpenURL(ctx context.Context, url string) error
+
+	// TailscaleIPv4 is the machine's Tailscale IPv4 address (on WSL2, that
+	// of Tailscale on Windows), or an error saying why there is none: not
+	// installed, stopped or logged out.
+	TailscaleIPv4(ctx context.Context) (netip.Addr, error)
+	// LookupHost returns the IP addresses a hostname resolves to.
+	LookupHost(ctx context.Context, name string) ([]netip.Addr, error)
 }
 
 // TrustStore is one place a root CA can be trusted.

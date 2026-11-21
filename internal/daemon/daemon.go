@@ -107,6 +107,10 @@ type Config struct {
 	// github.com/…`) are downloaded from: github.DefaultURL if empty.
 	// Tests serve their own releases.
 	GitHub string
+	// ListenInterval is how often the extra addresses the global config's
+	// listen names are resolved again and those not listened on retried;
+	// DefaultListenInterval if zero.
+	ListenInterval time.Duration
 }
 
 // DefaultServiceHosts are where Services listen: loopback only, IPv4 and
@@ -187,6 +191,8 @@ type Daemon struct {
 	handMu      sync.Mutex
 	handChecked map[string]handCheck
 	services    *service.Manager // shared Services, see services.go
+
+	listen listening // extra listen addresses, see listen.go
 
 	// github is where Plugins added from GitHub are downloaded from, see
 	// github.go.
@@ -324,6 +330,7 @@ func Start(cfg Config) (*Daemon, error) {
 	if d.redirect, err = proxy.StartRedirect(cfg.HTTPAddr, httpsPort, d.rootDomain); err != nil {
 		log.Error("not redirecting plain HTTP to HTTPS", "addr", cfg.HTTPAddr, "err", err)
 	}
+	d.reconcileListen()
 	if err := d.startDashboard(); err != nil {
 		d.stopRedirect(context.Background())
 		d.proxy.Stop()
@@ -366,6 +373,7 @@ func Start(cfg Config) (*Daemon, error) {
 		}
 		close(d.done)
 	}()
+	d.keepListening()
 	log.Info("daemon started", "socket", cfg.Paths.Socket, "proxy", d.proxy.Addr())
 	return d, nil
 }
@@ -413,6 +421,7 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 	}
 	os.Remove(d.dashboardSocket())
 	d.watcher.Close()
+	d.stopListening()
 	if rerr := d.stopRedirect(ctx); err == nil {
 		err = rerr
 	}

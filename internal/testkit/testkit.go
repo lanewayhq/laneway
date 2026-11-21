@@ -135,7 +135,9 @@ func (d *Daemon) Start() {
 	cfg := daemon.Config{Paths: d.Paths, ProxyAddr: "127.0.0.1:0", HTTPAddr: "127.0.0.1:0",
 		Env:             []string{"HOME=" + d.Home, "PATH=" + d.Path},
 		ContainerEngine: d.Engine, ServiceHosts: []string{d.serviceHost}, Platform: d.Platform,
-		PluginCacheDir: pluginCacheDir}
+		PluginCacheDir: pluginCacheDir,
+		// Extra listen addresses that come up late are picked up quickly.
+		ListenInterval: 50 * time.Millisecond}
 	emptyGitHub().Option()(&cfg)
 	for _, opt := range d.opts {
 		opt(&cfg)
