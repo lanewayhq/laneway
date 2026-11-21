@@ -133,6 +133,17 @@ func (f *File) Get(key string) (string, bool) {
 	return "", false
 }
 
+// Keys are the file's keys, each once, in the order they first appear.
+func (f *File) Keys() []string {
+	var keys []string
+	for _, e := range f.entries {
+		if e.key != "" && !slices.Contains(keys, e.key) {
+			keys = append(keys, e.key)
+		}
+	}
+	return keys
+}
+
 // Environ is the env file at path as KEY=value environment entries, sorted
 // by key, each value as Get reads it: what a command started after `set -a;
 // . ./.env` sees. A missing or unreadable file sets nothing.

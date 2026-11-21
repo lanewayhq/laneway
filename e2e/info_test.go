@@ -269,7 +269,9 @@ var infoSchema = map[string]map[string]string{
 		"url": "string", "aliases": "list", "setup": "object?", "state": "string", "processes": "list",
 		"database": "object?", "buckets": "list", "services": "list", "configError": "string",
 		"recipe": "string", "recipeRule": "string", "integrations": "list", "integrationRules": "list",
+		"staleEnvKeys": "list",
 	},
+	"staleEnvKeys":     {"key": "string", "file": "string"},
 	"integrationRules": {"name": "string", "rule": "string"},
 	"project":          {"name": "string", "path": "string"},
 	"worktree":         {"name": "string", "path": "string", "main": "bool"},
@@ -349,10 +351,13 @@ func TestInfoJSONHasEveryDocumentedKeyAndNoOthers(t *testing.T) {
 		WriteFile("laneway.toml", processConfig(server+" --name web")+
 			"\n[database]\nengine = \"postgres\"\ntest = \"on\"\n\n[services]\nredis = \"7\"\nobjects = \"1\"\n").
 		WriteFile("package.json", `{"devDependencies": {"vite": "^8.0.0"}}`+"\n").
-		Commit("declare everything info shows")
+		Commit("declare everything info shows").
+		WriteFile(".env", "ASSET_URL=https://cdn.info-schema.localhost\n")
 	d.MustRunCLI(repo.Dir, "link")
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
 	d.MustRunCLI(repo.Dir, "worktree", "alias", "api")
+	// Under another Root Domain, .env's ASSET_URL is a stale env key.
+	d.SetRootDomain("info-schema.example.test")
 
 	assertSchema(t, "", infoJSON(t, d, repo.Dir))
 
@@ -361,7 +366,7 @@ func TestInfoJSONHasEveryDocumentedKeyAndNoOthers(t *testing.T) {
 	plain := gitfixture.New(t, "info-schema-plain")
 	d.MustRunCLI(plain.Dir, "link")
 	info := infoJSON(t, d, plain.Dir)
-	for _, list := range []string{"aliases", "processes", "buckets", "services", "integrations", "integrationRules"} {
+	for _, list := range []string{"aliases", "processes", "buckets", "services", "integrations", "integrationRules", "staleEnvKeys"} {
 		assertLen(t, info, 0, list)
 	}
 	assertAt(t, info, nil, "database")

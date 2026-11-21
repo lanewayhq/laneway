@@ -65,6 +65,12 @@ type Info struct {
 	// IntegrationRules are, in Integrations' order, each Integration with
 	// the part of its detection rule the Project matched.
 	IntegrationRules []InfoIntegrationRule `json:"integrationRules"`
+	// StaleEnvKeys are the keys in the Worktree's env files, outside its
+	// Env Patch, whose values name a host under a Root Domain Laneway no
+	// longer serves: under localhost while the Root Domain is another, or
+	// under the previous Root Domain. The developer has to change them.
+	// Values are never given, as env files hold secrets.
+	StaleEnvKeys []InfoStaleEnvKey `json:"staleEnvKeys"`
 	// ConfigError is why the Worktree's laneway.toml or laneway.local.toml
 	// can't be used, naming the file and key; "" if they can. While it is
 	// set, Processes and Services are empty.
@@ -193,4 +199,14 @@ type InfoIntegrationRule struct {
 	// Rule is the part of its detection rule the Project matched,
 	// described for people, such as "package.json depends on vite".
 	Rule string `json:"rule"`
+}
+
+// InfoStaleEnvKey is a key in one of the Worktree's env files whose value
+// still names a Root Domain Laneway no longer serves.
+type InfoStaleEnvKey struct {
+	// Key is the key's name, such as "VITE_WEBSITE_URL".
+	Key string `json:"key"`
+	// File is the env file holding it, relative to the Worktree's
+	// directory, such as ".env" or ".env.testing".
+	File string `json:"file"`
 }

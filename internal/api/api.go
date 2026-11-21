@@ -120,9 +120,24 @@ type Worktree struct {
 	// add`); zero for the main Worktree, which is the clone itself. Only
 	// GET /v1/projects and GET /v1/events fill it in.
 	Created time.Time `json:"created,omitzero"`
+	// StaleEnvKeys are the keys in the Worktree's env files, outside its
+	// Env Patch, whose values name a host under a Root Domain Laneway no
+	// longer serves (as in Info). Never their values. Only GET /v1/projects
+	// and GET /v1/events fill them in.
+	StaleEnvKeys []StaleEnvKey `json:"staleEnvKeys,omitempty"`
 	// PluginItems are what Plugins the Worktree uses show on it; only
 	// GET /v1/projects and GET /v1/events fill them in.
 	PluginItems
+}
+
+// StaleEnvKey is a key in one of a Worktree's env files whose value still
+// names a Root Domain Laneway no longer serves.
+type StaleEnvKey struct {
+	// Key is the key's name, such as "VITE_WEBSITE_URL".
+	Key string `json:"key"`
+	// File is the env file holding it, relative to the Worktree's
+	// directory, such as ".env".
+	File string `json:"file"`
 }
 
 // MergeStatus is whether a linked Worktree's work is safe on its Project's
