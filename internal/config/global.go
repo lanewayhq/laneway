@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/netip"
 	"os"
 	"time"
 
@@ -28,6 +29,11 @@ type Global struct {
 	// Plugins are the machine-wide Plugins (added with `lane plugin add
 	// --global`) turned on in every Project, by name.
 	Plugins []string `toml:"plugins"`
+	// Listen are the addresses Laneway listens on beside loopback, so
+	// the developer's other devices reach it (ADR-0009): each an IP
+	// address, or ListenTailscale for the machine's Tailscale IPv4
+	// address. Never one meaning every interface.
+	Listen []string `toml:"listen"`
 	// Warnings are problems that don't stop the file loading, such as
 	// unknown keys, each prefixed with the file's path.
 	Warnings []string `toml:"-"`
@@ -60,8 +66,33 @@ func LoadGlobal(path string) (Global, error) {
 	if err := checkPluginNames(g.Plugins); err != nil {
 		return Global{}, fmt.Errorf("%s: %w", path, err)
 	}
+	for _, l := range g.Listen {
+		if err := checkListen(l); err != nil {
+			return Global{}, fmt.Errorf("%s: listen: %w", path, err)
+		}
+	}
 	for _, key := range md.Undecoded() {
 		g.Warnings = append(g.Warnings, fmt.Sprintf("%s: unknown key %q", path, key.String()))
 	}
 	return g, nil
+}
+
+// ListenTailscale is the listen keyword for the machine's Tailscale IPv4
+// address.
+const ListenTailscale = "tailscale"
+
+// checkListen checks one of listen's addresses.
+func checkListen(l string) error {
+	if l == ListenTailscale {
+		return nil
+	}
+	ip, err := netip.ParseAddr(l)
+	if err != nil {
+		return fmt.Errorf("%q is neither an IP address nor %q", l, ListenTailscale)
+	}
+	if ip.IsUnspecified() {
+		return fmt.Errorf("%q means every interface, and Laneway never listens on every interface: "+
+			"name the address your other devices reach this machine on, or %q", l, ListenTailscale)
+	}
+	return nil
 }

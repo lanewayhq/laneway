@@ -234,6 +234,7 @@ func (d *Daemon) handleDaemonInfo(w http.ResponseWriter, r *http.Request) {
 	if addr := d.HTTPAddr(); addr != nil {
 		info.HTTPAddr = addr.String()
 	}
+	info.Listen, info.ListenError = d.listenStatus()
 	writeJSON(w, http.StatusOK, info)
 }
 

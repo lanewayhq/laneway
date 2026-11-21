@@ -58,6 +58,19 @@ func (d *Daemon) CAPool() *x509.CertPool {
 // Redirects are not followed.
 func (d *Daemon) HTTPS() *http.Client {
 	d.t.Helper()
+	return d.httpsDialing(d.ProxyAddr)
+}
+
+// HTTPSAt is HTTPS reaching the proxy at ip, one of the extra addresses the
+// global config's listen names, instead of loopback: what another device
+// on the network gets.
+func (d *Daemon) HTTPSAt(ip string) *http.Client {
+	d.t.Helper()
+	return d.httpsDialing(func() string { return d.ProxyAddrAt(ip) })
+}
+
+func (d *Daemon) httpsDialing(addr func() string) *http.Client {
+	d.t.Helper()
 	pool := d.CAPool()
 	dialer := &net.Dialer{Timeout: 5 * time.Second}
 	return &http.Client{
@@ -66,10 +79,26 @@ func (d *Daemon) HTTPS() *http.Client {
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{RootCAs: pool},
 			DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
-				return dialer.DialContext(ctx, network, d.ProxyAddr())
+				return dialer.DialContext(ctx, network, addr())
 			},
 		},
 	}
+}
+
+// ProxyAddrAt is where the proxy listens at ip: the same port as on
+// loopback.
+func (d *Daemon) ProxyAddrAt(ip string) string {
+	d.t.Helper()
+	_, port, _ := net.SplitHostPort(d.ProxyAddr())
+	return net.JoinHostPort(ip, port)
+}
+
+// HTTPAddrAt is where plain HTTP is redirected to HTTPS from at ip: the
+// same port as on loopback.
+func (d *Daemon) HTTPAddrAt(ip string) string {
+	d.t.Helper()
+	_, port, _ := net.SplitHostPort(d.HTTPAddr())
+	return net.JoinHostPort(ip, port)
 }
 
 // Response is a fully read HTTP response.

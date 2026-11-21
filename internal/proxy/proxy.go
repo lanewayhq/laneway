@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -125,7 +126,7 @@ func (e *StartError) Unwrap() error { return e.Err }
 // Config configures a Proxy.
 type Config struct {
 	// Addr is the HTTPS listen address. It must be a loopback IP address;
-	// port 0 picks a free port.
+	// port 0 picks a free port. Listen adds other addresses.
 	Addr string
 	// StorageDir holds the local CA and the certificates issued from it.
 	StorageDir string
@@ -141,9 +142,9 @@ type Config struct {
 
 // Proxy is a running proxy.
 type Proxy struct {
-	id   string
-	apps []caddy.App // in start order
-	addr net.Addr
+	id       string
+	apps     []caddy.App // in start order
+	listener *fanIn
 }
 
 // The apps a Proxy runs, in the order they are started.
@@ -166,13 +167,21 @@ func Start(cfg Config) (*Proxy, error) {
 	if err := json.Unmarshal(caddyConfig(p.id, cfg), &caddyCfg); err != nil {
 		return nil, fmt.Errorf("proxy: building Caddy config: %w", err)
 	}
+	// The listener is Laneway's own, so addresses can be added and removed
+	// while Caddy serves it (see fanIn).
+	ln, err := net.Listen("tcp", cfg.Addr)
+	if err != nil {
+		return nil, fmt.Errorf("starting the HTTPS proxy on %s: %w", cfg.Addr, err)
+	}
+	p.listener = newFanIn(ln)
+	fanIns.Store(p.id, p.listener)
 	configs.Store(p.id, cfg)
 
 	lifecycleMu.Lock()
 	defer lifecycleMu.Unlock()
 	ctx, err := caddy.ProvisionContext(&caddyCfg)
 	if err != nil {
-		configs.Delete(p.id)
+		p.forget()
 		return nil, fmt.Errorf("starting the HTTPS proxy: %w", err)
 	}
 	for _, name := range appNames {
@@ -188,18 +197,28 @@ func Start(cfg Config) (*Proxy, error) {
 		}
 	}
 	httpApp, _ := ctx.App("http")
-	ln := httpApp.(*caddyhttp.App).Servers["https"].Listeners()
-	if len(ln) == 0 {
+	if len(httpApp.(*caddyhttp.App).Servers["https"].Listeners()) == 0 {
 		p.stop()
 		return nil, fmt.Errorf("starting the HTTPS proxy on %s: no listener", cfg.Addr)
 	}
-	p.addr = ln[0].Addr()
 	return p, nil
 }
 
-// Addr is the address the proxy is listening on.
+// Addr is the loopback address the proxy is listening on.
 func (p *Proxy) Addr() net.Addr {
-	return p.addr
+	return p.listener.Addr()
+}
+
+// Listen makes the proxy listen on ip too, at the same port as on
+// loopback. It does nothing if it already does. ip may be any address but
+// one meaning every interface (0.0.0.0 or ::).
+func (p *Proxy) Listen(ip netip.Addr) error {
+	return p.listener.Listen(ip)
+}
+
+// Unlisten stops the proxy listening on ip, an address Listen added.
+func (p *Proxy) Unlisten(ip netip.Addr) {
+	p.listener.Unlisten(ip)
 }
 
 // Stop closes the listener and stops the Caddy apps, waiting a few seconds
@@ -227,8 +246,17 @@ func (p *Proxy) stop() error {
 		}
 	}
 	p.apps = nil
-	configs.Delete(p.id)
+	errs = append(errs, p.forget())
 	return errors.Join(errs...)
+}
+
+// forget closes the listener (if Caddy hasn't) and drops the Proxy from
+// the registries the Caddy modules read.
+func (p *Proxy) forget() error {
+	err := p.listener.Close()
+	fanIns.Delete(p.id)
+	configs.Delete(p.id)
+	return err
 }
 
 func checkLoopback(addr string) error {
@@ -305,7 +333,7 @@ func caddyConfig(id string, cfg Config) []byte {
 				"grace_period": "5s",
 				"servers": map[string]any{
 					"https": map[string]any{
-						"listen": []string{cfg.Addr},
+						"listen": []string{fanInNetwork + "/" + id + ":0"},
 						// No HTTP/3: it would need a UDP listener too.
 						"protocols": []string{"h1", "h2"},
 						// Routes have no host matchers, so Caddy can't infer

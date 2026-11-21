@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -15,8 +16,8 @@ import (
 // over HTTPS, so typing a Domain such as shop.localhost (which a browser may
 // try as http://) still reaches it.
 type Redirect struct {
-	server *http.Server
-	addr   net.Addr
+	server   *http.Server
+	listener *fanIn
 }
 
 // StartRedirect listens on addr, a loopback address, and redirects every
@@ -32,13 +33,13 @@ func StartRedirect(addr string, httpsPort string, rootDomain func() string) (*Re
 	if err != nil {
 		return nil, err
 	}
-	r := &Redirect{addr: ln.Addr(), server: &http.Server{
+	r := &Redirect{listener: newFanIn(ln), server: &http.Server{
 		Handler:           redirectHandler(httpsPort, rootDomain),
 		ReadHeaderTimeout: 10 * time.Second,
 	}}
 	go func() {
-		if err := r.server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			ln.Close()
+		if err := r.server.Serve(r.listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			r.listener.Close()
 		}
 	}()
 	return r, nil
@@ -62,8 +63,15 @@ func redirectHandler(httpsPort string, rootDomain func() string) http.Handler {
 	})
 }
 
-// Addr is the address it listens on.
-func (r *Redirect) Addr() net.Addr { return r.addr }
+// Addr is the loopback address it listens on.
+func (r *Redirect) Addr() net.Addr { return r.listener.Addr() }
+
+// Listen makes it listen on ip too, at the same port as on loopback, as
+// Proxy.Listen does.
+func (r *Redirect) Listen(ip netip.Addr) error { return r.listener.Listen(ip) }
+
+// Unlisten stops it listening on ip, an address Listen added.
+func (r *Redirect) Unlisten(ip netip.Addr) { r.listener.Unlisten(ip) }
 
 // Stop closes the listener and waits for in-flight requests until ctx ends.
 func (r *Redirect) Stop(ctx context.Context) error { return r.server.Shutdown(ctx) }
