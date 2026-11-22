@@ -216,11 +216,7 @@ func checkDNS(ctx context.Context, plat platform.Platform, info api.DaemonInfo, 
 	if ip, err := netip.ParseAddr(loopback(info)); err == nil {
 		dns.targets = append(dns.targets, ip)
 	}
-	for _, l := range info.Listen {
-		if ip, err := netip.ParseAddr(l.IP); err == nil {
-			dns.extra = append(dns.extra, ip)
-		}
-	}
+	dns.extra = listenIPs(info, false)
 	dns.targets = append(dns.targets, dns.extra...)
 	for _, name := range []string{randomLabel() + "." + root, rootdomain.Dashboard(root)} {
 		n := dnsName{name: name}

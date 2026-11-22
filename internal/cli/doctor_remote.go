@@ -44,8 +44,8 @@ func checkRemoteAccess(ctx context.Context, r *report, plat platform.Platform, i
 			"Laneway can't tell from inside WSL",
 			"if other devices can't connect, allow them from an elevated PowerShell on Windows: "+wslFirewallRule)
 	}
-	if ips := listenedOn(info); len(ips) > 0 {
-		r.check(statusOK, "reachable from", strings.Join(ips, ", ")+": every Worktree, the Dashboard and the Service Domains, for any device "+
+	if ips := listenIPs(info, true); len(ips) > 0 {
+		r.check(statusOK, "reachable from", joinAddrs(ips)+": every Worktree, the Dashboard and the Service Domains, for any device "+
 			"that reaches these addresses; the Dashboard can remove Worktrees, so let only your devices reach them "+
 			"(such as with Tailscale's ACLs)", "")
 	}
@@ -68,12 +68,13 @@ func listenNames(info api.DaemonInfo) string {
 	return strings.Join(names, ", ")
 }
 
-// listenedOn are the addresses Laneway listens on beside loopback.
-func listenedOn(info api.DaemonInfo) []string {
-	var ips []string
+// listenIPs are the IPs of listen's addresses that have one, or, with
+// listening, only of those Laneway listens on now.
+func listenIPs(info api.DaemonInfo, listening bool) []netip.Addr {
+	var ips []netip.Addr
 	for _, l := range info.Listen {
-		if l.Listening {
-			ips = append(ips, l.IP)
+		if ip, err := netip.ParseAddr(l.IP); err == nil && (l.Listening || !listening) {
+			ips = append(ips, ip)
 		}
 	}
 	return ips
@@ -94,12 +95,7 @@ func checkRootDomainDNS(ctx context.Context, r *report, plat platform.Platform, 
 			"create the record "+dns.record())
 		return
 	}
-	var listened []netip.Addr
-	for _, l := range info.Listen {
-		if ip, err := netip.ParseAddr(l.IP); err == nil && l.Listening {
-			listened = append(listened, ip)
-		}
-	}
+	listened := listenIPs(info, true)
 	// The addresses Laneway listens on, or would, that names resolve to,
 	// for each name that resolves to none other devices reach.
 	var stuck []netip.Addr
