@@ -75,12 +75,11 @@ Then run `wsl.exe --shutdown` from Windows and open a new shell. `wslinfo --netw
 
 In mirrored mode, Windows' Hyper-V firewall stands between other devices and WSL. Whether it lets them in depends on how Windows is set up, and `lane doctor` asks Windows and says, on its `Windows firewall` line. If it blocks them, your phone times out; allow ports 80 and 443 with this command, in a PowerShell window opened with **Run as administrator** on Windows:
 
-<!-- TODO(#130): confirm this command by hand -->
 ```powershell
 New-NetFirewallHyperVRule -Name Laneway -DisplayName "Laneway (HTTP and HTTPS)" -Direction Inbound -VMCreatorId '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -Protocol TCP -LocalPorts 80,443
 ```
 
-The GUID is the one Windows uses for WSL. Laneway never changes Windows' firewall itself.
+The GUID is the one Windows uses for WSL. Laneway never changes Windows' firewall itself. The machine this was checked on let other devices in without a rule, so the command hasn't been tried where one is needed; if it doesn't work for you, please open an issue.
 
 ## 3. Switch to the Root Domain
 
@@ -204,7 +203,6 @@ Run `lane doctor` on your PC first. As well as its other checks, it looks at you
 
 `lane root-domain reset` moves everything back under `localhost`. To stop other devices reaching your PC too, remove `listen` from `~/.config/laneway/config.toml`, and delete the DNS record. On WSL2, remove the firewall rule in an administrator PowerShell:
 
-<!-- TODO(#130): confirm this command by hand -->
 ```powershell
 Remove-NetFirewallHyperVRule -Name Laneway
 ```

@@ -70,7 +70,9 @@ func checkWSLFirewall(ctx context.Context, r *report, plat platform.Platform) {
 // ports 80 and 443 in WSL2 through Windows' Hyper-V firewall. The GUID is
 // WSL's VMCreatorId.
 //
-// TODO(#130): replace with the command confirmed by hand.
+// It hasn't been tried on a machine that needs it: the check by hand
+// (#130) needed no rule, as that machine's firewall let other devices in by
+// default.
 const wslFirewallRule = `New-NetFirewallHyperVRule -Name Laneway -DisplayName "Laneway (HTTP and HTTPS)" -Direction Inbound ` +
 	`-VMCreatorId '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -Protocol TCP -LocalPorts 80,443`
 
