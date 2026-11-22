@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/lanewayhq/laneway/internal/platform"
 )
@@ -43,6 +44,7 @@ type Fake struct {
 	tailscale   netip.Addr
 	noTailscale string                  // why there is no Tailscale address
 	hosts       map[string][]netip.Addr // hostname → addresses
+	trustDelay  time.Duration           // how long asking a trust store takes
 }
 
 // New returns a Fake for a plain Linux machine where nothing is set up yet.
@@ -96,6 +98,14 @@ func (f *Fake) SetWSL2() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.wsl = true
+}
+
+// SetTrustStoreDelay makes asking a trust store whether it trusts a CA
+// take d, as asking Windows' store from WSL2 can take seconds.
+func (f *Fake) SetTrustStoreDelay(d time.Duration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.trustDelay = d
 }
 
 // SetPortHolders sets the programs listening on port.
@@ -277,7 +287,15 @@ func (s store) Name() string { return s.name }
 
 func (s store) Prompt() string { return fmt.Sprintf("(fake) adding Laneway's CA to the %s", s.name) }
 
-func (s store) Trusted(_ context.Context, ca *x509.Certificate) (bool, error) {
+func (s store) Trusted(ctx context.Context, ca *x509.Certificate) (bool, error) {
+	s.f.mu.Lock()
+	delay := s.f.trustDelay
+	s.f.mu.Unlock()
+	select {
+	case <-time.After(delay):
+	case <-ctx.Done():
+		return false, ctx.Err()
+	}
 	s.f.mu.Lock()
 	defer s.f.mu.Unlock()
 	return s.f.trusted[s.name][sha256.Sum256(ca.Raw)], nil

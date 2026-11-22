@@ -64,12 +64,18 @@ func runDoctor(ctx context.Context, env Env, args []string) error {
 	r := &report{w: env.Stdout}
 	fmt.Fprintf(env.Stdout, "Laneway doctor (%s)\n\n", plat.Name())
 
-	daemonCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+	// Each call to the daemon gets its own time, so checks that take long
+	// before it (asking Windows' trust store from WSL2 can take seconds)
+	// don't use it up.
+	daemonCtx := func() (context.Context, context.CancelFunc) {
+		return context.WithTimeout(ctx, 5*time.Second)
+	}
 	daemon, daemonErr := apiClient(env)
 	var info api.DaemonInfo
 	if daemonErr == nil {
-		info, daemonErr = daemon.Daemon(daemonCtx)
+		c, cancel := daemonCtx()
+		info, daemonErr = daemon.Daemon(c)
+		cancel()
 	}
 	if daemonErr != nil {
 		r.check(statusFail, "daemon", daemonErr.Error(),
@@ -88,7 +94,9 @@ func runDoctor(ctx context.Context, env Env, args []string) error {
 	}
 	if daemonErr == nil {
 		// Each Service's port, which Laneway listens on to start it.
-		services, err := daemon.Services(daemonCtx)
+		c, cancel := daemonCtx()
+		services, err := daemon.Services(c)
+		cancel()
 		if err != nil {
 			r.check(statusWarn, "Service ports", "can't list the Services: "+err.Error(), "")
 		}
@@ -99,7 +107,9 @@ func runDoctor(ctx context.Context, env Env, args []string) error {
 	checkPortPermission(ctx, r, plat)
 	checkCA(ctx, r, plat, p.CARootCert())
 	if daemonErr == nil {
-		checkStaleEnvKeys(daemonCtx, r, daemon)
+		c, cancel := daemonCtx()
+		checkStaleEnvKeys(c, r, daemon)
+		cancel()
 		checkRemoteAccess(ctx, r, plat, info, p.GlobalConfig())
 	}
 

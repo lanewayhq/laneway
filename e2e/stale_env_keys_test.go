@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/daemon"
@@ -147,4 +148,20 @@ func equalPairs(a, b [][2]string) bool {
 		}
 	}
 	return true
+}
+
+// On WSL2, asking Windows whether it trusts Laneway's CA can take seconds.
+// The checks doctor runs after that still get their own time to ask the
+// daemon.
+func TestDoctorListsStaleEnvKeysAfterASlowCACheck(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	repo := envProject(t, "stale-slow-ca", `APP_URL = "{url}"`+"\n").
+		WriteFile(".env", "VITE_WEBSITE_URL=https://shop.stale-slow-ca.localhost\n")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	d.SetRootDomain("stale-slow-ca.example.test")
+	d.Platform.SetTrustStoreDelay(6 * time.Second)
+
+	out := d.RunCLI(repo.Dir, "doctor").Stdout
+	assertCheck(t, out, "warn", "stale env keys", filepath.Join(repo.Dir, ".env")+": VITE_WEBSITE_URL")
 }
