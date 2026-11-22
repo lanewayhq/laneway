@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -360,5 +361,40 @@ func TestAProcessHostLongerThanACommonNameGetsAValidCertificate(t *testing.T) {
 	host := "vite.t3-a-worktree-with-a-name-as-long-as-a-branch-name-can-be-made.rd-long." + root
 	if got := d.GetServer("https://" + host + "/"); got.Name != "vite@"+filepath.Base(wt.Dir) {
 		t.Fatalf("%s (%d characters) reached %q, want the Worktree's vite Process", host, len(host), got.Name)
+	}
+}
+
+// A client that gives up on a Root Domain change, such as Ctrl-C on
+// `lane root-domain set`, doesn't stop it part-way: every Worktree still
+// gets the new Root Domain.
+func TestARootDomainChangeTheClientGivesUpOnStillReachesEveryWorktree(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	// The Process takes 2 seconds to stop, so restarting it for the
+	// change outlasts the client.
+	command := `trap 'sleep 2; exit 0' TERM; ` + testkit.TestServer(t) + ` & while :; do sleep 0.1; done`
+	repo := gitfixture.New(t, "rd-given-up").
+		WriteFile(".gitignore", ".env\n").
+		WriteFile("laneway.toml", "[env]\nAPP_URL = \"{url}\"\n\n"+processConfig(command)).
+		Commit("declare a Process that is slow to stop")
+	wt := repo.AddWorktree("t3-9c1d")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	for _, url := range []string{"https://rd-given-up.localhost/", "https://t3-9c1d.rd-given-up.localhost/"} {
+		if res := d.Get(url); res.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s: status %d, want the Process running", url, res.StatusCode)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+	if _, err := d.Client().SetRootDomain(ctx, "rd-given-up.example.test"); err == nil {
+		t.Fatal("the change finished before the client gave up; the test needs a slower Process")
+	}
+
+	for _, dir := range []string{repo.Dir, wt.Dir} {
+		env := filepath.Join(dir, ".env")
+		testkit.WaitUntil(t, 15*time.Second, ".env in "+dir+" to name the new Root Domain", func() bool {
+			return strings.Contains(readFile(t, env), ".rd-given-up.example.test\n")
+		})
 	}
 }

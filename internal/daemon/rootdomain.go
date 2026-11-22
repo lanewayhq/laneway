@@ -103,9 +103,12 @@ func (d *Daemon) SetRootDomain(ctx context.Context, root string) (RootDomainChan
 	return d.applyRootDomain(ctx, previous), nil
 }
 
-// setRootDomain is SetRootDomain as POST /v1/root-domain reports it.
-func (d *Daemon) setRootDomain(ctx context.Context, root string) (api.RootDomainResponse, error) {
-	change, err := d.SetRootDomain(ctx, root)
+// setRootDomain is SetRootDomain as POST /v1/root-domain reports it. The
+// change runs to the end even if the client gives up (Ctrl-C on `lane
+// root-domain set`): stopped part-way, some Worktrees would keep the old
+// Root Domain. Only the daemon stopping cuts it short.
+func (d *Daemon) setRootDomain(root string) (api.RootDomainResponse, error) {
+	change, err := d.SetRootDomain(d.stopping, root)
 	if err != nil {
 		return api.RootDomainResponse{}, &api.Error{Code: api.CodeBadRequest, Message: err.Error()}
 	}
@@ -127,7 +130,9 @@ func (d *Daemon) setRootDomain(ctx context.Context, root string) (api.RootDomain
 // applyRootDomain brings what Laneway gave out under the Root Domain from
 // (Env Patches, running Processes, Bucket origins, the Primary Domains
 // Plugins were told about) up to date with the current one, and records it,
-// unless the Env Patches were already applied with it.
+// unless the Env Patches were already applied with it. If ctx ends first,
+// the Worktrees not reached are left and it isn't recorded, so the next
+// start brings them up to date.
 func (d *Daemon) applyRootDomain(ctx context.Context, from string) RootDomainChange {
 	root := d.rootDomain()
 	change := RootDomainChange{Previous: from, Current: root, Patched: []string{}, Restarted: map[string][]string{}}
@@ -157,6 +162,10 @@ func (d *Daemon) applyRootDomain(ctx context.Context, from string) RootDomainCha
 		if primary := d.primaryDomain(p, s.worktreeRef); primary != "" {
 			d.primaryDomainChanged(p, s.worktreeRef, strings.TrimSuffix(primary, root)+from)
 		}
+	}
+	if ctx.Err() != nil {
+		d.log.Warn("the Root Domain change was cut short; the next start finishes it", "root_domain", root)
+		return change
 	}
 	if err := d.registry.RecordRootDomain(root); err != nil {
 		d.log.Error("recording the Root Domain", "root_domain", root, "err", err)
