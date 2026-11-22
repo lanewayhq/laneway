@@ -110,7 +110,8 @@ func TestSettingAnInvalidRootDomainIsRefused(t *testing.T) {
 	writeGlobalConfig(t, d, "# mine\nidle_timeout = \"1h\"\n")
 
 	for _, root := range []string{"https://lw.example.test", "lw.example.test:8443", "lw.example.test/x",
-		"lw.example.test.", "100.101.102.103", "LW.example.test", "lw..example.test", "-lw.example.test"} {
+		"lw.example.test.", "100.101.102.103", "LW.example.test", "lw..example.test", "-lw.example.test",
+		"lw.localhost", tooLongRoot} {
 		res := d.RunCLI(d.Home, "root-domain", "set", "--skip-dns-check", "--", root)
 
 		if res.ExitCode == 0 {

@@ -217,7 +217,8 @@ func TestAnInvalidRootDomainIsAConfigErrorAndTheLastOneIsKept(t *testing.T) {
 	d.MustRunCLI(repo.Dir, "link")
 
 	for _, root := range []string{"https://lw.example.test", "lw.example.test:8443", "lw.example.test/x",
-		"lw.example.test.", "100.101.102.103", "LW.example.test", "lw..example.test", "-lw.example.test", ""} {
+		"lw.example.test.", "100.101.102.103", "LW.example.test", "lw..example.test", "-lw.example.test",
+		"lw.localhost", tooLongRoot, ""} {
 		writeGlobalConfig(t, d, fmt.Sprintf("root_domain = %q\n", root))
 		d.Restart()
 
@@ -337,12 +338,20 @@ func TestOpenOpensThePrimaryDomainUnderTheRootDomain(t *testing.T) {
 	}
 }
 
+// longestRoot is as long as a Root Domain may be (61 characters), and
+// tooLongRoot is one character longer: <process>.<worktree>.<project>.<root>,
+// with labels of up to 63 characters, must fit DNS's 253.
+const (
+	longestRoot = "rd-long-names-for-a-remote-machine.a-long-domain.example.test"
+	tooLongRoot = "x" + longestRoot
+)
+
 // A Process host on a long Worktree name under a long Root Domain is longer
 // than a certificate's Common Name may be (64 characters): the name is only
 // in the certificate's SAN, which browsers check.
 func TestAProcessHostLongerThanACommonNameGetsAValidCertificate(t *testing.T) {
 	t.Parallel()
-	root := "rd-long-names-for-a-remote-machine.a-long-domain-name.example.test"
+	root := longestRoot
 	d := personalRootDomainDaemon(t, root)
 	repo := routedProject(t, "rd-long")
 	wt := repo.AddWorktree("t3-a-worktree-with-a-name-as-long-as-a-branch-name-can-be-made")
