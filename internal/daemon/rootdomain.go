@@ -157,7 +157,7 @@ func (d *Daemon) applyRootDomain(ctx context.Context, from string) rootDomainCha
 		}
 		d.worktreeOriginsChanged(p, s.worktreeRef)
 		if primary := d.primaryDomain(p, s.worktreeRef); primary != "" {
-			d.primaryDomainChanged(p, s.worktreeRef, strings.TrimSuffix(primary, root)+from)
+			d.primaryDomainChanged(p, s.worktreeRef, rootdomain.Move(primary, root, from))
 		}
 	}
 	if ctx.Err() != nil {
