@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
+	"net/netip"
 )
 
 // Platform is the OS-specific behaviour Laneway needs. Methods that change the
@@ -56,6 +57,16 @@ type Platform interface {
 	// OpenURL opens url in the user's default browser (on WSL2, the Windows
 	// one) and returns without waiting for the browser.
 	OpenURL(ctx context.Context, url string) error
+
+	// TailscaleIPv4 is the machine's Tailscale IPv4 address (on WSL2, that
+	// of Tailscale on Windows), or an error saying why there is none: not
+	// installed, stopped or logged out.
+	TailscaleIPv4(ctx context.Context) (netip.Addr, error)
+	// LookupHost returns the IP addresses a hostname resolves to.
+	LookupHost(ctx context.Context, name string) ([]netip.Addr, error)
+	// WSLFirewall asks Windows whether its Hyper-V firewall lets other
+	// devices reach WSL2's ports 80 and 443. It is an error on plain Linux.
+	WSLFirewall(ctx context.Context) (WSLFirewall, error)
 }
 
 // TrustStore is one place a root CA can be trusted.
@@ -69,6 +80,16 @@ type TrustStore interface {
 	Prompt() string
 	// Trust adds ca, read from the PEM file caFile, to the store.
 	Trust(ctx context.Context, caFile string, ca *x509.Certificate) error
+}
+
+// WSLFirewall is whether Windows' Hyper-V firewall lets other devices reach
+// WSL2's ports 80 and 443.
+type WSLFirewall struct {
+	// Open is true if it lets them reach both.
+	Open bool
+	// Detail says why, such as that the firewall lets every connection in
+	// by default.
+	Detail string
 }
 
 // ServiceStatus is the state of Laneway's user service.

@@ -10,6 +10,7 @@ import (
 	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/envpatch"
 	"github.com/lanewayhq/laneway/internal/gitrepo"
+	"github.com/lanewayhq/laneway/internal/naming"
 	"github.com/lanewayhq/laneway/internal/recipe"
 	"github.com/lanewayhq/laneway/internal/registry"
 )
@@ -25,25 +26,41 @@ type worktreeRef struct {
 	// label is the Worktree's part of its Domain, unique within the Project
 	// ("" for the main Worktree). Its database names come from it, so two
 	// Worktrees whose names normalise alike get databases of their own.
-	label  string
-	dir    string
-	domain string
-	main   bool
+	label string
+	dir   string
+	// host is the Worktree's Domain without the Root Domain: <project>, or
+	// <worktree>.<project> for a linked Worktree. It doesn't change with
+	// the Root Domain, so it also names the Worktree's log and Vite config
+	// directories. root reads the Root Domain, which can change while the
+	// daemon runs.
+	host string
+	root func() string
+	main bool
 }
 
-func mainWorktreeRef(p registry.Project) worktreeRef {
-	return worktreeRef{dir: p.Path, domain: domainOf(p), main: true}
+// domain is the Worktree's Domain under the current Root Domain, or "" for
+// the zero worktreeRef.
+func (w worktreeRef) domain() string {
+	if w.host == "" {
+		return ""
+	}
+	return w.host + "." + w.root()
 }
 
-func linkedWorktreeRef(p registry.Project, w registry.Worktree) worktreeRef {
-	return worktreeRef{name: w.Name, label: w.Label, dir: w.Path, domain: worktreeDomain(p, w)}
+func (d *Daemon) mainWorktreeRef(p registry.Project) worktreeRef {
+	return worktreeRef{dir: p.Path, host: naming.DomainLabel(p.Name), root: d.rootDomain, main: true}
+}
+
+func (d *Daemon) linkedWorktreeRef(p registry.Project, w registry.Worktree) worktreeRef {
+	return worktreeRef{name: w.Name, label: w.Label, dir: w.Path,
+		host: w.Label + "." + naming.DomainLabel(p.Name), root: d.rootDomain}
 }
 
 // worktreesOf are the Project p's Worktrees, its main one first.
 func (d *Daemon) worktreesOf(p registry.Project) []worktreeRef {
-	worktrees := []worktreeRef{mainWorktreeRef(p)}
+	worktrees := []worktreeRef{d.mainWorktreeRef(p)}
 	for _, w := range d.registry.Worktrees(p.Path) {
-		worktrees = append(worktrees, linkedWorktreeRef(p, w))
+		worktrees = append(worktrees, d.linkedWorktreeRef(p, w))
 	}
 	return worktrees
 }
@@ -231,14 +248,14 @@ func (d *Daemon) projectWorktreeRefs(ctx context.Context, p registry.Project) ([
 	for _, w := range changes.Removed {
 		removed[w.Path] = true
 	}
-	out := []worktreeRef{mainWorktreeRef(p)}
+	out := []worktreeRef{d.mainWorktreeRef(p)}
 	for _, w := range d.registry.Worktrees(p.Path) {
 		if !removed[w.Path] {
-			out = append(out, linkedWorktreeRef(p, w))
+			out = append(out, d.linkedWorktreeRef(p, w))
 		}
 	}
 	for _, w := range changes.Added {
-		out = append(out, linkedWorktreeRef(p, w))
+		out = append(out, d.linkedWorktreeRef(p, w))
 	}
 	return out, nil
 }
@@ -246,7 +263,7 @@ func (d *Daemon) projectWorktreeRefs(ctx context.Context, p registry.Project) ([
 // envPatchFor describes a planned patch of the Worktree w for the API.
 func envPatchFor(w worktreeRef, plan envpatch.Plan) api.EnvFilePatch {
 	res := api.EnvFilePatch{
-		Worktree: api.Worktree{Name: w.name, Path: w.dir, Main: w.main, Domain: w.domain},
+		Worktree: api.Worktree{Name: w.name, Path: w.dir, Main: w.main, Domain: w.domain()},
 		Path:     plan.Path,
 		Create:   plan.Create,
 		CopyFrom: plan.CopyFrom,

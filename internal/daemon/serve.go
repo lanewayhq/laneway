@@ -115,15 +115,15 @@ type startAttempt struct {
 	release func()
 }
 
-// domainOf is the main Worktree's Domain.
-func domainOf(p registry.Project) string {
-	return naming.DomainLabel(p.Name) + ".localhost"
+// domainOf is the main Worktree's Domain: <project>.<Root Domain>.
+func (d *Daemon) domainOf(p registry.Project) string {
+	return naming.DomainLabel(p.Name) + "." + d.rootDomain()
 }
 
 // serveProject applies the main Worktree's Env Patch, serves it at its
 // Domain and begins preparing it if it isn't Ready.
 func (d *Daemon) serveProject(p registry.Project) {
-	w := mainWorktreeRef(p)
+	w := d.mainWorktreeRef(p)
 	d.applyEnvPatch(p, w)
 	d.serveWorktree(p, w)
 	d.reclaimOrphans(p, w)
@@ -139,7 +139,11 @@ func (d *Daemon) serveWorktree(p registry.Project, w worktreeRef) {
 	s.ctx, s.cancel = context.WithCancel(d.stopping)
 	s.activity = activity.New(d.cfg.Clock, DefaultIdleTimeout, func() { d.goIdle(s) })
 	d.servedMu.Lock()
-	d.served[w.domain] = s
+	if old := d.served[w.dir]; old != nil && d.servedHosts[old.host] == old {
+		delete(d.servedHosts, old.host)
+	}
+	d.served[w.dir] = s
+	d.servedHosts[w.host] = s
 	d.servedMu.Unlock()
 	d.serveServicesOf(w.dir)
 	d.startAlways(s)
@@ -215,7 +219,7 @@ func (d *Daemon) specs(s *served, cfg worktreeConfig, procs []recipe.Process) []
 			Command: command,
 			HTTP:    proc.HTTP,
 			Dir:     s.dir,
-			LogFile: filepath.Join(d.cfg.Paths.Logs(), s.domain, proc.Name+".log"),
+			LogFile: filepath.Join(d.cfg.Paths.Logs(), s.host, proc.Name+".log"),
 		})
 	}
 	if primary == "" {
@@ -242,12 +246,15 @@ func (d *Daemon) startProcess(s *served, spec supervisor.Spec, restartFailed boo
 	return true, nil
 }
 
-// stopWorktree stops serving domain and stops the Processes of the Worktree
-// at dir, including a start in progress.
-func (d *Daemon) stopWorktree(ctx context.Context, domain, dir string) {
+// stopWorktree stops serving the Worktree at dir and stops its Processes,
+// including a start in progress.
+func (d *Daemon) stopWorktree(ctx context.Context, dir string) {
 	d.servedMu.Lock()
-	s := d.served[domain]
-	delete(d.served, domain)
+	s := d.served[dir]
+	delete(d.served, dir)
+	if s != nil && d.servedHosts[s.host] == s {
+		delete(d.servedHosts, s.host)
+	}
 	d.servedMu.Unlock()
 	if s != nil {
 		s.activity.Reset()
@@ -441,7 +448,7 @@ func (d *Daemon) goIdle(s *served) {
 		return
 	}
 	st.releaseServices()
-	d.log.Info("Worktree is Idle", "project", s.project, "domain", s.domain)
+	d.log.Info("Worktree is Idle", "project", s.project, "domain", s.domain())
 	d.stopProcesses(s, st.lazy)
 	d.servedHooks(plugin.EventIdle, s)
 }
@@ -487,7 +494,7 @@ func (r router) Begin(domain string) func() {
 
 func (r router) Upstream(ctx context.Context, domain string, waitForPreparation bool) (string, error) {
 	d := r.d
-	if domain == d.cfg.DashboardDomain {
+	if domain == d.dashboardDomain() {
 		return d.dashboardUpstream(), nil
 	}
 	if label, ok := d.serviceDomainLabel(domain); ok {
@@ -591,10 +598,10 @@ func (r router) RedirectTarget(domain string) (string, bool) {
 
 var _ proxy.StaticRouter = router{}
 
-// worktreeState is the state of the Worktree served at domain.
-func (d *Daemon) worktreeState(domain string) string {
+// worktreeState is the state of the Worktree at dir.
+func (d *Daemon) worktreeState(dir string) string {
 	d.servedMu.Lock()
-	s, ok := d.served[domain]
+	s, ok := d.served[dir]
 	d.servedMu.Unlock()
 	if !ok {
 		return ""
@@ -636,9 +643,13 @@ func (d *Daemon) servedAt(domain string) (*served, bool) {
 	if target, ok := d.aliasTarget(domain); ok {
 		domain = target
 	}
+	host, ok := strings.CutSuffix(domain, "."+d.rootDomain())
+	if !ok {
+		return nil, false
+	}
 	d.servedMu.Lock()
 	defer d.servedMu.Unlock()
-	s, ok := d.served[domain]
+	s, ok := d.servedHosts[host]
 	return s, ok
 }
 

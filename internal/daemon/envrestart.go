@@ -11,27 +11,38 @@ import (
 // Processes.
 
 // restartForEnv restarts the Worktree's running Processes, after Laneway
-// changed its .env, with cfg, the config they start from now. The caller
-// holds s.lifecycle.
-func (d *Daemon) restartForEnv(s *served, cfg worktreeConfig) {
+// changed its .env, with cfg, the config they start from now, and returns
+// their names. The caller holds s.lifecycle.
+func (d *Daemon) restartForEnv(s *served, cfg worktreeConfig) []string {
+	return d.restartRunningOf(s, cfg, func(recipe.Process) bool { return true }, "restarting Processes for the changed .env")
+}
+
+// restartRunningOf restarts the Worktree's running Processes that which
+// selects, with cfg, the config they start from now, and returns their
+// names; why is what the log says. The caller holds s.lifecycle.
+func (d *Daemon) restartRunningOf(s *served, cfg worktreeConfig, which func(recipe.Process) bool, why string) []string {
 	var procs []recipe.Process
 	var names []string
 	for _, proc := range cfg.Processes {
+		if !which(proc) {
+			continue
+		}
 		if p, ok := d.supervisor.Process(s.group, proc.Name); ok && p.State() != supervisor.StateFailed {
 			procs = append(procs, proc)
 			names = append(names, proc.Name)
 		}
 	}
 	if len(procs) == 0 {
-		return
+		return nil
 	}
-	d.log.Info("restarting Processes for the changed .env", "project", s.project, "dir", s.dir, "processes", names)
+	d.log.Info(why, "project", s.project, "dir", s.dir, "processes", names)
 	d.stopProcesses(s, names)
 	for _, spec := range d.specs(s, cfg, procs) {
 		if _, err := d.startProcess(s, spec, true); err != nil {
-			d.log.Error("restarting Process for the changed .env", "project", s.project, "dir", s.dir, "err", err)
+			d.log.Error(why, "project", s.project, "dir", s.dir, "err", err)
 		}
 	}
+	return names
 }
 
 // restartRunning restarts the running Processes of the served Worktree s,
@@ -49,17 +60,17 @@ func (d *Daemon) restartRunning(s *served, why string) {
 	d.restartForEnv(s, cfg)
 }
 
-// servedWorktree is the Worktree served at its own Domain domain, or nil.
-func (d *Daemon) servedWorktree(domain string) *served {
+// servedWorktree is the served Worktree at dir, or nil.
+func (d *Daemon) servedWorktree(dir string) *served {
 	d.servedMu.Lock()
 	defer d.servedMu.Unlock()
-	return d.served[domain]
+	return d.served[dir]
 }
 
-// lockLifecycle takes the lifecycle lock of the Worktree served at its own
-// Domain domain, if it is served, and returns what releases it.
-func (d *Daemon) lockLifecycle(domain string) (unlock func()) {
-	s := d.servedWorktree(domain)
+// lockLifecycle takes the lifecycle lock of the Worktree at dir, if it is
+// served, and returns what releases it.
+func (d *Daemon) lockLifecycle(dir string) (unlock func()) {
+	s := d.servedWorktree(dir)
 	if s == nil {
 		return func() {}
 	}
@@ -67,16 +78,16 @@ func (d *Daemon) lockLifecycle(domain string) (unlock func()) {
 	return s.lifecycle.Unlock
 }
 
-// primaryDomainMoved brings the Worktree served at domain (its own Domain)
-// up to date with its new Primary Domain, in the background: once it is
-// Ready, its Env Patch is applied again and, if it is running, its running
-// Processes restart, since they read .env and their hosts when they start.
+// primaryDomainMoved brings the served Worktree at dir up to date with its
+// new Primary Domain, in the background: once it is Ready, its Env Patch is
+// applied again and, if it is running, its running Processes restart,
+// since they read .env and their hosts when they start.
 // A Failed setup gets the new Primary Domain when retried. Setup's env step
 // takes the lifecycle lock too, so the two never write .env at once. A
 // stopped Worktree isn't started: its next start uses the new Primary
 // Domain.
-func (d *Daemon) primaryDomainMoved(domain string) {
-	s := d.servedWorktree(domain)
+func (d *Daemon) primaryDomainMoved(dir string) {
+	s := d.servedWorktree(dir)
 	if s == nil {
 		return
 	}
@@ -96,11 +107,11 @@ func (d *Daemon) primaryDomainMoved(domain string) {
 	})
 }
 
-// restartServedForEnv restarts the running Processes of the Worktree served
-// at domain (its own Domain), if it is running, in the background, after
+// restartServedForEnv restarts the running Processes of the served Worktree
+// at dir, if it is running, in the background, after
 // Laneway changed its .env outside a start (`lane link`).
-func (d *Daemon) restartServedForEnv(domain string) {
-	s := d.servedWorktree(domain)
+func (d *Daemon) restartServedForEnv(dir string) {
+	s := d.servedWorktree(dir)
 	if s == nil {
 		return
 	}

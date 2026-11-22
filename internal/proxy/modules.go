@@ -15,6 +15,8 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+
+	"github.com/lanewayhq/laneway/internal/rootdomain"
 )
 
 // Two small Caddy modules connect the fixed Caddy config to Laneway: a handler
@@ -27,13 +29,16 @@ func init() {
 }
 
 // routeHandler (http.handlers.laneway) runs before reverse_proxy. It answers
-// requests for unknown Domains itself, and otherwise tells reverse_proxy which
+// requests for unknown Domains itself, and for .localhost names while the
+// Root Domain is another one, and otherwise tells reverse_proxy which
 // upstream to dial.
 type routeHandler struct {
 	// Proxy is the id of the Proxy whose Router to ask.
 	Proxy string `json:"proxy"`
 
-	router Router
+	router     Router
+	rootDomain func() string
+	serves     func(string) bool
 }
 
 func (routeHandler) CaddyModule() caddy.ModuleInfo {
@@ -41,13 +46,17 @@ func (routeHandler) CaddyModule() caddy.ModuleInfo {
 }
 
 func (h *routeHandler) Provision(caddy.Context) error {
-	r, err := routerFor(h.Proxy)
-	h.router = r
+	cfg, err := configFor(h.Proxy)
+	h.router, h.rootDomain, h.serves = cfg.Router, cfg.RootDomain, cfg.Serves
 	return err
 }
 
 func (h *routeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	domain := requestDomain(r)
+	if root := h.rootDomain(); !rootdomain.IsDefault(root) && rootdomain.Covers(rootdomain.Default, domain) {
+		writeLocalhost(w, r, domain, root, h.serves)
+		return nil
+	}
 	if isPageLoad(r) {
 		if primary, ok := h.router.RedirectTarget(domain); ok {
 			redirectToPrimaryDomain(w, r, primary)
@@ -135,25 +144,55 @@ func writePage(w http.ResponseWriter, status int, title string, paragraphs ...st
 	fmt.Fprint(w, "<p><small>Laneway</small></p>\n</body></html>\n")
 }
 
-// certPermission (tls.permission.laneway) allows on-demand certificates for
-// localhost and its subdomains only. Unknown *.localhost names get a
-// certificate too, so they can be shown the "nothing is served here" page.
-type certPermission struct{}
+// certPermission (tls.permission.laneway) allows on-demand certificates,
+// under the localhost Root Domain, for every .localhost name, so unknown
+// names can be shown the "nothing is served here" page. Under any other
+// Root Domain it allows them only for the names Laneway serves
+// (Config.Serves), and for the .localhost names that move to one, for the
+// page naming their new URL: anyone reaching the proxy can't have it issue
+// certificates for any name (ADR-0009).
+type certPermission struct {
+	// Proxy is the id of the Proxy whose Root Domain to ask.
+	Proxy string `json:"proxy"`
+
+	rootDomain func() string
+	serves     func(string) bool
+}
 
 func (certPermission) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{ID: "tls.permission.laneway", New: func() caddy.Module { return new(certPermission) }}
 }
 
-func (certPermission) CertificateAllowed(_ context.Context, name string) error {
+func (c *certPermission) Provision(caddy.Context) error {
+	cfg, err := configFor(c.Proxy)
+	c.rootDomain, c.serves = cfg.RootDomain, cfg.Serves
+	return err
+}
+
+func (c *certPermission) CertificateAllowed(_ context.Context, name string) error {
 	name = strings.ToLower(name)
-	if name == "localhost" || strings.HasSuffix(name, ".localhost") {
+	root := c.rootDomain()
+	if rootdomain.Covers(rootdomain.Default, name) {
+		if rootdomain.IsDefault(root) {
+			return nil
+		}
+		if moved := rootdomain.Move(name, rootdomain.Default, root); c.serves != nil && !c.serves(moved) {
+			return fmt.Errorf("Laneway serves nothing at %s, nor at %s under the Root Domain", name, moved)
+		}
 		return nil
 	}
-	return fmt.Errorf("%s is not a .localhost name", name)
+	switch {
+	case !rootdomain.Covers(root, name):
+		return fmt.Errorf("%s is not %s or a name under it", name, root)
+	case c.serves != nil && !c.serves(name):
+		return fmt.Errorf("Laneway serves nothing at %s", name)
+	}
+	return nil
 }
 
 var (
 	_ caddyhttp.MiddlewareHandler = (*routeHandler)(nil)
 	_ caddy.Provisioner           = (*routeHandler)(nil)
 	_ caddytls.OnDemandPermission = (*certPermission)(nil)
+	_ caddy.Provisioner           = (*certPermission)(nil)
 )

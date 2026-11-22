@@ -64,12 +64,18 @@ func runDoctor(ctx context.Context, env Env, args []string) error {
 	r := &report{w: env.Stdout}
 	fmt.Fprintf(env.Stdout, "Laneway doctor (%s)\n\n", plat.Name())
 
-	daemonCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+	// Each call to the daemon gets its own time, so checks that take long
+	// before it (asking Windows' trust store from WSL2 can take seconds)
+	// don't use it up.
+	daemonCtx := func() (context.Context, context.CancelFunc) {
+		return context.WithTimeout(ctx, 5*time.Second)
+	}
 	daemon, daemonErr := apiClient(env)
 	var info api.DaemonInfo
 	if daemonErr == nil {
-		info, daemonErr = daemon.Daemon(daemonCtx)
+		c, cancel := daemonCtx()
+		info, daemonErr = daemon.Daemon(c)
+		cancel()
 	}
 	if daemonErr != nil {
 		r.check(statusFail, "daemon", daemonErr.Error(),
@@ -88,7 +94,9 @@ func runDoctor(ctx context.Context, env Env, args []string) error {
 	}
 	if daemonErr == nil {
 		// Each Service's port, which Laneway listens on to start it.
-		services, err := daemon.Services(daemonCtx)
+		c, cancel := daemonCtx()
+		services, err := daemon.Services(c)
+		cancel()
 		if err != nil {
 			r.check(statusWarn, "Service ports", "can't list the Services: "+err.Error(), "")
 		}
@@ -98,6 +106,12 @@ func runDoctor(ctx context.Context, env Env, args []string) error {
 	}
 	checkPortPermission(ctx, r, plat)
 	checkCA(ctx, r, plat, p.CARootCert())
+	if daemonErr == nil {
+		c, cancel := daemonCtx()
+		checkStaleEnvKeys(c, r, daemon)
+		cancel()
+		checkRemoteAccess(ctx, r, plat, info, p.GlobalConfig())
+	}
 
 	if e, err := plat.ContainerEngine(ctx); err != nil {
 		r.check(statusFail, "container engine", err.Error(),
@@ -336,4 +350,39 @@ func executable() (string, error) {
 		return "", err
 	}
 	return filepath.EvalSymlinks(exe)
+}
+
+// checkStaleEnvKeys lists, for every Worktree's env file, the keys outside
+// its Env Patch whose values still name .localhost or the previous Root
+// Domain, which Laneway doesn't change. Never their values: env files hold
+// secrets.
+func checkStaleEnvKeys(ctx context.Context, r *report, daemon *client.Client) {
+	const name = "stale env keys"
+	projects, err := daemon.Projects(ctx)
+	if err != nil {
+		r.check(statusWarn, name, "can't list the Projects: "+err.Error(), "")
+		return
+	}
+	found := false
+	for _, p := range projects {
+		for _, w := range p.Worktrees {
+			var files []string
+			keys := map[string][]string{}
+			for _, k := range w.StaleEnvKeys {
+				if _, ok := keys[k.File]; !ok {
+					files = append(files, k.File)
+				}
+				keys[k.File] = append(keys[k.File], k.Key)
+			}
+			for _, file := range files {
+				found = true
+				r.check(statusWarn, name, filepath.Join(w.Path, file)+": "+strings.Join(keys[file], ", "),
+					"their values still name .localhost or the previous Root Domain; Laneway only changes the "+
+						"Env Patch's keys, so change these to the Worktree's URLs (`lane info` shows them)")
+			}
+		}
+	}
+	if !found {
+		r.check(statusOK, name, "none", "")
+	}
 }

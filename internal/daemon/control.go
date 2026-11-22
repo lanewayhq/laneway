@@ -32,7 +32,7 @@ func (d *Daemon) control(ctx context.Context, action string, req api.ControlRequ
 	}
 	w := d.apiProject(p).Worktrees[i]
 	d.servedMu.Lock()
-	s, ok := d.served[w.Domain]
+	s, ok := d.served[w.Path]
 	d.servedMu.Unlock()
 	if !ok {
 		return api.Worktree{}, &api.Error{Code: api.CodeUnknownWorktree, Message: fmt.Sprintf("the Worktree at %s isn't served yet", w.Path)}
@@ -180,7 +180,7 @@ func (d *Daemon) restart(ctx context.Context, s *served, cfg recipe.Resolved, pr
 // Processes.
 func (d *Daemon) withState(w api.Worktree) api.Worktree {
 	w.Setup = d.setupOf(w.Path)
-	w.State = d.worktreeState(w.Domain)
+	w.State = d.worktreeState(w.Path)
 	w.Processes = nil
 	for _, st := range d.supervisor.Processes(w.Path) {
 		w.Processes = append(w.Processes, api.Process{Name: st.Name, State: string(st.State)})

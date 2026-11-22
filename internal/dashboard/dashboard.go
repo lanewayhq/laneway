@@ -1,5 +1,5 @@
 // Package dashboard is Laneway's web Dashboard: a page built into the binary,
-// served by the daemon at https://laneway.localhost, that talks to the same
+// served by the daemon at https://laneway.<Root Domain>, that talks to the same
 // JSON API as the CLI (package api), mounted under /api.
 //
 // The frontend is plain HTML, CSS and JavaScript modules in static/, with no
@@ -21,25 +21,27 @@ import (
 	"time"
 
 	"github.com/lanewayhq/laneway/internal/api"
+	"github.com/lanewayhq/laneway/internal/capage"
 )
-
-// DefaultDomain is where the daemon serves the Dashboard.
-const DefaultDomain = "laneway.localhost"
 
 //go:embed static
 var static embed.FS
 
-// Handler serves the Dashboard at domain: its files, and routes (the
+// Handler serves the Dashboard at the Domain domain returns, read on every
+// request so it may change while the Dashboard runs: its files, and routes (the
 // daemon's API routes) under /api, so GET /api/v1/projects is GET
 // /v1/projects. Requests that can change state only reach routes from the
-// Dashboard's own pages (see sameOrigin).
-func Handler(domain string, routes http.Handler) http.Handler {
+// Dashboard's own pages (see sameOrigin). ca is the CA page (package capage),
+// at /ca and under /ca/.
+func Handler(domain func() string, routes http.Handler, ca http.Handler) http.Handler {
 	files, err := fs.Sub(static, "static")
 	if err != nil {
 		panic(err)
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/api/", sameOrigin(domain, http.StripPrefix("/api", routes)))
+	mux.Handle(capage.Path, ca)
+	mux.Handle(capage.Path+"/", ca)
 	mux.Handle("/", pageHeaders(pages(files)))
 	return mux
 }
@@ -96,7 +98,7 @@ func pageHeaders(next http.Handler) http.Handler {
 //
 // Reads need no check: without CORS headers, a page elsewhere can't read
 // the answer.
-func sameOrigin(domain string, next http.Handler) http.Handler {
+func sameOrigin(domain func() string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
 			next.ServeHTTP(w, r)
@@ -106,12 +108,13 @@ func sameOrigin(domain string, next http.Handler) http.Handler {
 		if h, _, err := net.SplitHostPort(host); err == nil {
 			host = h
 		}
-		if host != domain || r.Header.Get("Origin") != "https://"+r.Host {
+		dashboard := domain()
+		if host != dashboard || r.Header.Get("Origin") != "https://"+r.Host {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(api.ErrorResponse{Error: api.Error{
 				Code:    api.CodeForbidden,
-				Message: "only the Dashboard's own pages at https://" + domain + " can change anything through it",
+				Message: "only the Dashboard's own pages at https://" + dashboard + " can change anything through it",
 			}})
 			return
 		}

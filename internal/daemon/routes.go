@@ -20,6 +20,7 @@ func (d *Daemon) routes() http.Handler {
 	mux.HandleFunc("GET /v1/worktree", d.handleWorktree)
 	mux.HandleFunc("GET /v1/info", d.handleInfo)
 	mux.HandleFunc("GET /v1/daemon", d.handleDaemonInfo)
+	mux.HandleFunc("POST /v1/root-domain", d.handleSetRootDomain)
 	mux.HandleFunc("GET /v1/logs", d.handleLogs)
 	mux.HandleFunc("GET /v1/worktree/diff", d.handleDiff)
 	mux.HandleFunc("POST /v1/worktree/ready", d.handleWorktreeReady)
@@ -230,11 +231,36 @@ func (d *Daemon) handleGC(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Daemon) handleDaemonInfo(w http.ResponseWriter, r *http.Request) {
-	info := api.DaemonInfo{PID: os.Getpid(), ProxyAddr: d.proxy.Addr().String()}
+	writeJSON(w, http.StatusOK, d.daemonInfo())
+}
+
+// daemonInfo is the body of GET /v1/daemon and of each `daemon` event.
+func (d *Daemon) daemonInfo() api.DaemonInfo {
+	info := api.DaemonInfo{
+		PID:        os.Getpid(),
+		ProxyAddr:  d.proxy.Addr().String(),
+		RootDomain: d.rootDomain(),
+		Dashboard:  domainURL(d.dashboardDomain()),
+		CAPage:     d.caPageURL(),
+	}
 	if addr := d.HTTPAddr(); addr != nil {
 		info.HTTPAddr = addr.String()
 	}
-	writeJSON(w, http.StatusOK, info)
+	info.Listen, info.ListenError = d.listenStatus()
+	return info
+}
+
+func (d *Daemon) handleSetRootDomain(w http.ResponseWriter, r *http.Request) {
+	var req api.RootDomainRequest
+	if !readJSON(w, r, &req) {
+		return
+	}
+	res, err := d.setRootDomain(req.RootDomain)
+	if err != nil {
+		d.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {

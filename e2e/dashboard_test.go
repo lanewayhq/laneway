@@ -22,8 +22,9 @@ import (
 
 // Every daemon in this test binary serves a Dashboard, and Caddy's
 // certificate cache is shared by name (see "Serving Domains in tests"), so
-// only TestTheDashboardIsServedAtLanewayLocalhost uses the default Domain;
-// the other tests give theirs a unique one with dashboardDaemon.
+// only TestTheDashboardIsServedAtLanewayLocalhost uses the default Domain,
+// under a custom Root Domain too; the other tests give theirs a unique one
+// with dashboardDaemon.
 
 func TestTheDashboardIsServedAtLanewayLocalhost(t *testing.T) {
 	t.Parallel()
@@ -39,6 +40,15 @@ func TestTheDashboardIsServedAtLanewayLocalhost(t *testing.T) {
 	}
 	if !strings.Contains(page.Body, "<title>Laneway</title>") {
 		t.Fatalf("not the Dashboard:\n%s", page.Body)
+	}
+
+	// Under a custom Root Domain, laneway.localhost names the Dashboard's
+	// new URL instead, until the Root Domain is localhost again.
+	d.SetRootDomain("rd-dash-moved.example.test")
+	assertMovedPage(t, d, "https://laneway.localhost/", "https://laneway.rd-dash-moved.example.test/")
+	d.SetRootDomain("localhost")
+	if page := d.Navigate("https://laneway.localhost/"); !strings.Contains(page.Body, "<title>Laneway</title>") {
+		t.Fatalf("with the Root Domain back to localhost, status %d, want the Dashboard:\n%s", page.StatusCode, page.Body)
 	}
 }
 
@@ -372,8 +382,9 @@ func TestEveryFileTheDashboardLoadsIsBuiltIn(t *testing.T) {
 	contentTypes := map[string]string{".js": "text/javascript", ".css": "text/css", ".html": "text/html"}
 	seen := map[string]bool{}
 	// A page's own path, nested like /projects/shop, loads the same files
-	// as /, so the page refers to them by absolute paths.
-	queue := []string{"/", "/projects/shop"}
+	// as /, so the page refers to them by absolute paths. The CA page
+	// loads only its own files too.
+	queue := []string{"/", "/projects/shop", "/ca"}
 	for len(queue) > 0 {
 		file := queue[0]
 		queue = queue[1:]
@@ -399,7 +410,7 @@ func TestEveryFileTheDashboardLoadsIsBuiltIn(t *testing.T) {
 	for _, want := range []string{"/app.js", "/style.css", "/router.js", "/sidebar.js", "/icons.js", "/dom.js",
 		"/pages/index.js", "/pages/overview.js", "/pages/project.js", "/pages/logs.js", "/pages/services.js",
 		"/pages/orphans.js", "/pages/plugins.js", "/confirm.js", "/remove.js", "/time.js", "/pluginitems.js",
-		"/attention.js", "/projects.js", "/changes.js", "/diff.js"} {
+		"/attention.js", "/projects.js", "/changes.js", "/diff.js", "/ca", "/ca/style.css"} {
 		if !seen[want] {
 			t.Errorf("the Dashboard never loads %s (loaded: %v)", want, slices.Sorted(maps.Keys(seen)))
 		}

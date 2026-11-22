@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 	"strings"
+
+	"github.com/lanewayhq/laneway/internal/rootdomain"
 )
 
 // PreparingRefresh is how often the Preparing page reloads itself, in
@@ -39,6 +41,46 @@ func redirectToPrimaryDomain(w http.ResponseWriter, r *http.Request, primary str
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	http.Redirect(w, r, "https://"+host+r.URL.RequestURI(), http.StatusTemporaryRedirect)
+}
+
+// writeLocalhost answers a request for domain, a .localhost name, while
+// the Root Domain is root, another domain: .localhost names are no longer
+// served there (ADR-0009). The name domain moved to is the same labels
+// under root. A page load is shown a page linking the same path and query
+// there, if Laneway serves it (serves; nil serves every name), and any
+// other request gets an error naming that URL in one line of plain text.
+// It is never a redirect, so a stale .localhost URL fails on the PC, where
+// it can be fixed.
+func writeLocalhost(w http.ResponseWriter, r *http.Request, domain, root string, serves func(string) bool) {
+	moved := rootdomain.Move(domain, rootdomain.Default, root)
+	known := serves == nil || serves(moved)
+	host := moved
+	if _, port, err := net.SplitHostPort(r.Host); err == nil {
+		host = net.JoinHostPort(moved, port)
+	}
+	url := "https://" + host + r.URL.RequestURI()
+	why := fmt.Sprintf("the Root Domain is %s, so Laneway doesn't serve .localhost names", root)
+	if !isPageLoad(r) {
+		w.Header().Set("Cache-Control", "no-store")
+		if known {
+			http.Error(w, fmt.Sprintf("Laneway serves this at %s now: %s.", url, why), http.StatusNotFound)
+		} else {
+			http.Error(w, fmt.Sprintf("Laneway serves nothing at %s: %s, and serves nothing at %s either.",
+				domain, why, moved), http.StatusNotFound)
+		}
+		return
+	}
+	whyHTML := fmt.Sprintf("The Root Domain is <code>%s</code>, so Laneway doesn't serve <code>.localhost</code> names "+
+		"such as <code>%s</code>.", html.EscapeString(root), html.EscapeString(domain))
+	if !known {
+		writePage(w, http.StatusNotFound, "Nothing is served here", whyHTML,
+			fmt.Sprintf("Nothing is served at <code>%s</code> either. "+
+				"Run <code>lane status</code> to see the Linked Projects and their Domains.", html.EscapeString(moved)))
+		return
+	}
+	writePage(w, http.StatusNotFound, "This address has moved", whyHTML,
+		fmt.Sprintf("This page is at <a href=\"%s\">%s</a>.", html.EscapeString(url), html.EscapeString(url)),
+		"Update any bookmark, env file or code that still uses the old address.")
 }
 
 // writeStartErrorPage explains why the Domain's Primary Process didn't start,

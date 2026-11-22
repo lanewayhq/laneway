@@ -175,7 +175,7 @@ func usesPlugin(cfg recipe.Resolved, p plugin.Plugin) bool {
 // done once for gen, however many fetches reach it.
 func (d *Daemon) catchUp(p registry.Project, w worktreeRef, gen uint64) {
 	again := d.setupCatchesUp(w.dir, gen)
-	s := d.servedWorktree(w.domain)
+	s := d.servedWorktree(w.dir)
 	if s != nil && !s.catchesUp(gen) {
 		s = nil
 	}

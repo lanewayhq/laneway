@@ -24,7 +24,6 @@ import (
 	"github.com/lanewayhq/laneway/internal/catalog"
 	"github.com/lanewayhq/laneway/internal/clock"
 	"github.com/lanewayhq/laneway/internal/container"
-	"github.com/lanewayhq/laneway/internal/dashboard"
 	"github.com/lanewayhq/laneway/internal/github"
 	"github.com/lanewayhq/laneway/internal/paths"
 	"github.com/lanewayhq/laneway/internal/platform"
@@ -83,9 +82,10 @@ type Config struct {
 	// Platform tells who holds a port a Service can't listen on. Nil
 	// means the real one for this machine.
 	Platform platform.Platform
-	// DashboardDomain is where the Dashboard is served,
-	// dashboard.DefaultDomain if empty. Tests running several daemons at
-	// once give each its own, since Caddy's certificate cache is shared.
+	// DashboardDomain is where the Dashboard is served, overriding
+	// laneway.<Root Domain> (rootdomain.Dashboard). Tests running several
+	// daemons at once give each its own, since Caddy's certificate cache is
+	// shared.
 	DashboardDomain string
 	// PluginTimeout is how long one call to a Plugin's module may take;
 	// plugin.DefaultTimeout if 0.
@@ -102,6 +102,10 @@ type Config struct {
 	// github.com/…`) are downloaded from: github.DefaultURL if empty.
 	// Tests serve their own releases.
 	GitHub string
+	// ListenInterval is how often the extra addresses the global config's
+	// listen names are resolved again and those not listened on retried;
+	// DefaultListenInterval if zero.
+	ListenInterval time.Duration
 }
 
 // DefaultServiceHosts are where Services listen: loopback only, IPv4 and
@@ -127,8 +131,17 @@ type Daemon struct {
 	supervisor *supervisor.Supervisor
 	proxy      *proxy.Proxy
 	redirect   *proxy.Redirect // nil if HTTPAddr couldn't be bound
+	caPage     http.Handler    // see capage.go
 	servedMu   sync.Mutex
-	served     map[string]*served // Domain → what is served there
+	served     map[string]*served // Worktree directory → what is served there
+	// servedHosts indexes served by host, the Domain without the Root
+	// Domain, which a new Root Domain doesn't change. Guarded by servedMu.
+	servedHosts map[string]*served
+
+	// root is the Root Domain (see rootdomain.go). rootChange serialises
+	// changing it.
+	root       atomic.Pointer[string]
+	rootChange sync.Mutex
 
 	// Worktree starts run in the background. Shutdown cancels stopping and
 	// waits for them, so none starts Processes after StopAll.
@@ -178,6 +191,8 @@ type Daemon struct {
 	handChecked map[string]handCheck
 	services    *service.Manager // shared Services, see services.go
 
+	listen listening // extra listen addresses, see listen.go
+
 	// github is where Plugins added from GitHub are downloaded from, see
 	// github.go.
 	github *github.Releases
@@ -216,9 +231,6 @@ func Start(cfg Config) (*Daemon, error) {
 	}
 	if cfg.HTTPAddr == "" {
 		cfg.HTTPAddr = DefaultHTTPAddr
-	}
-	if cfg.DashboardDomain == "" {
-		cfg.DashboardDomain = dashboard.DefaultDomain
 	}
 	if cfg.Clock == nil {
 		cfg.Clock = clock.Real()
@@ -275,11 +287,13 @@ func Start(cfg Config) (*Daemon, error) {
 		registry:    reg,
 		listener:    ln,
 		served:      map[string]*served{},
+		servedHosts: map[string]*served{},
 		closing:     make(chan struct{}),
 		done:        make(chan struct{}),
 		catalog:     source,
 		lastCatalog: lastCatalog,
 	}
+	d.root.Store(new(d.startRootDomain()))
 	d.supervisor = supervisor.New(log, supervisor.Options{Clock: cfg.Clock, LogMaxBytes: cfg.LogFileMaxBytes,
 		OnEvent: d.processEvent})
 	d.preparer = prov
@@ -299,10 +313,13 @@ func Start(cfg Config) (*Daemon, error) {
 	})
 	d.serveRecordedServices()
 	d.stopping, d.stop = context.WithCancel(context.Background())
+	d.caPage = d.newCAPage()
 	d.proxy, err = proxy.Start(proxy.Config{
 		Addr:       cfg.ProxyAddr,
 		StorageDir: cfg.Paths.CertStorage(),
 		Router:     router{d},
+		RootDomain: d.rootDomain,
+		Serves:     d.serves,
 		LogErrors:  cfg.Logger != nil,
 	})
 	if err != nil {
@@ -311,9 +328,10 @@ func Start(cfg Config) (*Daemon, error) {
 		return nil, err
 	}
 	_, httpsPort, _ := net.SplitHostPort(d.proxy.Addr().String())
-	if d.redirect, err = proxy.StartRedirect(cfg.HTTPAddr, httpsPort); err != nil {
+	if d.redirect, err = proxy.StartRedirect(cfg.HTTPAddr, httpsPort, d.rootDomain, d.serves, d.plainHTTP); err != nil {
 		log.Error("not redirecting plain HTTP to HTTPS", "addr", cfg.HTTPAddr, "err", err)
 	}
+	d.reconcileListen()
 	if err := d.startDashboard(); err != nil {
 		d.stopRedirect(context.Background())
 		d.proxy.Stop()
@@ -339,6 +357,10 @@ func Start(cfg Config) (*Daemon, error) {
 		d.syncWorktrees(ctx, p)
 		d.serveKnownWorktrees(p)
 	}
+	// Every Env Patch was applied with the Root Domain above; a hand edit
+	// of root_domain since the last start also moves Bucket origins.
+	applied, _ := reg.RootDomain()
+	d.applyRootDomain(context.Background(), applied)
 	d.serveOrphans()
 	d.fetchLinkedProjectsPlugins()
 	d.server = &http.Server{
@@ -352,6 +374,7 @@ func Start(cfg Config) (*Daemon, error) {
 		}
 		close(d.done)
 	}()
+	d.keepListening()
 	log.Info("daemon started", "socket", cfg.Paths.Socket, "proxy", d.proxy.Addr())
 	return d, nil
 }
@@ -399,6 +422,7 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 	}
 	os.Remove(d.dashboardSocket())
 	d.watcher.Close()
+	d.stopListening()
 	if rerr := d.stopRedirect(ctx); err == nil {
 		err = rerr
 	}

@@ -127,13 +127,35 @@ func TestFullOutputIsWrittenToALogFileInTheStateDirectory(t *testing.T) {
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
 	startByBrowsing(t, d, "logs-file.localhost")
-	logFile := filepath.Join(d.Paths.StateDir, "logs", "logs-file.localhost", "web.log")
+	// The directory is the Worktree's Domain without the Root Domain.
+	logFile := filepath.Join(d.Paths.StateDir, "logs", "logs-file", "web.log")
 	waitForFile(t, logFile, "run\nerr\n")
 
 	// Output from the next start is added to the same file.
 	d.Restart()
 	startByBrowsing(t, d, "logs-file.localhost")
 	waitForFile(t, logFile, "run\nerr\nrun\nerr\n")
+}
+
+func TestALogFileStaysTheSameWhenTheRootDomainChanges(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	// APP_URL names the Domain, so the change restarts the Process.
+	repo := gitfixture.New(t, "logs-root").
+		WriteFile(".gitignore", ".env\n").
+		WriteFile("laneway.toml", "[env]\nAPP_URL = \"{url}\"\n\n"+processConfig("echo run; exec "+testkit.TestServer(t))).
+		Commit("declare web Process")
+	wt := repo.AddWorktree("feature")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	startByBrowsing(t, d, "feature.logs-root.localhost")
+	logFile := filepath.Join(d.Paths.StateDir, "logs", "feature.logs-root", "web.log")
+	waitForFile(t, logFile, "run\n")
+
+	d.SetRootDomain("logs-root.example.test")
+
+	// The running Process restarted for the change, into the same file.
+	waitForFile(t, logFile, "run\nrun\n")
+	assertLines(t, d.MustRunCLI(wt.Dir, "logs", "web").Stdout, "run", "run")
 }
 
 // waitForFile waits until the file at path holds exactly want.
@@ -156,7 +178,7 @@ func TestLogFilesRotateAndKeepTheNewestOutput(t *testing.T) {
 		Commit("declare web Process")
 	d.MustRunCLI(repo.Dir, "link")
 	startByBrowsing(t, d, "logs-rotate.localhost")
-	dir := filepath.Join(d.Paths.StateDir, "logs", "logs-rotate.localhost")
+	dir := filepath.Join(d.Paths.StateDir, "logs", "logs-rotate")
 	waitForLogs(t, d, repo.Dir, []string{"logs", "web"}, "done")
 
 	// The newest output is in web.log, older output in web.log.1 (newer)

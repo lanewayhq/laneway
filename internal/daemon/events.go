@@ -34,6 +34,7 @@ func (d *Daemon) projectList() api.ProjectList {
 			if cfg, err := d.plugins.ResolveDir(w.Path); err == nil {
 				w.Declared = declaredProcesses(cfg)
 				w.PluginItems = d.worktreeItems(plugin.ScopeWorktree, ap.Name, w, cfg)
+				w.StaleEnvKeys = d.staleEnvKeys(w.Path, w.Main, cfg)
 				if w.Main {
 					ap.PluginItems = d.worktreeItems(plugin.ScopeProject, ap.Name, w, cfg)
 				}
@@ -60,10 +61,11 @@ func declaredProcesses(cfg recipe.Resolved) []api.DeclaredProcess {
 
 // handleEvents is GET /v1/events, a stream of server-sent events: a
 // `projects` event (data = the api.ProjectList GET /v1/projects returns),
-// a `services` event (data = the api.ServiceList of GET /v1/services) and
-// an `orphans` event (data = the api.OrphanList of GET /v1/orphans) at
-// once, then another of each whenever it changes. It ends when the client
-// goes away or the daemon shuts down.
+// a `services` event (data = the api.ServiceList of GET /v1/services), an
+// `orphans` event (data = the api.OrphanList of GET /v1/orphans) and a
+// `daemon` event (data = the api.DaemonInfo of GET /v1/daemon, with the
+// Root Domain and listen addresses) at once, then another of each whenever
+// it changes. It ends when the client goes away or the daemon shuts down.
 //
 // Changes are found by comparing each list every eventsInterval, so
 // anything those routes report shows up here without its code having to
@@ -76,6 +78,7 @@ func (d *Daemon) handleEvents(w http.ResponseWriter, r *http.Request) {
 		{"projects", func() any { return d.projectList() }},
 		{"services", func() any { return d.listServices() }},
 		{"orphans", func() any { return d.listOrphans() }},
+		{"daemon", func() any { return d.daemonInfo() }},
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")

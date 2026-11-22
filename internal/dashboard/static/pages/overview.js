@@ -1,10 +1,12 @@
 // The Overview, at /, with no Project selected: totals of Projects and
 // Worktrees, Processes running, Services and Orphans; what needs attention
 // across every Project (failures first); the linked Worktrees that are ready
-// to Remove; a card per Project; the Services with their state and port; and
-// links: each Service's own links (from the Plugin that adds its Engine), the
-// guides and how to Link a Project. It re-renders on every `projects`,
-// `services` and `orphans` event, and each minute for the relative times.
+// to Remove; a card per Project; how other devices reach Laneway (the Root
+// Domain, the addresses it listens on, and a QR code for the CA page); the
+// Services with their state and port; and links: each Service's own links
+// (from the Plugin that adds its Engine), the guides and how to Link a
+// Project. It re-renders on every `projects`, `services`, `orphans` and
+// `daemon` event, and each minute for the relative times.
 //
 // Which Worktrees need attention or are ready to Remove is attention.js's
 // call. A Worktree ready to Remove gets a Remove button
@@ -28,7 +30,7 @@ export default {
   path: "/",
   title: "Overview",
   show(el, dash) {
-    const data = { projects: null, services: null, orphans: null };
+    const data = { projects: null, services: null, orphans: null, daemon: null };
     const shown = new Set(); // Needs attention rows whose full list is shown
     const removing = new Set(); // paths of Worktrees whose Remove is in progress
     let removedAll = null; // what the last "Remove all N" did: { removed, total, orphans }
@@ -49,7 +51,7 @@ export default {
           totals(data),
           h("div", { class: "ov-cols" },
             h("div", { class: "ov-stack" }, attentionCard(projects), projectsCard(projects)),
-            h("div", { class: "ov-stack" }, readyCard(projects), servicesCard(data.services), linksCard(data.services)))));
+            h("div", { class: "ov-stack" }, readyCard(projects), remoteCard(data.daemon), servicesCard(data.services), linksCard(data.services)))));
     };
 
     // attentionCard lists failures grouped by Project, then Worktrees with
@@ -171,6 +173,10 @@ export default {
       data.orphans = list.orphans;
       render();
     });
+    dash.onDaemon((info) => {
+      data.daemon = info;
+      render();
+    });
     const timer = setInterval(render, 60_000);
     dash.signal.addEventListener("abort", () => clearInterval(timer));
   },
@@ -274,6 +280,59 @@ function servicesCard(services) {
 
 function serviceTone(state) {
   return { running: "ok", starting: "warn", idle: "warn" }[state] ?? "off";
+}
+
+// remoteCard says how other devices reach Laneway, from the daemon's status
+// (info): the Root Domain, loopback and each address listen names with its
+// state, and, unless the Root Domain is localhost, which no other device
+// reaches, a QR code that opens the CA page on a phone.
+function remoteCard(info) {
+  if (!info) {
+    return "";
+  }
+  const local = info.rootDomain === "localhost";
+  return card("Remote access", "", [], [
+    h("div", { class: "ov-addr" },
+      h("div", { class: "t" }, "Root Domain", h("div", { class: "sub mono" }, info.rootDomain))),
+    local
+      ? h("p", { class: "note" }, "Only this PC reaches ", h("code", {}, "localhost"), ". For your other devices, set a Root Domain you own with ",
+        h("code", {}, "lane root-domain set"), ".")
+      : "",
+    addressRow(info.proxyAddr.replace(/:\d+$/, ""), "this PC only", "ok", "listening", ""),
+    ...(info.listen ?? []).map((a) => addressRow(a.name, a.ip && a.ip !== a.name ? a.ip : "",
+      a.listening ? (a.error ? "warn" : "ok") : "bad", a.listening ? "listening" : "not listening", a.error ?? "")),
+    info.listenError
+      ? h("div", { class: "ov-addr" }, h("div", { class: "t" }, h("span", { class: "bad" }, "Can't read listen"), h("div", { class: "sub wrap" }, info.listenError)))
+      : "",
+    local ? "" : h("div", { class: "ov-qr" },
+      qrImage(info.caPage),
+      h("div", { class: "t" },
+        h("b", {}, "Trust Laneway on your phone"),
+        h("div", { class: "sub wrap" }, "Scan to open the page that installs Laneway's root certificate, or open ",
+          h("a", { class: "mono", href: info.caPage, target: "_blank", rel: "noopener" }, info.caPage), " on the device."))),
+  ]);
+}
+
+// addressRow is one address Laneway listens on (or should): its name, what
+// it resolved to, its state (tone: ok, warn or bad) and why it isn't
+// fully listening.
+function addressRow(name, detail, tone, state, error) {
+  return h("div", { class: "ov-addr", "data-address": name },
+    h("div", { class: "t" },
+      h("span", { class: "mono" }, name), detail ? h("span", { class: "muted" }, ` · ${detail}`) : "",
+      error ? h("div", { class: "sub wrap" }, error) : ""),
+    h("span", { class: `st ${tone}` }, h("i"), state));
+}
+
+// qrImage is the QR code for the CA page at url, which the daemon draws. The
+// same element is kept while url stays, so re-rendering doesn't fetch it
+// again.
+let qr = { url: "", img: null };
+function qrImage(url) {
+  if (qr.url !== url) {
+    qr = { url, img: h("img", { class: "code", src: "/ca/qr.svg", alt: `QR code for ${url}`, width: 132, height: 132 }) };
+  }
+  return qr.img;
 }
 
 // linksCard has the links the Services' Plugins give them (such as an

@@ -5,6 +5,7 @@
 package registry
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/engine"
 	"github.com/lanewayhq/laneway/internal/naming"
+	"github.com/lanewayhq/laneway/internal/rootdomain"
 	"github.com/lanewayhq/laneway/internal/service"
 )
 
@@ -56,6 +58,12 @@ type state struct {
 	// Project's config has declared ([buckets]) while Laneway made its
 	// Buckets.
 	DeclaredBuckets map[string][]string `json:"declaredBuckets,omitempty"`
+	// RootDomain is the Root Domain Env Patches were last applied with;
+	// "" is rootdomain.Default, so an install from before Root Domains
+	// has applied them with it. PreviousRootDomain is the one before it,
+	// "" if there was none.
+	RootDomain         string `json:"rootDomain,omitempty"`
+	PreviousRootDomain string `json:"previousRootDomain,omitempty"`
 }
 
 const currentVersion = 1
@@ -182,6 +190,33 @@ func (r *Registry) RecordDeclaredBuckets(path string, names []string) error {
 	return nil
 }
 
+// RootDomain is the Root Domain Env Patches were last applied with
+// (RecordRootDomain), and the one before it ("" if none).
+func (r *Registry) RootDomain() (current, previous string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return cmp.Or(r.state.RootDomain, rootdomain.Default), r.state.PreviousRootDomain
+}
+
+// RecordRootDomain records that Env Patches are now applied with the Root
+// Domain root, and persists the change. The one they were applied with
+// before becomes the previous one, unless it is root.
+func (r *Registry) RecordRootDomain(root string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	current := cmp.Or(r.state.RootDomain, rootdomain.Default)
+	if current == root {
+		return nil
+	}
+	next := r.state
+	next.RootDomain, next.PreviousRootDomain = root, current
+	if err := r.save(next); err != nil {
+		return err
+	}
+	r.state = next
+	return nil
+}
+
 // DeclaredBuckets are the names of the Buckets the config of the Project at
 // path has declared (RecordDeclaredBuckets), sorted.
 func (r *Registry) DeclaredBuckets(path string) []string {
@@ -247,7 +282,7 @@ func (c WorktreeChanges) Empty() bool { return len(c.Added) == 0 && len(c.Remove
 // New Worktrees get their name's DomainLabel, or that label plus a hash of
 // their name if another Worktree or an Alias of the Project already uses it,
 // or it is one of reserved (the names of the main Worktree's HTTP Processes,
-// served at <process>.<project>.localhost).
+// served at <process>.<project>.<Root Domain>).
 func (r *Registry) PlanWorktrees(project string, found []Found, reserved []string) WorktreeChanges {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -343,7 +378,7 @@ func (r *Registry) ApplyWorktrees(c WorktreeChanges) error {
 	return nil
 }
 
-// Alias is an extra Domain of a Worktree: <name>.<project>.localhost.
+// Alias is an extra Domain of a Worktree: <name>.<project>.<Root Domain>.
 type Alias struct {
 	// Project is the owning Project's Path.
 	Project string `json:"project"`

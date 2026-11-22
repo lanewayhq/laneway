@@ -243,8 +243,8 @@ func TestEachWorktreeHasItsOwnProcessStatesAndLogs(t *testing.T) {
 
 	assertLines(t, waitForLogs(t, d, wt.Dir, []string{"logs", "web"}, "boot"), "boot feature-y")
 	assertLines(t, waitForLogs(t, d, repo.Dir, []string{"logs", "web"}, "boot"), "boot wt-logs")
-	waitForFile(t, filepath.Join(d.Paths.StateDir, "logs", "feature-y.wt-logs.localhost", "web.log"), "boot feature-y\n")
-	waitForFile(t, filepath.Join(d.Paths.StateDir, "logs", "wt-logs.localhost", "web.log"), "boot wt-logs\n")
+	waitForFile(t, filepath.Join(d.Paths.StateDir, "logs", "feature-y.wt-logs", "web.log"), "boot feature-y\n")
+	waitForFile(t, filepath.Join(d.Paths.StateDir, "logs", "wt-logs", "web.log"), "boot wt-logs\n")
 
 	res := d.MustRunCLI(d.Home, "status")
 	lines := strings.Split(strings.TrimRight(res.Stdout, "\n"), "\n")

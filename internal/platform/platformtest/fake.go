@@ -8,8 +8,11 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"net/netip"
 	"slices"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/lanewayhq/laneway/internal/platform"
 )
@@ -25,29 +28,70 @@ var _ platform.Platform = (*Fake)(nil)
 // Fake is an in-memory platform.Platform. It starts as a Linux machine where
 // nothing is set up and no port is in use. Call New to get one.
 type Fake struct {
-	mu        sync.Mutex
-	wsl       bool
-	service   platform.ServiceStatus
-	ports     platform.PortPermission
-	trusted   map[string]map[[32]byte]bool // store → CA fingerprints
-	holders   map[int][]platform.Holder
-	engine    *platform.Engine
-	engineOn  bool
-	mise      string
-	opened    []string
-	actions   []string
-	installed string // the exe InstallService was given
-	onInstall func()
+	mu          sync.Mutex
+	wsl         bool
+	service     platform.ServiceStatus
+	ports       platform.PortPermission
+	trusted     map[string]map[[32]byte]bool // store → CA fingerprints
+	holders     map[int][]platform.Holder
+	engine      *platform.Engine
+	engineOn    bool
+	mise        string
+	opened      []string
+	actions     []string
+	installed   string // the exe InstallService was given
+	onInstall   func()
+	tailscale   netip.Addr
+	noTailscale string                  // why there is no Tailscale address
+	hosts       map[string][]netip.Addr // hostname → addresses
+	trustDelay  time.Duration           // how long asking a trust store takes
+	firewall    *platform.WSLFirewall   // nil: Windows can't be asked
 }
 
 // New returns a Fake for a plain Linux machine where nothing is set up yet.
 func New() *Fake {
 	return &Fake{
-		service: platform.ServiceStatus{Unit: "laneway.service"},
-		ports:   platform.PortPermission{Detail: "net.ipv4.ip_unprivileged_port_start is 1024"},
-		trusted: map[string]map[[32]byte]bool{},
-		holders: map[int][]platform.Holder{},
+		service:     platform.ServiceStatus{Unit: "laneway.service"},
+		ports:       platform.PortPermission{Detail: "net.ipv4.ip_unprivileged_port_start is 1024"},
+		trusted:     map[string]map[[32]byte]bool{},
+		holders:     map[int][]platform.Holder{},
+		noTailscale: "Tailscale isn't installed (fake)",
+		hosts:       map[string][]netip.Addr{},
 	}
+}
+
+// SetTailscaleIPv4 makes ip the machine's Tailscale IPv4 address, such as
+// "127.0.0.2" in tests.
+func (f *Fake) SetTailscaleIPv4(ip string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.tailscale, f.noTailscale = netip.MustParseAddr(ip), ""
+}
+
+// SetNoTailscale makes the machine have no Tailscale address, for the
+// reason given, such as "Tailscale is stopped." It starts that way, as not
+// installed.
+func (f *Fake) SetNoTailscale(reason string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.tailscale, f.noTailscale = netip.Addr{}, reason
+}
+
+// SetHost makes name resolve to ips; with none, name doesn't resolve. A
+// name such as "*.lw.example.test" is a wildcard record: it answers for
+// every name under lw.example.test that has no record of its own.
+func (f *Fake) SetHost(name string, ips ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(ips) == 0 {
+		delete(f.hosts, name)
+		return
+	}
+	var addrs []netip.Addr
+	for _, ip := range ips {
+		addrs = append(addrs, netip.MustParseAddr(ip))
+	}
+	f.hosts[name] = addrs
 }
 
 // SetWSL2 makes the Fake a WSL2 machine, which adds the Windows trust store.
@@ -55,6 +99,22 @@ func (f *Fake) SetWSL2() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.wsl = true
+}
+
+// SetWSLFirewall makes WSLFirewall report fw. Until it is called, asking
+// Windows about its firewall fails.
+func (f *Fake) SetWSLFirewall(fw platform.WSLFirewall) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.firewall = &fw
+}
+
+// SetTrustStoreDelay makes asking a trust store whether it trusts a CA
+// take d, as asking Windows' store from WSL2 can take seconds.
+func (f *Fake) SetTrustStoreDelay(d time.Duration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.trustDelay = d
 }
 
 // SetPortHolders sets the programs listening on port.
@@ -202,6 +262,30 @@ func (f *Fake) OpenURL(_ context.Context, url string) error {
 	return nil
 }
 
+func (f *Fake) TailscaleIPv4(context.Context) (netip.Addr, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.noTailscale != "" {
+		return netip.Addr{}, errors.New(f.noTailscale)
+	}
+	return f.tailscale, nil
+}
+
+func (f *Fake) LookupHost(_ context.Context, name string) ([]netip.Addr, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if ips, ok := f.hosts[name]; ok {
+		return slices.Clone(ips), nil
+	}
+	for parent := name; strings.Contains(parent, "."); {
+		_, parent, _ = strings.Cut(parent, ".")
+		if ips, ok := f.hosts["*."+parent]; ok {
+			return slices.Clone(ips), nil
+		}
+	}
+	return nil, fmt.Errorf("lookup %s: no such host (fake)", name)
+}
+
 // store is one of the Fake's trust stores.
 type store struct {
 	f    *Fake
@@ -212,7 +296,15 @@ func (s store) Name() string { return s.name }
 
 func (s store) Prompt() string { return fmt.Sprintf("(fake) adding Laneway's CA to the %s", s.name) }
 
-func (s store) Trusted(_ context.Context, ca *x509.Certificate) (bool, error) {
+func (s store) Trusted(ctx context.Context, ca *x509.Certificate) (bool, error) {
+	s.f.mu.Lock()
+	delay := s.f.trustDelay
+	s.f.mu.Unlock()
+	select {
+	case <-time.After(delay):
+	case <-ctx.Done():
+		return false, ctx.Err()
+	}
 	s.f.mu.Lock()
 	defer s.f.mu.Unlock()
 	return s.f.trusted[s.name][sha256.Sum256(ca.Raw)], nil
@@ -227,4 +319,13 @@ func (s store) Trust(_ context.Context, _ string, ca *x509.Certificate) error {
 	}
 	s.f.trusted[s.name][sha256.Sum256(ca.Raw)] = true
 	return nil
+}
+
+func (f *Fake) WSLFirewall(context.Context) (platform.WSLFirewall, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.firewall == nil {
+		return platform.WSLFirewall{}, errors.New("Get-NetFirewallHyperVVMSetting isn't available (fake)")
+	}
+	return *f.firewall, nil
 }
