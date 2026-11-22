@@ -101,7 +101,8 @@ func checkListen(l string) error {
 	if err != nil {
 		return fmt.Errorf("%q is neither an IP address nor %q", l, ListenTailscale)
 	}
-	if ip.IsUnspecified() {
+	// Unmap: ::ffff:0.0.0.0 is 0.0.0.0 too.
+	if ip.Unmap().IsUnspecified() {
 		return fmt.Errorf("%q means every interface, and Laneway never listens on every interface: "+
 			"name the address your other devices reach this machine on, or %q", l, ListenTailscale)
 	}

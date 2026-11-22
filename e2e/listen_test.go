@@ -161,6 +161,8 @@ func TestListenRefusesEveryInterfaceAndWhatIsntAnAddress(t *testing.T) {
 	for _, tc := range []struct{ value, want string }{
 		{"0.0.0.0", "never listens on every interface"},
 		{"::", "never listens on every interface"},
+		{"::ffff:0.0.0.0", "never listens on every interface"},
+		{"::ffff:0:0", "never listens on every interface"},
 		{"wireguard", `"wireguard" is neither an IP address nor "tailscale"`},
 		{"100.101.102", `"100.101.102" is neither an IP address nor "tailscale"`},
 	} {
@@ -212,5 +214,19 @@ func TestTheStatusReportsEachListenAddressAndWhyItIsntListenedOn(t *testing.T) {
 	unbound := info.Listen[1]
 	if unbound.Name != "192.0.2.1" || unbound.Listening || !strings.Contains(unbound.Error, "can't listen on 192.0.2.1") {
 		t.Fatalf("got %+v, want 192.0.2.1 not listening, saying why", unbound)
+	}
+}
+
+func TestAnAddressFromTailscaleThatMeansEveryInterfaceIsntListenedOn(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	// 0.0.0.0 written as an IPv4-mapped IPv6 address.
+	d.Platform.SetTailscaleIPv4("::ffff:0.0.0.0")
+	writeGlobalConfig(t, d, `listen = ["tailscale"]`+"\n")
+	d.Restart()
+
+	st := listenStatus(t, d, "tailscale")
+	if st.Listening || !strings.Contains(st.Error, "never listens on every interface") {
+		t.Fatalf("tailscale at ::ffff:0.0.0.0: %+v, want it not listening, saying why", st)
 	}
 }

@@ -123,13 +123,14 @@ func (f *fanIn) Unlisten(ip netip.Addr) {
 	}
 }
 
-// checkExtra refuses the addresses that mean every interface: Laneway
+// checkExtra refuses the addresses that mean every interface, including
+// 0.0.0.0 written as an IPv4-mapped IPv6 address (::ffff:0.0.0.0): Laneway
 // listens only on addresses it is given (ADR-0009).
 func checkExtra(ip netip.Addr) error {
 	if !ip.IsValid() {
 		return errors.New("no address to listen on")
 	}
-	if ip.IsUnspecified() {
+	if ip.Unmap().IsUnspecified() {
 		return fmt.Errorf("Laneway never listens on every interface, so not on %s", ip)
 	}
 	return nil
