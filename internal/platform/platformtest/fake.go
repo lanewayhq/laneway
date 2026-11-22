@@ -27,33 +27,33 @@ var _ platform.Platform = (*Fake)(nil)
 // Fake is an in-memory platform.Platform. It starts as a Linux machine where
 // nothing is set up and no port is in use. Call New to get one.
 type Fake struct {
-	mu        sync.Mutex
-	wsl       bool
-	service   platform.ServiceStatus
-	ports     platform.PortPermission
-	trusted   map[string]map[[32]byte]bool // store → CA fingerprints
-	holders   map[int][]platform.Holder
-	engine    *platform.Engine
-	engineOn  bool
-	mise      string
-	opened    []string
-	actions   []string
-	installed string // the exe InstallService was given
-	onInstall func()
-	tailscale netip.Addr
-	noTS      string                  // why there is no Tailscale address
-	hosts     map[string][]netip.Addr // hostname → addresses
+	mu          sync.Mutex
+	wsl         bool
+	service     platform.ServiceStatus
+	ports       platform.PortPermission
+	trusted     map[string]map[[32]byte]bool // store → CA fingerprints
+	holders     map[int][]platform.Holder
+	engine      *platform.Engine
+	engineOn    bool
+	mise        string
+	opened      []string
+	actions     []string
+	installed   string // the exe InstallService was given
+	onInstall   func()
+	tailscale   netip.Addr
+	noTailscale string                  // why there is no Tailscale address
+	hosts       map[string][]netip.Addr // hostname → addresses
 }
 
 // New returns a Fake for a plain Linux machine where nothing is set up yet.
 func New() *Fake {
 	return &Fake{
-		service: platform.ServiceStatus{Unit: "laneway.service"},
-		ports:   platform.PortPermission{Detail: "net.ipv4.ip_unprivileged_port_start is 1024"},
-		trusted: map[string]map[[32]byte]bool{},
-		holders: map[int][]platform.Holder{},
-		noTS:    "Tailscale isn't installed (fake)",
-		hosts:   map[string][]netip.Addr{},
+		service:     platform.ServiceStatus{Unit: "laneway.service"},
+		ports:       platform.PortPermission{Detail: "net.ipv4.ip_unprivileged_port_start is 1024"},
+		trusted:     map[string]map[[32]byte]bool{},
+		holders:     map[int][]platform.Holder{},
+		noTailscale: "Tailscale isn't installed (fake)",
+		hosts:       map[string][]netip.Addr{},
 	}
 }
 
@@ -62,7 +62,7 @@ func New() *Fake {
 func (f *Fake) SetTailscaleIPv4(ip string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.tailscale, f.noTS = netip.MustParseAddr(ip), ""
+	f.tailscale, f.noTailscale = netip.MustParseAddr(ip), ""
 }
 
 // SetNoTailscale makes the machine have no Tailscale address, for the
@@ -71,7 +71,7 @@ func (f *Fake) SetTailscaleIPv4(ip string) {
 func (f *Fake) SetNoTailscale(reason string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.tailscale, f.noTS = netip.Addr{}, reason
+	f.tailscale, f.noTailscale = netip.Addr{}, reason
 }
 
 // SetHost makes name resolve to ips; with none, name doesn't resolve. A
@@ -246,8 +246,8 @@ func (f *Fake) OpenURL(_ context.Context, url string) error {
 func (f *Fake) TailscaleIPv4(context.Context) (netip.Addr, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.noTS != "" {
-		return netip.Addr{}, errors.New(f.noTS)
+	if f.noTailscale != "" {
+		return netip.Addr{}, errors.New(f.noTailscale)
 	}
 	return f.tailscale, nil
 }

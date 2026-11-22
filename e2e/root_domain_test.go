@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -12,15 +13,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lanewayhq/laneway/internal/daemon"
+	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/gitfixture"
 	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
-// rootDomainDaemon starts a daemon whose Root Domain is root.
-func rootDomainDaemon(t *testing.T, root string) *testkit.Daemon {
+// rootDomainDaemon starts a daemon whose personal config sets
+// root_domain = root, as a developer's would.
+func rootDomainDaemon(t *testing.T, root string, opts ...testkit.Option) *testkit.Daemon {
 	t.Helper()
-	return testkit.StartDaemon(t, func(c *daemon.Config) { c.RootDomain = root })
+	return testkit.StartDaemon(t, append(opts, testkit.WithPersonalConfig("root_domain = \""+root+"\"\n"))...)
 }
 
 func TestEveryDomainIsUnderTheRootDomain(t *testing.T) {
@@ -78,19 +80,11 @@ func TestPlainHTTPRedirectsNamesUnderTheRootDomain(t *testing.T) {
 	}
 }
 
-// personalRootDomainDaemon starts a daemon whose personal config sets
-// root_domain = root, as a developer would, with a Linked Project name.
-func personalRootDomainDaemon(t *testing.T, root string) *testkit.Daemon {
-	t.Helper()
-	d := testkit.StartDaemon(t)
-	writeGlobalConfig(t, d, "root_domain = \""+root+"\"\n")
-	d.Restart()
-	return d
-}
-
 func TestTheRootDomainInPersonalConfigIsServedAfterARestart(t *testing.T) {
 	t.Parallel()
-	d := personalRootDomainDaemon(t, "rd-config.example.test")
+	d := testkit.StartDaemon(t)
+	writeGlobalConfig(t, d, "root_domain = \"rd-config.example.test\"\n")
+	d.Restart()
 	repo := routedProject(t, "shop")
 	wt := repo.AddWorktree("feature")
 	d.MustRunCLI(repo.Dir, "link")
@@ -121,7 +115,7 @@ func handshake(d *testkit.Daemon, serverName string) error {
 
 func TestOnlyNamesLanewayServesUnderACustomRootDomainGetACertificate(t *testing.T) {
 	t.Parallel()
-	d := personalRootDomainDaemon(t, "rd-certs.example.test")
+	d := rootDomainDaemon(t, "rd-certs.example.test")
 	repo := routedProject(t, "certs")
 	wt := repo.AddWorktree("feature")
 	d.MustRunCLI(repo.Dir, "link")
@@ -133,6 +127,10 @@ func TestOnlyNamesLanewayServesUnderACustomRootDomainGetACertificate(t *testing.
 		"demo.certs.rd-certs.example.test",
 		"vite.demo.certs.rd-certs.example.test",
 		"laneway.rd-certs.example.test",
+		// .localhost names Laneway serves under the Root Domain get one
+		// for the page naming their new URL.
+		"certs.localhost",
+		"vite.demo.certs.localhost",
 	} {
 		if err := handshake(d, name); err != nil {
 			t.Errorf("%s got no certificate: %v", name, err)
@@ -144,6 +142,9 @@ func TestOnlyNamesLanewayServesUnderACustomRootDomainGetACertificate(t *testing.
 		"queue.certs.rd-certs.example.test",
 		"nope.feature.certs.rd-certs.example.test",
 		"x.y.laneway.rd-certs.example.test",
+		// .localhost names that move to nothing Laneway serves.
+		"nope.certs.localhost",
+		"rd-certs-unknown.localhost",
 	} {
 		if err := handshake(d, name); err == nil {
 			t.Errorf("%s got a certificate, want none: Laneway serves nothing there", name)
@@ -153,7 +154,7 @@ func TestOnlyNamesLanewayServesUnderACustomRootDomainGetACertificate(t *testing.
 
 func TestAServiceDomainIsServedUnderACustomRootDomain(t *testing.T) {
 	t.Parallel()
-	d := personalRootDomainDaemon(t, "rd-service.example.test")
+	d := rootDomainDaemon(t, "rd-service.example.test")
 	d.Engine.Serve(storeImage, storeServer("api"))
 	d.Engine.ServePort(storeImage, 7481, storeServer("console"))
 	d.MustRunCLI(d.Home, "plugin", "add", "--yes", testkit.Plugin(t, "store"))
@@ -205,12 +206,13 @@ func TestAProjectsConfigCantSetTheRootDomainOrListenAddresses(t *testing.T) {
 
 func TestAnInvalidRootDomainIsAConfigErrorAndTheLastOneIsKept(t *testing.T) {
 	t.Parallel()
-	d := personalRootDomainDaemon(t, "rd-invalid.example.test")
+	d := rootDomainDaemon(t, "rd-invalid.example.test")
 	repo := routedProject(t, "rd-invalid-shop")
 	d.MustRunCLI(repo.Dir, "link")
 
 	for _, root := range []string{"https://lw.example.test", "lw.example.test:8443", "lw.example.test/x",
-		"lw.example.test.", "100.101.102.103", "LW.example.test", "lw..example.test", "-lw.example.test", ""} {
+		"lw.example.test.", "100.101.102.103", "LW.example.test", "lw..example.test", "-lw.example.test",
+		"lw.localhost", tooLongRoot, ""} {
 		writeGlobalConfig(t, d, fmt.Sprintf("root_domain = %q\n", root))
 		d.Restart()
 
@@ -285,8 +287,10 @@ func TestChangingTheRootDomainLiveRepatchesEveryWorktreeAndRestartsOnlyRunningPr
 	if state := worktreeState(t, d, "t3-2b4e.rd-live.rd-live.example.test").State; state != "stopped" {
 		t.Errorf("the stopped Worktree is %s after the change, want stopped", state)
 	}
-	want := daemon.RootDomainChange{Previous: "localhost", Current: "rd-live.example.test",
-		Patched: []string{repo.Dir, wt.Dir}, Restarted: map[string][]string{repo.Dir: {"web"}}}
+	want := api.RootDomainResponse{Previous: "localhost", RootDomain: "rd-live.example.test",
+		Dashboard: "https://laneway.rd-live.example.test/", CAPage: "http://laneway.rd-live.example.test/ca",
+		Patched:   []string{repo.Dir, wt.Dir},
+		Restarted: []api.RestartedProcesses{{Worktree: repo.Dir, Domain: "rd-live.rd-live.example.test", Processes: []string{"web"}}}}
 	if !reflect.DeepEqual(change, want) {
 		t.Errorf("the change was %+v, want %+v", change, want)
 	}
@@ -317,7 +321,7 @@ func TestBucketOriginsFollowTheRootDomainOnRestartAndLive(t *testing.T) {
 
 func TestOpenOpensThePrimaryDomainUnderTheRootDomain(t *testing.T) {
 	t.Parallel()
-	d := personalRootDomainDaemon(t, "rd-open.example.test")
+	d := rootDomainDaemon(t, "rd-open.example.test")
 	repo := gitfixture.New(t, "rd-open-shop").WriteFile("readme.txt", "hi").Commit("a file")
 	d.MustRunCLI(repo.Dir, "link")
 	d.MustRunCLI(repo.Dir, "worktree", "alias", "demo")
@@ -330,13 +334,21 @@ func TestOpenOpensThePrimaryDomainUnderTheRootDomain(t *testing.T) {
 	}
 }
 
+// longestRoot is as long as a Root Domain may be (61 characters), and
+// tooLongRoot is one character longer: <process>.<worktree>.<project>.<root>,
+// with labels of up to 63 characters, must fit DNS's 253.
+const (
+	longestRoot = "rd-long-names-for-a-remote-machine.a-long-domain.example.test"
+	tooLongRoot = "x" + longestRoot
+)
+
 // A Process host on a long Worktree name under a long Root Domain is longer
 // than a certificate's Common Name may be (64 characters): the name is only
 // in the certificate's SAN, which browsers check.
 func TestAProcessHostLongerThanACommonNameGetsAValidCertificate(t *testing.T) {
 	t.Parallel()
-	root := "rd-long-names-for-a-remote-machine.a-long-domain-name.example.test"
-	d := personalRootDomainDaemon(t, root)
+	root := longestRoot
+	d := rootDomainDaemon(t, root)
 	repo := routedProject(t, "rd-long")
 	wt := repo.AddWorktree("t3-a-worktree-with-a-name-as-long-as-a-branch-name-can-be-made")
 	d.MustRunCLI(repo.Dir, "link")
@@ -344,5 +356,40 @@ func TestAProcessHostLongerThanACommonNameGetsAValidCertificate(t *testing.T) {
 	host := "vite.t3-a-worktree-with-a-name-as-long-as-a-branch-name-can-be-made.rd-long." + root
 	if got := d.GetServer("https://" + host + "/"); got.Name != "vite@"+filepath.Base(wt.Dir) {
 		t.Fatalf("%s (%d characters) reached %q, want the Worktree's vite Process", host, len(host), got.Name)
+	}
+}
+
+// A client that gives up on a Root Domain change, such as Ctrl-C on
+// `lane root-domain set`, doesn't stop it part-way: every Worktree still
+// gets the new Root Domain.
+func TestARootDomainChangeTheClientGivesUpOnStillReachesEveryWorktree(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	// The Process takes 2 seconds to stop, so restarting it for the
+	// change outlasts the client.
+	command := `trap 'sleep 2; exit 0' TERM; ` + testkit.TestServer(t) + ` & while :; do sleep 0.1; done`
+	repo := gitfixture.New(t, "rd-given-up").
+		WriteFile(".gitignore", ".env\n").
+		WriteFile("laneway.toml", "[env]\nAPP_URL = \"{url}\"\n\n"+processConfig(command)).
+		Commit("declare a Process that is slow to stop")
+	wt := repo.AddWorktree("t3-9c1d")
+	d.MustRunCLI(repo.Dir, "link", "--yes")
+	for _, url := range []string{"https://rd-given-up.localhost/", "https://t3-9c1d.rd-given-up.localhost/"} {
+		if res := d.Get(url); res.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s: status %d, want the Process running", url, res.StatusCode)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+	if _, err := d.Client().SetRootDomain(ctx, "rd-given-up.example.test"); err == nil {
+		t.Fatal("the change finished before the client gave up; the test needs a slower Process")
+	}
+
+	for _, dir := range []string{repo.Dir, wt.Dir} {
+		env := filepath.Join(dir, ".env")
+		testkit.WaitUntil(t, 15*time.Second, ".env in "+dir+" to name the new Root Domain", func() bool {
+			return strings.Contains(readFile(t, env), ".rd-given-up.example.test\n")
+		})
 	}
 }

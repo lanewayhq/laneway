@@ -5,13 +5,14 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/gitfixture"
 	"github.com/lanewayhq/laneway/internal/testkit"
 )
@@ -270,7 +271,7 @@ func viteCORSOrigins(t *testing.T, config string) *regexp.Regexp {
 
 func TestViteAllowsHostsAndOriginsUnderACustomRootDomain(t *testing.T) {
 	t.Parallel()
-	d := personalRootDomainDaemon(t, "rd-vite.example.test")
+	d := rootDomainDaemon(t, "rd-vite.example.test")
 	viteStubs(t, d)
 	repo := laravelViteRepo(t, "lara-vite")
 	d.MustRunCLI(repo.Dir, "link", "--yes")
@@ -326,11 +327,14 @@ func TestChangingTheRootDomainRewritesTheViteConfigBeforeViteRestarts(t *testing
 	repo := laravelViteRepo(t, "lara-vite-live")
 	d.MustRunCLI(repo.Dir, "link", "--yes")
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
-	viteConfig(t, d, "vite.lara-vite-live.localhost")
+	before, _ := viteConfig(t, d, "vite.lara-vite-live.localhost")
 
 	d.SetRootDomain("rd-vite-live.example.test")
 
-	_, config := viteConfig(t, d, "vite.lara-vite-live.rd-vite-live.example.test")
+	path, config := viteConfig(t, d, "vite.lara-vite-live.rd-vite-live.example.test")
+	if path != before {
+		t.Errorf("the Vite config moved from %s to %s: it is kept by the Worktree, which the Root Domain doesn't change", before, path)
+	}
 	assertContains(t, config, "host: "+strconv.Quote("vite.lara-vite-live.rd-vite-live.example.test")+",")
 	assertContains(t, config, `[...(server.allowedHosts ?? []), ".rd-vite-live.example.test"],`)
 }
@@ -352,8 +356,9 @@ func TestChangingTheRootDomainRestartsARunningViteWithoutAnEnvPatch(t *testing.T
 
 	change := d.SetRootDomain("rd-vite-env.example.test")
 
-	if got := change.Restarted[repo.Dir]; !slices.Contains(got, "vite") {
-		t.Errorf("the change restarted %v, want vite", got)
+	want := []api.RestartedProcesses{{Worktree: repo.Dir, Domain: "vite-root.rd-vite-env.example.test", Processes: []string{"vite"}}}
+	if !reflect.DeepEqual(change.Restarted, want) {
+		t.Errorf("the change restarted %+v, want %+v", change.Restarted, want)
 	}
 	_, path, _ := strings.Cut(d.GetServer("https://vite.vite-root.rd-vite-env.example.test/").Name, "--config ")
 	config := readFile(t, path)

@@ -110,7 +110,8 @@ func TestSettingAnInvalidRootDomainIsRefused(t *testing.T) {
 	writeGlobalConfig(t, d, "# mine\nidle_timeout = \"1h\"\n")
 
 	for _, root := range []string{"https://lw.example.test", "lw.example.test:8443", "lw.example.test/x",
-		"lw.example.test.", "100.101.102.103", "LW.example.test", "lw..example.test", "-lw.example.test"} {
+		"lw.example.test.", "100.101.102.103", "LW.example.test", "lw..example.test", "-lw.example.test",
+		"lw.localhost", tooLongRoot} {
 		res := d.RunCLI(d.Home, "root-domain", "set", "--skip-dns-check", "--", root)
 
 		if res.ExitCode == 0 {
@@ -265,7 +266,7 @@ func daemonEvents(t *testing.T, d *testkit.Daemon, url string) <-chan api.Daemon
 
 func TestTheDashboardsLiveUpdatesAnnounceANewRootDomain(t *testing.T) {
 	t.Parallel()
-	d := personalRootDomainDaemon(t, "rdc-live.example.test")
+	d := rootDomainDaemon(t, "rdc-live.example.test")
 	events := daemonEvents(t, d, "https://laneway.rdc-live.example.test/api/v1/events")
 
 	d.MustRunCLI(d.Home, "root-domain", "set", "--skip-dns-check", "rdc-live2.example.test")

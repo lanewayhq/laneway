@@ -78,9 +78,10 @@ func (d *Daemon) lockLifecycle(dir string) (unlock func()) {
 	return s.lifecycle.Unlock
 }
 
-// primaryDomainMoved brings the served Worktree at dir up to date with its new Primary Domain, in the background: once it is
-// Ready, its Env Patch is applied again and, if it is running, its running
-// Processes restart, since they read .env and their hosts when they start.
+// primaryDomainMoved brings the served Worktree at dir up to date with its
+// new Primary Domain, in the background: once it is Ready, its Env Patch is
+// applied again and, if it is running, its running Processes restart,
+// since they read .env and their hosts when they start.
 // A Failed setup gets the new Primary Domain when retried. Setup's env step
 // takes the lifecycle lock too, so the two never write .env at once. A
 // stopped Worktree isn't started: its next start uses the new Primary

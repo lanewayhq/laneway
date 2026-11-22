@@ -12,17 +12,17 @@ import (
 )
 
 // staleEnvKeys are the keys in the env files of the Worktree in dir (.env,
-// then the test env file, such as .env.testing) that its Env Patch doesn't own and whose values
-// name a host under a Root Domain Laneway no longer serves: under
-// localhost while the Root Domain is another, or under the previous Root
-// Domain. Laneway can't change them, so the developer is told which they
-// are. cfg is the Worktree's config; main is whether it's the main
-// Worktree. Only key names and files are returned, never values: env files
-// hold secrets.
+// then the test env file, such as .env.testing) that its Env Patch doesn't
+// own and whose values name a host under a Root Domain Laneway no longer
+// serves: under localhost while the Root Domain is another, or under the
+// previous Root Domain. Laneway can't change them, so the developer is
+// told which they are. cfg is the Worktree's config; main is whether it's
+// the main Worktree. Only key names and files are returned, never values:
+// env files hold secrets.
 func (d *Daemon) staleEnvKeys(dir string, main bool, cfg recipe.Resolved) []api.StaleEnvKey {
 	current := d.rootDomain()
 	_, previous := d.registry.RootDomain()
-	if current == rootdomain.Default && (previous == "" || previous == current) {
+	if rootdomain.IsDefault(current) && (previous == "" || previous == current) {
 		return nil
 	}
 	owned := cfg.EnvFor(main)

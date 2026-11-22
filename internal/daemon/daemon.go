@@ -82,11 +82,6 @@ type Config struct {
 	// Platform tells who holds a port a Service can't listen on. Nil
 	// means the real one for this machine.
 	Platform platform.Platform
-	// RootDomain is the domain every Laneway name is under (ADR-0009),
-	// overriding the personal config's root_domain (rootdomain.Default if
-	// that is unset too). Tests set it to serve under a Root Domain of
-	// their own without writing config.
-	RootDomain string
 	// DashboardDomain is where the Dashboard is served, overriding
 	// laneway.<Root Domain> (rootdomain.Dashboard). Tests running several
 	// daemons at once give each its own, since Caddy's certificate cache is
@@ -139,6 +134,9 @@ type Daemon struct {
 	caPage     http.Handler    // see capage.go
 	servedMu   sync.Mutex
 	served     map[string]*served // Worktree directory → what is served there
+	// servedHosts indexes served by host, the Domain without the Root
+	// Domain, which a new Root Domain doesn't change. Guarded by servedMu.
+	servedHosts map[string]*served
 
 	// root is the Root Domain (see rootdomain.go). rootChange serialises
 	// changing it.
@@ -289,6 +287,7 @@ func Start(cfg Config) (*Daemon, error) {
 		registry:    reg,
 		listener:    ln,
 		served:      map[string]*served{},
+		servedHosts: map[string]*served{},
 		closing:     make(chan struct{}),
 		done:        make(chan struct{}),
 		catalog:     source,
@@ -329,7 +328,7 @@ func Start(cfg Config) (*Daemon, error) {
 		return nil, err
 	}
 	_, httpsPort, _ := net.SplitHostPort(d.proxy.Addr().String())
-	if d.redirect, err = proxy.StartRedirect(cfg.HTTPAddr, httpsPort, d.rootDomain, d.plainHTTP); err != nil {
+	if d.redirect, err = proxy.StartRedirect(cfg.HTTPAddr, httpsPort, d.rootDomain, d.serves, d.plainHTTP); err != nil {
 		log.Error("not redirecting plain HTTP to HTTPS", "addr", cfg.HTTPAddr, "err", err)
 	}
 	d.reconcileListen()

@@ -255,7 +255,7 @@ func (d *Daemon) handleSetRootDomain(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	res, err := d.setRootDomain(r.Context(), req.RootDomain)
+	res, err := d.setRootDomain(req.RootDomain)
 	if err != nil {
 		d.writeError(w, err)
 		return

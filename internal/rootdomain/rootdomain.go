@@ -24,11 +24,30 @@ func Covers(root, host string) bool {
 	return host == root || strings.HasSuffix(host, "."+root)
 }
 
+// IsDefault reports whether root is Default, localhost. "" counts as it
+// too: it is what an install from before Root Domains records or reports.
+func IsDefault(root string) bool {
+	return root == Default || root == ""
+}
+
+// Move is name, a name under from or from itself, with the same labels
+// under to instead: Move("vite.shop.localhost", "localhost",
+// "lw.example.com") is "vite.shop.lw.example.com".
+func Move(name, from, to string) string {
+	return strings.TrimSuffix(name, from) + to
+}
+
+// MaxLen is the longest a Root Domain may be: a Process host,
+// <process>.<worktree>.<project>.<root>, with labels of up to 63 characters
+// each, must still fit the 253 characters DNS allows a name.
+const MaxLen = 253 - 3*(63+1)
+
 // Check returns why root can't be a Root Domain, or nil if it can: a
 // lowercase hostname of one or more labels of letters, digits and hyphens
-// (not starting or ending with a hyphen, at most 63 characters each), with
-// no scheme, port, path or trailing dot, and not an IP address. It doesn't
-// have to be a registrable domain: dev.internal is fine.
+// (not starting or ending with a hyphen, at most 63 characters each), at
+// most MaxLen characters, with no scheme, port, path or trailing dot, not
+// an IP address and not a name under localhost. It doesn't have to be a
+// registrable domain: dev.internal is fine.
 func Check(root string) error {
 	switch {
 	case root == "":
@@ -45,8 +64,13 @@ func Check(root string) error {
 		return fmt.Errorf("%q ends with a dot: leave it out", root)
 	case root != strings.ToLower(root):
 		return fmt.Errorf("%q isn't lowercase", root)
-	case len(root) > 253:
-		return fmt.Errorf("%q is longer than a domain name may be", root)
+	case len(root) > MaxLen:
+		return fmt.Errorf("%q is %d characters, and a Root Domain may be at most %d: "+
+			"names such as <process>.<worktree>.<project>.<Root Domain> must fit the 253 characters DNS allows",
+			root, len(root), MaxLen)
+	case root != Default && Covers(Default, root):
+		return fmt.Errorf("%q is under localhost, which every device resolves to itself: "+
+			"use localhost itself, or a domain your other devices resolve to this machine", root)
 	}
 	for label := range strings.SplitSeq(root, ".") {
 		if !validLabel.MatchString(label) {

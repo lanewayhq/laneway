@@ -5,9 +5,8 @@
 // Domain, the addresses it listens on, and a QR code for the CA page); the
 // Services with their state and port; and links: each Service's own links
 // (from the Plugin that adds its Engine), the guides and how to Link a
-// Project. It re-renders on every `projects`, `services` and `orphans` event,
-// each minute for the relative times, and when the daemon's status (GET
-// /v1/daemon), read every 15 seconds, has come.
+// Project. It re-renders on every `projects`, `services`, `orphans` and
+// `daemon` event, and each minute for the relative times.
 //
 // Which Worktrees need attention or are ready to Remove is attention.js's
 // call. A Worktree ready to Remove gets a Remove button
@@ -174,23 +173,12 @@ export default {
       data.orphans = list.orphans;
       render();
     });
-    // The daemon's status has no event: listen addresses come and go (as
-    // Tailscale starts and stops), so it is read again every 15 seconds.
-    const readDaemon = async () => {
-      try {
-        data.daemon = await dash.api.get("/v1/daemon");
-      } catch {
-        return; // the connection status already says the daemon is gone
-      }
+    dash.onDaemon((info) => {
+      data.daemon = info;
       render();
-    };
-    readDaemon();
-    const timer = setInterval(render, 60_000);
-    const daemonTimer = setInterval(readDaemon, 15_000);
-    dash.signal.addEventListener("abort", () => {
-      clearInterval(timer);
-      clearInterval(daemonTimer);
     });
+    const timer = setInterval(render, 60_000);
+    dash.signal.addEventListener("abort", () => clearInterval(timer));
   },
 };
 

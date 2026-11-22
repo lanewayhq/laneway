@@ -13,9 +13,9 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// SetString sets the top-level key to the string value in the TOML file at
-// path, keeping everything else in it as it was: other keys, tables,
-// comments and blank lines. An existing `key = …` line is replaced (with
+// WriteTopLevelString rewrites the TOML file at path with the top-level key
+// set to the string value, keeping everything else in it as it was: other
+// keys, tables, comments and blank lines. An existing `key = …` line is replaced (with
 // its trailing comment kept); otherwise the key goes after the last
 // top-level key, or before the first table if there is none, since a key
 // after a [table] header belongs to that table. A missing file, and its
@@ -24,7 +24,7 @@ import (
 // It refuses to write when the file isn't valid TOML, or when the result
 // wouldn't read back as the same keys with key set, such as a key written
 // in a form it doesn't recognise.
-func SetString(path, key, value string) error {
+func WriteTopLevelString(path, key, value string) error {
 	data, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err

@@ -53,7 +53,7 @@ func TestInfoListsEnvKeysOutsideTheEnvPatchThatNameLocalhostUnderACustomRootDoma
 
 func TestInfoListsEnvKeysThatNameThePreviousRootDomainInEveryEnvFile(t *testing.T) {
 	t.Parallel()
-	d := personalRootDomainDaemon(t, "stale-prev-a.example.test")
+	d := rootDomainDaemon(t, "stale-prev-a.example.test")
 	repo := envProject(t, "stale-prev", `APP_URL = "{url}"`+"\n").
 		WriteFile(".env", "APP_URL=x\nASSET_URL=https://cdn.stale-prev.stale-prev-a.example.test/assets\n"+
 			"MAIL_FROM=hi@stale-prev-a.example.test\n").

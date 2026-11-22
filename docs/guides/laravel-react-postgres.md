@@ -377,7 +377,7 @@ The first request starts `web`, `queue` and `vite` together and waits for `web` 
 | Caught mail (Mailpit)   | `https://mail.laneway.localhost`                                          |
 | Laneway Dashboard        | `https://laneway.localhost`: Projects, Worktrees, Processes, Services, Orphans |
 | Postgres                | `127.0.0.1:5432`, user `laneway`, password `laneway`, database `shop`|
-| Logs on disk            | `~/.local/state/laneway/logs/<domain>/`                                   |
+| Logs on disk            | `~/.local/state/laneway/logs/shop/` (a Worktree's: `logs/<worktree>.shop/`) |
 
 Mail: the starter kit sends password-reset and email-verification mail. With `MAIL_MAILER=smtp` pointed at Mailpit, all of it lands in the inbox at `mail.laneway.localhost`, and none of it leaves your machine.
 

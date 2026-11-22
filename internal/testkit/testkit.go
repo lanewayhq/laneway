@@ -16,9 +16,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/catalog"
 	"github.com/lanewayhq/laneway/internal/cli"
 	"github.com/lanewayhq/laneway/internal/client"
@@ -44,6 +46,25 @@ func WithContainerEngine(e container.Engine) Option {
 // restarts.
 func WithClock(c clock.Clock) Option {
 	return func(cfg *daemon.Config) { cfg.Clock = c }
+}
+
+// WithPersonalConfig writes content as the developer's personal config
+// (config.toml) before the daemon first starts, as if they had written it,
+// such as `root_domain = "lw.example.test"`. Tests may change the file later
+// and restart: it is written only once.
+func WithPersonalConfig(content string) Option {
+	var once sync.Once
+	return func(cfg *daemon.Config) {
+		once.Do(func() {
+			path := cfg.Paths.GlobalConfig()
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				panic("testkit: writing the personal config: " + err.Error())
+			}
+			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+				panic("testkit: writing the personal config: " + err.Error())
+			}
+		})
+	}
 }
 
 // Daemon is a running test daemon and the temporary home it owns.
@@ -283,16 +304,15 @@ func (d *Daemon) MustRunCLI(dir string, args ...string) CLIResult {
 	return res
 }
 
-// SetRootDomain changes the running daemon's Root Domain, as the API will
-// for `lane root-domain set`, and returns what that did.
-func (d *Daemon) SetRootDomain(root string) daemon.RootDomainChange {
+// SetRootDomain makes root the running daemon's Root Domain through its API
+// (POST /v1/root-domain), as `lane root-domain set` does, and returns what
+// that did. Like the API, it doesn't write the personal config, so a
+// restart goes back to the Root Domain there.
+func (d *Daemon) SetRootDomain(root string) api.RootDomainResponse {
 	d.t.Helper()
-	if d.running == nil {
-		d.t.Fatal("testkit: the daemon isn't running")
-	}
-	change, err := d.running.SetRootDomain(context.Background(), root)
+	res, err := d.Client().SetRootDomain(context.Background(), root)
 	if err != nil {
 		d.t.Fatalf("testkit: setting the Root Domain: %v", err)
 	}
-	return change
+	return res
 }

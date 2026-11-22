@@ -52,7 +52,7 @@ func redirectToPrimaryDomain(w http.ResponseWriter, r *http.Request, primary str
 // It is never a redirect, so a stale .localhost URL fails on the PC, where
 // it can be fixed.
 func writeLocalhost(w http.ResponseWriter, r *http.Request, domain, root string, serves func(string) bool) {
-	moved := strings.TrimSuffix(domain, rootdomain.Default) + root
+	moved := rootdomain.Move(domain, rootdomain.Default, root)
 	known := serves == nil || serves(moved)
 	host := moved
 	if _, port, err := net.SplitHostPort(r.Host); err == nil {

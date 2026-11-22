@@ -50,7 +50,7 @@ func plainGet(t *testing.T, d *testkit.Daemon, host, path string) (*http.Respons
 
 func TestTheCAPageIsServedOverPlainHTTPOnTheDashboardDomain(t *testing.T) {
 	t.Parallel()
-	d := personalRootDomainDaemon(t, "ca-http.example.test")
+	d := rootDomainDaemon(t, "ca-http.example.test")
 
 	res, body := plainGet(t, d, "laneway.ca-http.example.test", "/ca")
 
@@ -104,7 +104,7 @@ func caLink(t *testing.T, page, text string) string {
 
 func TestTheCAPageOffersLanewaysRootCertificate(t *testing.T) {
 	t.Parallel()
-	d := personalRootDomainDaemon(t, "ca-cert.example.test")
+	d := rootDomainDaemon(t, "ca-cert.example.test")
 	dash := "laneway.ca-cert.example.test"
 	_, page := plainGet(t, d, dash, "/ca")
 	link := caLink(t, page, "Download the certificate")
@@ -132,7 +132,7 @@ func TestTheCAPageOffersLanewaysRootCertificate(t *testing.T) {
 
 func TestTheCAPageOffersAnIOSProfileHoldingTheRootCertificate(t *testing.T) {
 	t.Parallel()
-	d := personalRootDomainDaemon(t, "ca-profile.example.test")
+	d := rootDomainDaemon(t, "ca-profile.example.test")
 	dash := "laneway.ca-profile.example.test"
 	_, page := plainGet(t, d, dash, "/ca")
 
@@ -162,7 +162,7 @@ func TestTheCAPageOffersAnIOSProfileHoldingTheRootCertificate(t *testing.T) {
 
 func TestNoCAPageResponseHoldsAPrivateKey(t *testing.T) {
 	t.Parallel()
-	d := personalRootDomainDaemon(t, "ca-key.example.test")
+	d := rootDomainDaemon(t, "ca-key.example.test")
 	dash := "laneway.ca-key.example.test"
 	key, err := os.ReadFile(filepath.Join(filepath.Dir(d.Paths.CARootCert()), "root.key"))
 	if err != nil {
@@ -191,7 +191,7 @@ func TestNoCAPageResponseHoldsAPrivateKey(t *testing.T) {
 
 func TestTheDaemonStatusNamesTheRootDomainAndTheCAPage(t *testing.T) {
 	t.Parallel()
-	d := personalRootDomainDaemon(t, "ca-status.example.test")
+	d := rootDomainDaemon(t, "ca-status.example.test")
 
 	info, err := d.Client().Daemon(t.Context())
 
@@ -235,7 +235,7 @@ func decodeQR(t *testing.T, svg string) string {
 
 func TestTheDashboardsQRCodeOpensTheCAPage(t *testing.T) {
 	t.Parallel()
-	d := personalRootDomainDaemon(t, "ca-qr.example.test")
+	d := rootDomainDaemon(t, "ca-qr.example.test")
 
 	res := d.Get("https://laneway.ca-qr.example.test/ca/qr.svg")
 
