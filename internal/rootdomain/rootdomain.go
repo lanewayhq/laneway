@@ -24,9 +24,10 @@ func Covers(root, host string) bool {
 	return host == root || strings.HasSuffix(host, "."+root)
 }
 
-// IsDefault reports whether root is Default, localhost.
+// IsDefault reports whether root is Default, localhost. "" counts as it
+// too: it is what an install from before Root Domains records or reports.
 func IsDefault(root string) bool {
-	return root == Default
+	return root == Default || root == ""
 }
 
 // Move is name, a name under from or from itself, with the same labels

@@ -53,7 +53,7 @@ func (h *routeHandler) Provision(caddy.Context) error {
 
 func (h *routeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	domain := requestDomain(r)
-	if root := h.rootDomain(); root != rootdomain.Default && rootdomain.Covers(rootdomain.Default, domain) {
+	if root := h.rootDomain(); !rootdomain.IsDefault(root) && rootdomain.Covers(rootdomain.Default, domain) {
 		writeLocalhost(w, r, domain, root, h.serves)
 		return nil
 	}

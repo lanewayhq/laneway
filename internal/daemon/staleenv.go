@@ -22,7 +22,7 @@ import (
 func (d *Daemon) staleEnvKeys(dir string, main bool, cfg recipe.Resolved) []api.StaleEnvKey {
 	current := d.rootDomain()
 	_, previous := d.registry.RootDomain()
-	if current == rootdomain.Default && (previous == "" || previous == current) {
+	if rootdomain.IsDefault(current) && (previous == "" || previous == current) {
 		return nil
 	}
 	owned := cfg.EnvFor(main)

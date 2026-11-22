@@ -62,7 +62,7 @@ func runRootDomainSet(ctx context.Context, env Env, args []string) error {
 	if err := rootdomain.Check(root); err != nil {
 		return fmt.Errorf("the Root Domain %w", err)
 	}
-	if !*skipDNS && root != rootdomain.Default {
+	if !*skipDNS && !rootdomain.IsDefault(root) {
 		c, err := apiClient(env)
 		if err != nil {
 			return err
@@ -112,7 +112,7 @@ func printRootDomainChange(w io.Writer, res api.RootDomainResponse) {
 	for _, r := range res.Restarted {
 		fmt.Fprintf(w, "Restarted %s: %s\n", r.Domain, strings.Join(r.Processes, ", "))
 	}
-	if res.RootDomain != rootdomain.Default {
+	if !rootdomain.IsDefault(res.RootDomain) {
 		fmt.Fprintf(w, "Install Laneway's CA on your other devices from %s\n", res.CAPage)
 	}
 }
@@ -138,7 +138,7 @@ func showRootDomain(ctx context.Context, env Env) error {
 	w := env.Stdout
 	fmt.Fprintf(w, "Root Domain:  %s\n", info.RootDomain)
 	fmt.Fprintf(w, "Dashboard:    %s\n", info.Dashboard)
-	if info.RootDomain != rootdomain.Default {
+	if !rootdomain.IsDefault(info.RootDomain) {
 		fmt.Fprintf(w, "CA page:      %s\n", info.CAPage)
 	}
 	fmt.Fprintf(w, "Listening on: %s (loopback)\n", loopback(info))
@@ -148,7 +148,7 @@ func showRootDomain(ctx context.Context, env Env) error {
 	if info.ListenError != "" {
 		fmt.Fprintf(w, "              listen can't be read: %s\n", info.ListenError)
 	}
-	if info.RootDomain == rootdomain.Default {
+	if rootdomain.IsDefault(info.RootDomain) {
 		fmt.Fprintf(w, "DNS:          not needed: every device resolves names under localhost to itself, so only this machine reaches them\n")
 		return nil
 	}

@@ -16,7 +16,7 @@ func (d *Daemon) newCAPage() http.Handler {
 	return capage.Handler(capage.Config{
 		RootCert: d.cfg.Paths.CARootCert(),
 		QR: func() string {
-			if d.rootDomain() == rootdomain.Default {
+			if rootdomain.IsDefault(d.rootDomain()) {
 				return ""
 			}
 			return d.caPageURL()

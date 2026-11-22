@@ -107,7 +107,7 @@ export default async (env) => {
 // allows *.localhost hosts, and laravel-vite-plugin *.localhost origins
 // and APP_URL, by default.
 func rootDomainServer(root string) string {
-	if root == rootdomain.Default {
+	if rootdomain.IsDefault(root) {
 		return ""
 	}
 	return fmt.Sprintf(`            // Laneway serves the Worktree under the Root Domain %[1]s.

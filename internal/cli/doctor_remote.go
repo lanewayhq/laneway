@@ -19,7 +19,7 @@ import (
 func checkRemoteAccess(ctx context.Context, r *report, plat platform.Platform, info api.DaemonInfo, globalConfig string) {
 	const name = "remote access"
 	// A daemon older than the Root Domain doesn't report one.
-	custom := info.RootDomain != rootdomain.Default && info.RootDomain != ""
+	custom := !rootdomain.IsDefault(info.RootDomain)
 	if !custom && len(info.Listen) == 0 && info.ListenError == "" {
 		r.check(statusOK, name, "off: only this machine reaches Worktrees (Root Domain localhost, listening on loopback only)", "")
 		return
