@@ -29,8 +29,10 @@ type worktreeRef struct {
 	label string
 	dir   string
 	// host is the Worktree's Domain without the Root Domain: <project>, or
-	// <worktree>.<project> for a linked Worktree. root reads the Root
-	// Domain, which can change while the daemon runs.
+	// <worktree>.<project> for a linked Worktree. It doesn't change with
+	// the Root Domain, so it also names the Worktree's log and Vite config
+	// directories. root reads the Root Domain, which can change while the
+	// daemon runs.
 	host string
 	root func() string
 	main bool

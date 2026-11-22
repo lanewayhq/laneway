@@ -215,7 +215,7 @@ func (d *Daemon) specs(s *served, cfg worktreeConfig, procs []recipe.Process) []
 			Command: command,
 			HTTP:    proc.HTTP,
 			Dir:     s.dir,
-			LogFile: filepath.Join(d.cfg.Paths.Logs(), s.domain(), proc.Name+".log"),
+			LogFile: filepath.Join(d.cfg.Paths.Logs(), s.host, proc.Name+".log"),
 		})
 	}
 	if primary == "" {

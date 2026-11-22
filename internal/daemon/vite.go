@@ -29,7 +29,8 @@ var viteConfigs = []string{"vite.config.js", "vite.config.mjs", "vite.config.ts"
 // the Vite config it writes for proc of the Worktree s. It writes it again
 // at every start, so it follows the Worktree's Primary Domain, its
 // vite.config.* and the proxy's port. It is kept under the Worktree's own
-// Domain, which a new Primary Domain doesn't change.
+// Domain without the Root Domain, which neither a new Primary Domain nor a
+// new Root Domain changes.
 func (d *Daemon) withViteConfig(s *served, proc recipe.Process) (string, error) {
 	if !strings.Contains(proc.Command, viteConfigVar) {
 		return proc.Command, nil
@@ -41,7 +42,7 @@ func (d *Daemon) withViteConfig(s *served, proc recipe.Process) (string, error) 
 	if !proc.Primary {
 		host = proc.Name + "." + host
 	}
-	path := filepath.Join(d.cfg.Paths.StateDir, "vite", s.domain(), proc.Name+".config.mjs")
+	path := filepath.Join(d.cfg.Paths.StateDir, "vite", s.host, proc.Name+".config.mjs")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", err
 	}

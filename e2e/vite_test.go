@@ -326,11 +326,14 @@ func TestChangingTheRootDomainRewritesTheViteConfigBeforeViteRestarts(t *testing
 	repo := laravelViteRepo(t, "lara-vite-live")
 	d.MustRunCLI(repo.Dir, "link", "--yes")
 	d.MustRunCLI(repo.Dir, "worktree", "ready")
-	viteConfig(t, d, "vite.lara-vite-live.localhost")
+	before, _ := viteConfig(t, d, "vite.lara-vite-live.localhost")
 
 	d.SetRootDomain("rd-vite-live.example.test")
 
-	_, config := viteConfig(t, d, "vite.lara-vite-live.rd-vite-live.example.test")
+	path, config := viteConfig(t, d, "vite.lara-vite-live.rd-vite-live.example.test")
+	if path != before {
+		t.Errorf("the Vite config moved from %s to %s: it is kept by the Worktree, which the Root Domain doesn't change", before, path)
+	}
 	assertContains(t, config, "host: "+strconv.Quote("vite.lara-vite-live.rd-vite-live.example.test")+",")
 	assertContains(t, config, `[...(server.allowedHosts ?? []), ".rd-vite-live.example.test"],`)
 }
