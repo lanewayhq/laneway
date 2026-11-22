@@ -82,11 +82,6 @@ type Config struct {
 	// Platform tells who holds a port a Service can't listen on. Nil
 	// means the real one for this machine.
 	Platform platform.Platform
-	// RootDomain is the domain every Laneway name is under (ADR-0009),
-	// overriding the personal config's root_domain (rootdomain.Default if
-	// that is unset too). Tests set it to serve under a Root Domain of
-	// their own without writing config.
-	RootDomain string
 	// DashboardDomain is where the Dashboard is served, overriding
 	// laneway.<Root Domain> (rootdomain.Dashboard). Tests running several
 	// daemons at once give each its own, since Caddy's certificate cache is

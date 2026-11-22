@@ -5,13 +5,14 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/gitfixture"
 	"github.com/lanewayhq/laneway/internal/testkit"
 )
@@ -270,7 +271,7 @@ func viteCORSOrigins(t *testing.T, config string) *regexp.Regexp {
 
 func TestViteAllowsHostsAndOriginsUnderACustomRootDomain(t *testing.T) {
 	t.Parallel()
-	d := personalRootDomainDaemon(t, "rd-vite.example.test")
+	d := rootDomainDaemon(t, "rd-vite.example.test")
 	viteStubs(t, d)
 	repo := laravelViteRepo(t, "lara-vite")
 	d.MustRunCLI(repo.Dir, "link", "--yes")
@@ -355,8 +356,9 @@ func TestChangingTheRootDomainRestartsARunningViteWithoutAnEnvPatch(t *testing.T
 
 	change := d.SetRootDomain("rd-vite-env.example.test")
 
-	if got := change.Restarted[repo.Dir]; !slices.Contains(got, "vite") {
-		t.Errorf("the change restarted %v, want vite", got)
+	want := []api.RestartedProcesses{{Worktree: repo.Dir, Domain: "vite-root.rd-vite-env.example.test", Processes: []string{"vite"}}}
+	if !reflect.DeepEqual(change.Restarted, want) {
+		t.Errorf("the change restarted %+v, want %+v", change.Restarted, want)
 	}
 	_, path, _ := strings.Cut(d.GetServer("https://vite.vite-root.rd-vite-env.example.test/").Name, "--config ")
 	config := readFile(t, path)

@@ -13,15 +13,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lanewayhq/laneway/internal/daemon"
+	"github.com/lanewayhq/laneway/internal/api"
 	"github.com/lanewayhq/laneway/internal/gitfixture"
 	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
-// rootDomainDaemon starts a daemon whose Root Domain is root.
-func rootDomainDaemon(t *testing.T, root string) *testkit.Daemon {
+// rootDomainDaemon starts a daemon whose personal config sets
+// root_domain = root, as a developer's would.
+func rootDomainDaemon(t *testing.T, root string, opts ...testkit.Option) *testkit.Daemon {
 	t.Helper()
-	return testkit.StartDaemon(t, func(c *daemon.Config) { c.RootDomain = root })
+	return testkit.StartDaemon(t, append(opts, testkit.WithPersonalConfig("root_domain = \""+root+"\"\n"))...)
 }
 
 func TestEveryDomainIsUnderTheRootDomain(t *testing.T) {
@@ -79,19 +80,11 @@ func TestPlainHTTPRedirectsNamesUnderTheRootDomain(t *testing.T) {
 	}
 }
 
-// personalRootDomainDaemon starts a daemon whose personal config sets
-// root_domain = root, as a developer would, with a Linked Project name.
-func personalRootDomainDaemon(t *testing.T, root string) *testkit.Daemon {
-	t.Helper()
-	d := testkit.StartDaemon(t)
-	writeGlobalConfig(t, d, "root_domain = \""+root+"\"\n")
-	d.Restart()
-	return d
-}
-
 func TestTheRootDomainInPersonalConfigIsServedAfterARestart(t *testing.T) {
 	t.Parallel()
-	d := personalRootDomainDaemon(t, "rd-config.example.test")
+	d := testkit.StartDaemon(t)
+	writeGlobalConfig(t, d, "root_domain = \"rd-config.example.test\"\n")
+	d.Restart()
 	repo := routedProject(t, "shop")
 	wt := repo.AddWorktree("feature")
 	d.MustRunCLI(repo.Dir, "link")
@@ -122,7 +115,7 @@ func handshake(d *testkit.Daemon, serverName string) error {
 
 func TestOnlyNamesLanewayServesUnderACustomRootDomainGetACertificate(t *testing.T) {
 	t.Parallel()
-	d := personalRootDomainDaemon(t, "rd-certs.example.test")
+	d := rootDomainDaemon(t, "rd-certs.example.test")
 	repo := routedProject(t, "certs")
 	wt := repo.AddWorktree("feature")
 	d.MustRunCLI(repo.Dir, "link")
@@ -161,7 +154,7 @@ func TestOnlyNamesLanewayServesUnderACustomRootDomainGetACertificate(t *testing.
 
 func TestAServiceDomainIsServedUnderACustomRootDomain(t *testing.T) {
 	t.Parallel()
-	d := personalRootDomainDaemon(t, "rd-service.example.test")
+	d := rootDomainDaemon(t, "rd-service.example.test")
 	d.Engine.Serve(storeImage, storeServer("api"))
 	d.Engine.ServePort(storeImage, 7481, storeServer("console"))
 	d.MustRunCLI(d.Home, "plugin", "add", "--yes", testkit.Plugin(t, "store"))
@@ -213,7 +206,7 @@ func TestAProjectsConfigCantSetTheRootDomainOrListenAddresses(t *testing.T) {
 
 func TestAnInvalidRootDomainIsAConfigErrorAndTheLastOneIsKept(t *testing.T) {
 	t.Parallel()
-	d := personalRootDomainDaemon(t, "rd-invalid.example.test")
+	d := rootDomainDaemon(t, "rd-invalid.example.test")
 	repo := routedProject(t, "rd-invalid-shop")
 	d.MustRunCLI(repo.Dir, "link")
 
@@ -294,8 +287,10 @@ func TestChangingTheRootDomainLiveRepatchesEveryWorktreeAndRestartsOnlyRunningPr
 	if state := worktreeState(t, d, "t3-2b4e.rd-live.rd-live.example.test").State; state != "stopped" {
 		t.Errorf("the stopped Worktree is %s after the change, want stopped", state)
 	}
-	want := daemon.RootDomainChange{Previous: "localhost", Current: "rd-live.example.test",
-		Patched: []string{repo.Dir, wt.Dir}, Restarted: map[string][]string{repo.Dir: {"web"}}}
+	want := api.RootDomainResponse{Previous: "localhost", RootDomain: "rd-live.example.test",
+		Dashboard: "https://laneway.rd-live.example.test/", CAPage: "http://laneway.rd-live.example.test/ca",
+		Patched:   []string{repo.Dir, wt.Dir},
+		Restarted: []api.RestartedProcesses{{Worktree: repo.Dir, Domain: "rd-live.rd-live.example.test", Processes: []string{"web"}}}}
 	if !reflect.DeepEqual(change, want) {
 		t.Errorf("the change was %+v, want %+v", change, want)
 	}
@@ -326,7 +321,7 @@ func TestBucketOriginsFollowTheRootDomainOnRestartAndLive(t *testing.T) {
 
 func TestOpenOpensThePrimaryDomainUnderTheRootDomain(t *testing.T) {
 	t.Parallel()
-	d := personalRootDomainDaemon(t, "rd-open.example.test")
+	d := rootDomainDaemon(t, "rd-open.example.test")
 	repo := gitfixture.New(t, "rd-open-shop").WriteFile("readme.txt", "hi").Commit("a file")
 	d.MustRunCLI(repo.Dir, "link")
 	d.MustRunCLI(repo.Dir, "worktree", "alias", "demo")
@@ -353,7 +348,7 @@ const (
 func TestAProcessHostLongerThanACommonNameGetsAValidCertificate(t *testing.T) {
 	t.Parallel()
 	root := longestRoot
-	d := personalRootDomainDaemon(t, root)
+	d := rootDomainDaemon(t, root)
 	repo := routedProject(t, "rd-long")
 	wt := repo.AddWorktree("t3-a-worktree-with-a-name-as-long-as-a-branch-name-can-be-made")
 	d.MustRunCLI(repo.Dir, "link")

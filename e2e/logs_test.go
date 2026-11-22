@@ -151,9 +151,7 @@ func TestALogFileStaysTheSameWhenTheRootDomainChanges(t *testing.T) {
 	logFile := filepath.Join(d.Paths.StateDir, "logs", "feature.logs-root", "web.log")
 	waitForFile(t, logFile, "run\n")
 
-	if _, err := d.Client().SetRootDomain(t.Context(), "logs-root.example.test"); err != nil {
-		t.Fatal(err)
-	}
+	d.SetRootDomain("logs-root.example.test")
 
 	// The running Process restarted for the change, into the same file.
 	waitForFile(t, logFile, "run\nrun\n")

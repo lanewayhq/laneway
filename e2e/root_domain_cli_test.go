@@ -266,7 +266,7 @@ func daemonEvents(t *testing.T, d *testkit.Daemon, url string) <-chan api.Daemon
 
 func TestTheDashboardsLiveUpdatesAnnounceANewRootDomain(t *testing.T) {
 	t.Parallel()
-	d := personalRootDomainDaemon(t, "rdc-live.example.test")
+	d := rootDomainDaemon(t, "rdc-live.example.test")
 	events := daemonEvents(t, d, "https://laneway.rdc-live.example.test/api/v1/events")
 
 	d.MustRunCLI(d.Home, "root-domain", "set", "--skip-dns-check", "rdc-live2.example.test")

@@ -17,8 +17,8 @@ import (
 
 // The Root Domain (ADR-0009) is the domain every Laneway name is under. It
 // comes from the personal config's root_domain, read when the daemon
-// starts, and SetRootDomain changes it while the daemon runs. Every name is
-// derived from it when it's needed, never stored, so swapping it moves
+// starts, and changeRootDomain changes it while the daemon runs. Every name
+// is derived from it when it's needed, never stored, so swapping it moves
 // every Domain, Alias, Process host, the Dashboard and the Service Domains
 // at once. What Laneway gave out under the old one (Env Patches, Bucket
 // origins) is brought up to date by applyRootDomain.
@@ -52,15 +52,12 @@ func (d *Daemon) serves(name string) bool {
 	return ok
 }
 
-// startRootDomain is the Root Domain the daemon starts with:
-// Config.RootDomain, else the personal config's root_domain, else
-// rootdomain.Default. If the personal config can't be read, it is the one
-// Env Patches were last applied with, so a typo doesn't move every
-// Worktree; the error is logged, and starting a Worktree reports it.
+// startRootDomain is the Root Domain the daemon starts with: the personal
+// config's root_domain, else rootdomain.Default. If the personal config
+// can't be read, it is the one Env Patches were last applied with, so a
+// typo doesn't move every Worktree; the error is logged, and starting a
+// Worktree reports it.
 func (d *Daemon) startRootDomain() string {
-	if d.cfg.RootDomain != "" {
-		return d.cfg.RootDomain
-	}
 	g, err := config.LoadGlobal(d.cfg.Paths.GlobalConfig())
 	if err != nil {
 		applied, _ := d.registry.RootDomain()
@@ -70,8 +67,8 @@ func (d *Daemon) startRootDomain() string {
 	return cmp.Or(ptrValue(g.RootDomain), rootdomain.Default)
 }
 
-// RootDomainChange is what changing the Root Domain did.
-type RootDomainChange struct {
+// rootDomainChange is what changing the Root Domain did.
+type rootDomainChange struct {
 	// Previous and Current are the Root Domains before and after.
 	Previous, Current string
 	// Patched are the directories of the Ready Worktrees whose Env Patch
@@ -82,7 +79,7 @@ type RootDomainChange struct {
 	Restarted map[string][]string
 }
 
-// SetRootDomain makes root the Root Domain while the daemon runs, in the
+// changeRootDomain makes root the Root Domain while the daemon runs, in the
 // order the spec gives: the names served change at once, then every Ready
 // Worktree's Env Patch is applied again and its running Processes restart
 // if .env changed, and its running Processes with a Vite config in any case
@@ -91,9 +88,9 @@ type RootDomainChange struct {
 // Root Domain is recorded as the one Env Patches were applied with, and the
 // one before it as the previous one. It doesn't write the personal config:
 // the caller does, so the next start keeps root.
-func (d *Daemon) SetRootDomain(ctx context.Context, root string) (RootDomainChange, error) {
+func (d *Daemon) changeRootDomain(ctx context.Context, root string) (rootDomainChange, error) {
 	if err := rootdomain.Check(root); err != nil {
-		return RootDomainChange{}, fmt.Errorf("root_domain %w", err)
+		return rootDomainChange{}, fmt.Errorf("root_domain %w", err)
 	}
 	d.rootChange.Lock()
 	defer d.rootChange.Unlock()
@@ -103,12 +100,12 @@ func (d *Daemon) SetRootDomain(ctx context.Context, root string) (RootDomainChan
 	return d.applyRootDomain(ctx, previous), nil
 }
 
-// setRootDomain is SetRootDomain as POST /v1/root-domain reports it. The
+// setRootDomain is changeRootDomain as POST /v1/root-domain reports it. The
 // change runs to the end even if the client gives up (Ctrl-C on `lane
 // root-domain set`): stopped part-way, some Worktrees would keep the old
 // Root Domain. Only the daemon stopping cuts it short.
 func (d *Daemon) setRootDomain(root string) (api.RootDomainResponse, error) {
-	change, err := d.SetRootDomain(d.stopping, root)
+	change, err := d.changeRootDomain(d.stopping, root)
 	if err != nil {
 		return api.RootDomainResponse{}, &api.Error{Code: api.CodeBadRequest, Message: err.Error()}
 	}
@@ -133,9 +130,9 @@ func (d *Daemon) setRootDomain(root string) (api.RootDomainResponse, error) {
 // unless the Env Patches were already applied with it. If ctx ends first,
 // the Worktrees not reached are left and it isn't recorded, so the next
 // start brings them up to date.
-func (d *Daemon) applyRootDomain(ctx context.Context, from string) RootDomainChange {
+func (d *Daemon) applyRootDomain(ctx context.Context, from string) rootDomainChange {
 	root := d.rootDomain()
-	change := RootDomainChange{Previous: from, Current: root, Patched: []string{}, Restarted: map[string][]string{}}
+	change := rootDomainChange{Previous: from, Current: root, Patched: []string{}, Restarted: map[string][]string{}}
 	if applied, _ := d.registry.RootDomain(); applied == root {
 		return change
 	}
