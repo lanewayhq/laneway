@@ -4,6 +4,8 @@
 
 Record each result as pass/fail, plus anything surprising, in the table at the end.
 
+The URLs below are under the default Root Domain, `localhost`, so run it with no `root_domain` in `~/.config/laneway/config.toml`.
+
 ## Before you start
 
 - [ ] Build the binary to where it will stay. The service runs this exact path, and the setcap fallback is tied to it. Don't use `go run`.
