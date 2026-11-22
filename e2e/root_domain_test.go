@@ -133,6 +133,10 @@ func TestOnlyNamesLanewayServesUnderACustomRootDomainGetACertificate(t *testing.
 		"demo.certs.rd-certs.example.test",
 		"vite.demo.certs.rd-certs.example.test",
 		"laneway.rd-certs.example.test",
+		// .localhost names Laneway serves under the Root Domain get one
+		// for the page naming their new URL.
+		"certs.localhost",
+		"vite.demo.certs.localhost",
 	} {
 		if err := handshake(d, name); err != nil {
 			t.Errorf("%s got no certificate: %v", name, err)
@@ -144,6 +148,9 @@ func TestOnlyNamesLanewayServesUnderACustomRootDomainGetACertificate(t *testing.
 		"queue.certs.rd-certs.example.test",
 		"nope.feature.certs.rd-certs.example.test",
 		"x.y.laneway.rd-certs.example.test",
+		// .localhost names that move to nothing Laneway serves.
+		"nope.certs.localhost",
+		"rd-certs-unknown.localhost",
 	} {
 		if err := handshake(d, name); err == nil {
 			t.Errorf("%s got a certificate, want none: Laneway serves nothing there", name)

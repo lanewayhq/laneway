@@ -67,45 +67,68 @@ func TestAServiceDomainsLocalhostNameNamesItsURLUnderTheRootDomain(t *testing.T)
 	}
 }
 
-func TestPlainHTTPStillSendsLocalhostNamesToHTTPSForTheirPage(t *testing.T) {
-	t.Parallel()
-	d := rootDomainDaemon(t, "rd-moved-http.example.test")
-	_, httpsPort, _ := net.SplitHostPort(d.ProxyAddr())
-	req, err := http.NewRequest(http.MethodGet, "http://"+d.HTTPAddr()+"/cart", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Host = "shop.localhost"
+// plainHTTP sends req to d's plain HTTP listener for host, without
+// following redirects.
+func plainHTTP(t *testing.T, d *testkit.Daemon, req *http.Request, host string) testkit.Response {
+	t.Helper()
+	req.URL.Host = d.HTTPAddr()
+	req.Host = host
 	client := &http.Client{
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		Timeout:       10 * time.Second,
 	}
-
 	res, err := client.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	res.Body.Close()
+	defer res.Body.Close()
+	body, _ := io.ReadAll(res.Body)
+	return testkit.Response{Response: res, Body: string(body)}
+}
 
-	want := "https://shop.localhost:" + httpsPort + "/cart"
+func TestPlainHTTPStillSendsLocalhostNamesToHTTPSForTheirPage(t *testing.T) {
+	t.Parallel()
+	d := rootDomainDaemon(t, "rd-moved-http.example.test")
+	d.MustRunCLI(routedProject(t, "moved-http").Dir, "link")
+	_, httpsPort, _ := net.SplitHostPort(d.ProxyAddr())
+	req, err := http.NewRequest(http.MethodGet, "http://moved-http.localhost/cart", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res := plainHTTP(t, d, req, "moved-http.localhost")
+
+	want := "https://moved-http.localhost:" + httpsPort + "/cart"
 	if res.StatusCode != http.StatusPermanentRedirect || res.Header.Get("Location") != want {
 		t.Fatalf("status %d to %q, want 308 to %q", res.StatusCode, res.Header.Get("Location"), want)
 	}
 }
 
+// An unknown .localhost name gets no certificate under a custom Root Domain
+// (see TestOnlyNamesLanewayServesUnderACustomRootDomainGetACertificate), so
+// its page is shown over plain HTTP rather than redirected to HTTPS.
 func TestAPageLoadOnAnUnknownLocalhostNameSaysNothingIsServedThere(t *testing.T) {
 	t.Parallel()
 	d := rootDomainDaemon(t, "rd-unknown.example.test")
+	req, err := http.NewRequest(http.MethodGet, "http://nope.moved-unknown.localhost/orders", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	testkit.SetNavigationHeaders(req)
 
-	res := d.Navigate("https://nope.moved-unknown.localhost/orders")
+	res := plainHTTP(t, d, req, "nope.moved-unknown.localhost")
 
 	if res.StatusCode != http.StatusNotFound {
 		t.Fatalf("status %d, want 404:\n%s", res.StatusCode, res.Body)
 	}
+	assertContains(t, res.Body, "Nothing is served here")
 	assertContains(t, res.Body, "nope.moved-unknown.localhost")
 	assertContains(t, res.Body, "rd-unknown.example.test")
 	if strings.Contains(res.Body, "<a href=") {
 		t.Fatalf("the page links somewhere, but nothing is served there under the Root Domain either:\n%s", res.Body)
+	}
+	if err := handshake(d, "nope.moved-unknown.localhost"); err == nil {
+		t.Errorf("the unknown .localhost name got a certificate, want none")
 	}
 }
 

@@ -329,7 +329,7 @@ func Start(cfg Config) (*Daemon, error) {
 		return nil, err
 	}
 	_, httpsPort, _ := net.SplitHostPort(d.proxy.Addr().String())
-	if d.redirect, err = proxy.StartRedirect(cfg.HTTPAddr, httpsPort, d.rootDomain, d.plainHTTP); err != nil {
+	if d.redirect, err = proxy.StartRedirect(cfg.HTTPAddr, httpsPort, d.rootDomain, d.serves, d.plainHTTP); err != nil {
 		log.Error("not redirecting plain HTTP to HTTPS", "addr", cfg.HTTPAddr, "err", err)
 	}
 	d.reconcileListen()

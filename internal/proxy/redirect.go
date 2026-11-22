@@ -23,15 +23,19 @@ type Redirect struct {
 // StartRedirect listens on addr, a loopback address, and redirects every
 // request for the Root Domain or a name under it to https:// on httpsPort
 // (left out of the URL when it is 443). So are .localhost names under any
-// Root Domain, where HTTPS shows a page naming their new URL. Requests for
-// other names get a 404: Laneway serves nothing else. rootDomain is read on
-// every request, so it may change while the listener runs.
+// Root Domain, where HTTPS shows a page naming their new URL, unless they
+// move to nothing Laneway serves (serves; nil serves every name): those get
+// no certificate (see Config.Serves), so their page is answered here.
+// Requests for other names get a 404: Laneway serves nothing else.
+// rootDomain is read on every request, so it may change while the listener
+// runs.
 //
 // plain picks the requests served over plain HTTP instead of redirected,
 // such as the CA page a device opens before it trusts Laneway's CA: it
 // returns their handler, or nil to redirect. A nil plain redirects every
 // request.
-func StartRedirect(addr string, httpsPort string, rootDomain func() string, plain func(host, path string) http.Handler) (*Redirect, error) {
+func StartRedirect(addr string, httpsPort string, rootDomain func() string, serves func(string) bool,
+	plain func(host, path string) http.Handler) (*Redirect, error) {
 	if err := checkLoopback(addr); err != nil {
 		return nil, err
 	}
@@ -40,7 +44,7 @@ func StartRedirect(addr string, httpsPort string, rootDomain func() string, plai
 		return nil, err
 	}
 	r := &Redirect{listener: newFanIn(ln), server: &http.Server{
-		Handler:           redirectHandler(httpsPort, rootDomain, plain),
+		Handler:           redirectHandler(httpsPort, rootDomain, serves, plain),
 		ReadHeaderTimeout: 10 * time.Second,
 	}}
 	go func() {
@@ -51,15 +55,22 @@ func StartRedirect(addr string, httpsPort string, rootDomain func() string, plai
 	return r, nil
 }
 
-func redirectHandler(httpsPort string, rootDomain func() string, plain func(host, path string) http.Handler) http.Handler {
+func redirectHandler(httpsPort string, rootDomain func() string, serves func(string) bool,
+	plain func(host, path string) http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		host := req.Host
 		if h, _, err := net.SplitHostPort(host); err == nil {
 			host = h
 		}
 		host = strings.ToLower(strings.TrimSuffix(host, "."))
-		if root := rootDomain(); !rootdomain.Covers(root, host) && !rootdomain.Covers(rootdomain.Default, host) {
+		root := rootDomain()
+		if !rootdomain.Covers(root, host) && !rootdomain.Covers(rootdomain.Default, host) {
 			http.Error(w, "Laneway only serves Domains under "+root, http.StatusNotFound)
+			return
+		}
+		if !rootdomain.IsDefault(root) && rootdomain.Covers(rootdomain.Default, host) &&
+			serves != nil && !serves(rootdomain.Move(host, rootdomain.Default, root)) {
+			writeLocalhost(w, req, host, root, serves)
 			return
 		}
 		if plain != nil {

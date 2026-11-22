@@ -144,11 +144,13 @@ func writePage(w http.ResponseWriter, status int, title string, paragraphs ...st
 	fmt.Fprint(w, "<p><small>Laneway</small></p>\n</body></html>\n")
 }
 
-// certPermission (tls.permission.laneway) allows on-demand certificates for
-// .localhost names, so they can always be shown a page, and, under any other
-// Root Domain, for the names Laneway serves (Config.Serves) only. Under
-// localhost, unknown names get a certificate too, so they can be shown the
-// "nothing is served here" page.
+// certPermission (tls.permission.laneway) allows on-demand certificates,
+// under the localhost Root Domain, for every .localhost name, so unknown
+// names can be shown the "nothing is served here" page. Under any other
+// Root Domain it allows them only for the names Laneway serves
+// (Config.Serves), and for the .localhost names that move to one, for the
+// page naming their new URL: anyone reaching the proxy can't have it issue
+// certificates for any name (ADR-0009).
 type certPermission struct {
 	// Proxy is the id of the Proxy whose Root Domain to ask.
 	Proxy string `json:"proxy"`
@@ -170,9 +172,16 @@ func (c *certPermission) Provision(caddy.Context) error {
 func (c *certPermission) CertificateAllowed(_ context.Context, name string) error {
 	name = strings.ToLower(name)
 	root := c.rootDomain()
-	switch {
-	case rootdomain.Covers(rootdomain.Default, name):
+	if rootdomain.Covers(rootdomain.Default, name) {
+		if rootdomain.IsDefault(root) {
+			return nil
+		}
+		if moved := rootdomain.Move(name, rootdomain.Default, root); c.serves != nil && !c.serves(moved) {
+			return fmt.Errorf("Laneway serves nothing at %s, nor at %s under the Root Domain", name, moved)
+		}
 		return nil
+	}
+	switch {
 	case !rootdomain.Covers(root, name):
 		return fmt.Errorf("%s is not %s or a name under it", name, root)
 	case c.serves != nil && !c.serves(name):

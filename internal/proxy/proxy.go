@@ -137,8 +137,9 @@ type Config struct {
 	RootDomain func() string
 	// Serves reports whether Laneway serves anything at name, a name under
 	// a Root Domain other than rootdomain.Default: only those get a
-	// certificate, so anyone reaching the proxy can't have it issue one for
-	// any name. Nil means every name under the Root Domain.
+	// certificate, and the .localhost names that move to one, so anyone
+	// reaching the proxy can't have it issue one for any name. Nil means
+	// every name under the Root Domain.
 	Serves func(name string) bool
 	// LogErrors sends Caddy's own error logs to stderr. Otherwise they are
 	// discarded.

@@ -24,6 +24,18 @@ func Covers(root, host string) bool {
 	return host == root || strings.HasSuffix(host, "."+root)
 }
 
+// IsDefault reports whether root is Default, localhost.
+func IsDefault(root string) bool {
+	return root == Default
+}
+
+// Move is name, a name under from or from itself, with the same labels
+// under to instead: Move("vite.shop.localhost", "localhost",
+// "lw.example.com") is "vite.shop.lw.example.com".
+func Move(name, from, to string) string {
+	return strings.TrimSuffix(name, from) + to
+}
+
 // Check returns why root can't be a Root Domain, or nil if it can: a
 // lowercase hostname of one or more labels of letters, digits and hyphens
 // (not starting or ending with a hyphen, at most 63 characters each), with
