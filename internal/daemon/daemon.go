@@ -139,6 +139,9 @@ type Daemon struct {
 	caPage     http.Handler    // see capage.go
 	servedMu   sync.Mutex
 	served     map[string]*served // Worktree directory → what is served there
+	// servedHosts indexes served by host, the Domain without the Root
+	// Domain, which a new Root Domain doesn't change. Guarded by servedMu.
+	servedHosts map[string]*served
 
 	// root is the Root Domain (see rootdomain.go). rootChange serialises
 	// changing it.
@@ -289,6 +292,7 @@ func Start(cfg Config) (*Daemon, error) {
 		registry:    reg,
 		listener:    ln,
 		served:      map[string]*served{},
+		servedHosts: map[string]*served{},
 		closing:     make(chan struct{}),
 		done:        make(chan struct{}),
 		catalog:     source,

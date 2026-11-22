@@ -139,7 +139,11 @@ func (d *Daemon) serveWorktree(p registry.Project, w worktreeRef) {
 	s.ctx, s.cancel = context.WithCancel(d.stopping)
 	s.activity = activity.New(d.cfg.Clock, DefaultIdleTimeout, func() { d.goIdle(s) })
 	d.servedMu.Lock()
+	if old := d.served[w.dir]; old != nil && d.servedHosts[old.host] == old {
+		delete(d.servedHosts, old.host)
+	}
 	d.served[w.dir] = s
+	d.servedHosts[w.host] = s
 	d.servedMu.Unlock()
 	d.serveServicesOf(w.dir)
 	d.startAlways(s)
@@ -248,6 +252,9 @@ func (d *Daemon) stopWorktree(ctx context.Context, dir string) {
 	d.servedMu.Lock()
 	s := d.served[dir]
 	delete(d.served, dir)
+	if s != nil && d.servedHosts[s.host] == s {
+		delete(d.servedHosts, s.host)
+	}
 	d.servedMu.Unlock()
 	if s != nil {
 		s.activity.Reset()
@@ -636,14 +643,14 @@ func (d *Daemon) servedAt(domain string) (*served, bool) {
 	if target, ok := d.aliasTarget(domain); ok {
 		domain = target
 	}
+	host, ok := strings.CutSuffix(domain, "."+d.rootDomain())
+	if !ok {
+		return nil, false
+	}
 	d.servedMu.Lock()
 	defer d.servedMu.Unlock()
-	for _, s := range d.served {
-		if s.domain() == domain {
-			return s, true
-		}
-	}
-	return nil, false
+	s, ok := d.servedHosts[host]
+	return s, ok
 }
 
 // routesProcess reports whether process is one of the Worktree's HTTP Processes
