@@ -18,15 +18,65 @@ import (
 // Domain and the addresses it listens on beside loopback.
 func checkRemoteAccess(ctx context.Context, r *report, plat platform.Platform, info api.DaemonInfo, globalConfig string) {
 	const name = "remote access"
-	custom := info.RootDomain != rootdomain.Default
+	// A daemon older than the Root Domain doesn't report one.
+	custom := info.RootDomain != rootdomain.Default && info.RootDomain != ""
 	if !custom && len(info.Listen) == 0 && info.ListenError == "" {
 		r.check(statusOK, name, "off: only this machine reaches Worktrees (Root Domain localhost, listening on loopback only)", "")
 		return
+	}
+	switch {
+	case !custom && len(info.Listen) > 0:
+		r.check(statusWarn, name, fmt.Sprintf("Laneway listens on %s, but the Root Domain is localhost, which every device "+
+			"resolves to itself: other devices can't reach Worktrees by name", listenNames(info)),
+			"set a Root Domain with `lane root-domain set <domain>`, under a domain you own")
+	case custom && len(info.Listen) == 0 && info.ListenError == "":
+		r.check(statusWarn, name, fmt.Sprintf("the Root Domain is %s, but Laneway listens only on loopback: "+
+			"only this machine reaches Worktrees", info.RootDomain),
+			"add the address your other devices reach this machine on to listen in "+globalConfig+
+				`, such as listen = ["tailscale"]`)
 	}
 	checkListen(r, info, globalConfig)
 	if custom {
 		checkRootDomainDNS(ctx, r, plat, info)
 	}
+	if len(info.Listen) > 0 && plat.Name() == "WSL2" {
+		r.check(statusWarn, "Windows firewall", "on WSL2, Windows' Hyper-V firewall may block other devices from ports 80 and 443; "+
+			"Laneway can't tell from inside WSL",
+			"if other devices can't connect, allow them from an elevated PowerShell on Windows: "+wslFirewallRule)
+	}
+	if ips := listenedOn(info); len(ips) > 0 {
+		r.check(statusOK, "reachable from", strings.Join(ips, ", ")+": every Worktree, the Dashboard and the Service Domains, for any device "+
+			"that reaches these addresses; the Dashboard can remove Worktrees, so let only your devices reach them "+
+			"(such as with Tailscale's ACLs)", "")
+	}
+}
+
+// wslFirewallRule is the PowerShell command that lets other devices reach
+// ports 80 and 443 in WSL2 through Windows' Hyper-V firewall. The GUID is
+// WSL's VMCreatorId.
+//
+// TODO(#130): replace with the command confirmed by hand.
+const wslFirewallRule = `New-NetFirewallHyperVRule -Name Laneway -DisplayName "Laneway (HTTP and HTTPS)" -Direction Inbound ` +
+	`-VMCreatorId '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -Protocol TCP -LocalPorts 80,443`
+
+// listenNames are the addresses listen names, as written.
+func listenNames(info api.DaemonInfo) string {
+	var names []string
+	for _, l := range info.Listen {
+		names = append(names, l.Name)
+	}
+	return strings.Join(names, ", ")
+}
+
+// listenedOn are the addresses Laneway listens on beside loopback.
+func listenedOn(info api.DaemonInfo) []string {
+	var ips []string
+	for _, l := range info.Listen {
+		if l.Listening {
+			ips = append(ips, l.IP)
+		}
+	}
+	return ips
 }
 
 // checkRootDomainDNS reports whether names under the Root Domain resolve
@@ -86,9 +136,9 @@ func checkListen(r *report, info api.DaemonInfo, globalConfig string) {
 	}
 	for _, l := range info.Listen {
 		name := "listen " + l.Name
-		at := l.IP
-		if l.Name == config.ListenTailscale && l.IP != "" {
-			at = "Tailscale's address " + l.IP
+		listened := "listened on"
+		if l.IP != l.Name {
+			listened = l.IP + " is listened on"
 		}
 		switch {
 		case l.IP == "":
@@ -105,11 +155,11 @@ func checkListen(r *report, info api.DaemonInfo, globalConfig string) {
 			r.check(statusFail, name, "not listened on: "+l.Error,
 				"check that "+l.IP+" is up on this machine (`ip addr`); Laneway keeps trying")
 		case l.Error != "":
-			r.check(statusWarn, name, at+" is listened on for HTTPS, but not plain HTTP: "+l.Error,
+			r.check(statusWarn, name, listened+" for HTTPS, but not plain HTTP: "+l.Error,
 				"other devices can't open the CA page (http://"+rootdomain.Dashboard(info.RootDomain)+"/ca) there; "+
 					"free port 80 on "+l.IP+", and Laneway keeps trying")
 		default:
-			r.check(statusOK, name, at+" is listened on", "")
+			r.check(statusOK, name, listened, "")
 		}
 	}
 }

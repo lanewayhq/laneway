@@ -177,3 +177,83 @@ func TestDoctorWarnsWhenNamesUnderTheRootDomainResolveWhereOtherDevicesCantReach
 		assertCheck(t, out, "warn", "DNS", tc.want)
 	}
 }
+
+func TestDoctorOnWSL2ListeningBeyondLoopbackQuotesTheWindowsFirewallRule(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	d.Platform.SetWSL2()
+	writeGlobalConfig(t, d, `listen = ["`+extraAddr+`"]`+"\n")
+	d.Restart()
+
+	out := d.RunCLI(d.Home, "doctor").Stdout
+
+	assertCheck(t, out, "warn", "Windows firewall", "Hyper-V firewall may block other devices from ports 80 and 443")
+	assertContains(t, out, `New-NetFirewallHyperVRule -Name Laneway -DisplayName "Laneway (HTTP and HTTPS)" -Direction Inbound `+
+		`-VMCreatorId '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -Protocol TCP -LocalPorts 80,443`)
+}
+
+func TestDoctorOnLinuxListeningBeyondLoopbackHasNoWindowsFirewallHint(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	writeGlobalConfig(t, d, `listen = ["`+extraAddr+`"]`+"\n")
+	d.Restart()
+
+	out := d.RunCLI(d.Home, "doctor").Stdout
+
+	assertNoCheck(t, out, "Windows firewall")
+}
+
+func TestDoctorSaysEverythingIsReachableFromTheAddressesLanewayListensOn(t *testing.T) {
+	t.Parallel()
+	d := remoteDaemon(t, "dr-reach.example.test", extraAddr, "192.0.2.1")
+	d.Platform.SetHost("*.dr-reach.example.test", extraAddr)
+
+	out := d.RunCLI(d.Home, "doctor").Stdout
+
+	assertCheck(t, out, "ok", "reachable from", extraAddr+": every Worktree, the Dashboard and the Service Domains")
+	if line := checkLine(out, "reachable from"); strings.Contains(line, "192.0.2.1") {
+		t.Fatalf("the statement names an address Laneway doesn't listen on:\n%s", line)
+	}
+	assertNoCheck(t, out, "remote access")
+}
+
+func TestDoctorWarnsAboutAHalfDoneSetupForOtherDevices(t *testing.T) {
+	t.Parallel()
+
+	t.Run("listening with the Root Domain still localhost", func(t *testing.T) {
+		t.Parallel()
+		d := testkit.StartDaemon(t)
+		writeGlobalConfig(t, d, `listen = ["`+extraAddr+`"]`+"\n")
+		d.Restart()
+
+		out := d.RunCLI(d.Home, "doctor").Stdout
+
+		assertCheck(t, out, "warn", "remote access", "Laneway listens on "+extraAddr+", but the Root Domain is localhost")
+		assertContains(t, out, "fix: set a Root Domain with `lane root-domain set <domain>`")
+		// Other devices still reach every name, so it still says so.
+		assertCheck(t, out, "ok", "reachable from", extraAddr)
+	})
+
+	t.Run("a custom Root Domain listened on only on loopback", func(t *testing.T) {
+		t.Parallel()
+		d := remoteDaemon(t, "dr-half.example.test")
+		d.Platform.SetHost("*.dr-half.example.test", "127.0.0.1")
+
+		out := d.RunCLI(d.Home, "doctor").Stdout
+
+		assertCheck(t, out, "warn", "remote access", "the Root Domain is dr-half.example.test, but Laneway listens only on loopback")
+		assertContains(t, out, `listen = ["tailscale"]`)
+		assertNoCheck(t, out, "reachable from")
+	})
+}
+
+// checkLine is doctor's line for check, or "".
+func checkLine(out, check string) string {
+	for line := range strings.SplitSeq(out, "\n") {
+		_, rest, _ := strings.Cut(strings.TrimSpace(line), " ")
+		if strings.HasPrefix(strings.TrimSpace(rest), check+":") {
+			return line
+		}
+	}
+	return ""
+}

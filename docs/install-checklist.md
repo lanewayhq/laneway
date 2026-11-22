@@ -92,7 +92,10 @@ Needs a machine on a tailnet. On WSL2, Tailscale runs on Windows and WSL must us
 - [ ] `curl -s --unix-socket $XDG_RUNTIME_DIR/laneway/laneway.sock http://lane/v1/daemon` lists `tailscale` with the address `tailscale ip -4` prints (WSL2: `tailscale.exe ip -4`) and `"listening":true`. `ss -ltn` shows Laneway on that address at 443 and 80, beside `127.0.0.1`.
 - [ ] From another device on the tailnet, `curl -k https://<that address>/` gets an answer from Laneway (the Root Domain isn't set yet, so the name doesn't matter), and `curl -i http://<that address>/` a redirect or 404 from Laneway, not a timeout. On WSL2, a timeout means Windows' Hyper-V firewall blocks it: note the rule that fixed it.
 - [ ] Stop Tailscale (`sudo tailscale down`; Windows: Disconnect in the tray). Within ten seconds the API status says why, with Tailscale's own words, and the daemon keeps serving on `127.0.0.1`. Start it again: within ten seconds Laneway listens on it again, without a restart.
-- [ ] `listen = ["0.0.0.0"]`: after a restart, the API status has a `listenError` naming the config file, and `ss -ltn` shows Laneway only on `127.0.0.1`. Remove the line afterwards.
+- [ ] `lane doctor` reports `ok listen tailscale: <address> is listened on`, `ok reachable from: <address>: …`, and `warn remote access: Laneway listens on tailscale, but the Root Domain is localhost`. On WSL2 it also has `warn Windows firewall`, whose fix quotes a `New-NetFirewallHyperVRule` command: it must be the rule that fixed the timeout above (if not, change `wslFirewallRule` in `internal/cli/doctor_remote.go`). On Linux there is no `Windows firewall` line.
+- [ ] With Tailscale stopped, `lane doctor` reports `FAIL listen tailscale: no address: …` with Tailscale's own words, and says to start it and log in.
+- [ ] Set a Root Domain whose wildcard record points at that address (`lane root-domain set <domain>`): `lane doctor` reports `ok DNS: names under <domain> resolve to <address>, where Laneway listens`, and no `remote access` line. Afterwards `lane root-domain reset`.
+- [ ] `listen = ["0.0.0.0"]`: after a restart, the API status has a `listenError` naming the config file, `lane doctor` reports `FAIL listen: can't be read: …`, and `ss -ltn` shows Laneway only on `127.0.0.1`. Remove the line afterwards.
 
 ## Running it again
 
