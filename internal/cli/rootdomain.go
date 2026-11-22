@@ -85,7 +85,7 @@ func changeRootDomain(ctx context.Context, env Env, root string) error {
 	if err != nil {
 		return err
 	}
-	if err := config.SetString(p.GlobalConfig(), "root_domain", root); err != nil {
+	if err := config.WriteTopLevelString(p.GlobalConfig(), "root_domain", root); err != nil {
 		return err
 	}
 	res, err := client.New(p.Socket).SetRootDomain(ctx, root)
@@ -281,7 +281,7 @@ func (c dnsCheck) record() string {
 		}
 		return fmt.Sprintf("*.%s %s %s", c.root, kind, ip)
 	}
-	return fmt.Sprintf("*.%s A <the address your other devices reach this machine on>, and add that address to listen in your global config", c.root)
+	return fmt.Sprintf("*.%s A <the address your other devices reach this machine on>, and add that address to listen in your personal config", c.root)
 }
 
 // failure is the error `lane root-domain set` fails with.

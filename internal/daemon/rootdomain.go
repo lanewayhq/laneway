@@ -61,7 +61,7 @@ func (d *Daemon) startRootDomain() string {
 	g, err := config.LoadGlobal(d.cfg.Paths.GlobalConfig())
 	if err != nil {
 		applied, _ := d.registry.RootDomain()
-		d.log.Error("reading the Root Domain from the global config; keeping the last one", "root_domain", applied, "err", err)
+		d.log.Error("reading the Root Domain from the personal config; keeping the last one", "root_domain", applied, "err", err)
 		return applied
 	}
 	return cmp.Or(ptrValue(g.RootDomain), rootdomain.Default)
