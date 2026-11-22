@@ -45,6 +45,7 @@ type Fake struct {
 	noTailscale string                  // why there is no Tailscale address
 	hosts       map[string][]netip.Addr // hostname → addresses
 	trustDelay  time.Duration           // how long asking a trust store takes
+	firewall    *platform.WSLFirewall   // nil: Windows can't be asked
 }
 
 // New returns a Fake for a plain Linux machine where nothing is set up yet.
@@ -98,6 +99,14 @@ func (f *Fake) SetWSL2() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.wsl = true
+}
+
+// SetWSLFirewall makes WSLFirewall report fw. Until it is called, asking
+// Windows about its firewall fails.
+func (f *Fake) SetWSLFirewall(fw platform.WSLFirewall) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.firewall = &fw
 }
 
 // SetTrustStoreDelay makes asking a trust store whether it trusts a CA
@@ -310,4 +319,13 @@ func (s store) Trust(_ context.Context, _ string, ca *x509.Certificate) error {
 	}
 	s.f.trusted[s.name][sha256.Sum256(ca.Raw)] = true
 	return nil
+}
+
+func (f *Fake) WSLFirewall(context.Context) (platform.WSLFirewall, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.firewall == nil {
+		return platform.WSLFirewall{}, errors.New("Get-NetFirewallHyperVVMSetting isn't available (fake)")
+	}
+	return *f.firewall, nil
 }

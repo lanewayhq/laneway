@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lanewayhq/laneway/internal/platform"
 	"github.com/lanewayhq/laneway/internal/testkit"
 )
 
@@ -178,7 +179,7 @@ func TestDoctorWarnsWhenNamesUnderTheRootDomainResolveWhereOtherDevicesCantReach
 	}
 }
 
-func TestDoctorOnWSL2ListeningBeyondLoopbackQuotesTheWindowsFirewallRule(t *testing.T) {
+func TestDoctorOnWSL2QuotesTheWindowsFirewallRuleWhenWindowsCantBeAsked(t *testing.T) {
 	t.Parallel()
 	d := testkit.StartDaemon(t)
 	d.Platform.SetWSL2()
@@ -187,9 +188,39 @@ func TestDoctorOnWSL2ListeningBeyondLoopbackQuotesTheWindowsFirewallRule(t *test
 
 	out := d.RunCLI(d.Home, "doctor").Stdout
 
-	assertCheck(t, out, "warn", "Windows firewall", "Hyper-V firewall may block other devices from ports 80 and 443")
+	assertCheck(t, out, "warn", "Windows firewall", "couldn't ask Windows whether its Hyper-V firewall lets other devices reach ports 80 and 443")
 	assertContains(t, out, `New-NetFirewallHyperVRule -Name Laneway -DisplayName "Laneway (HTTP and HTTPS)" -Direction Inbound `+
 		`-VMCreatorId '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -Protocol TCP -LocalPorts 80,443`)
+}
+
+func TestDoctorOnWSL2SaysWhenWindowsFirewallBlocksOtherDevices(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	d.Platform.SetWSL2()
+	d.Platform.SetWSLFirewall(platform.WSLFirewall{Detail: "Windows' Hyper-V firewall blocks other devices from WSL's port 80 and 443 by default, and no rule allows them"})
+	writeGlobalConfig(t, d, `listen = ["`+extraAddr+`"]`+"\n")
+	d.Restart()
+
+	out := d.RunCLI(d.Home, "doctor").Stdout
+
+	assertCheck(t, out, "warn", "Windows firewall", "blocks other devices from WSL's port 80 and 443 by default, and no rule allows them, so they can't connect")
+	assertContains(t, out, "New-NetFirewallHyperVRule -Name Laneway")
+}
+
+func TestDoctorOnWSL2SaysWhenWindowsFirewallLetsOtherDevicesIn(t *testing.T) {
+	t.Parallel()
+	d := testkit.StartDaemon(t)
+	d.Platform.SetWSL2()
+	d.Platform.SetWSLFirewall(platform.WSLFirewall{Open: true, Detail: "Windows' Hyper-V firewall lets other devices reach WSL by default"})
+	writeGlobalConfig(t, d, `listen = ["`+extraAddr+`"]`+"\n")
+	d.Restart()
+
+	out := d.RunCLI(d.Home, "doctor").Stdout
+
+	assertCheck(t, out, "ok", "Windows firewall", "Windows' Hyper-V firewall lets other devices reach WSL by default")
+	if strings.Contains(out, "New-NetFirewallHyperVRule") {
+		t.Fatalf("doctor quotes the firewall rule though Windows lets other devices in:\n%s", out)
+	}
 }
 
 func TestDoctorOnLinuxListeningBeyondLoopbackHasNoWindowsFirewallHint(t *testing.T) {

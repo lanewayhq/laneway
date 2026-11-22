@@ -64,6 +64,9 @@ type Platform interface {
 	TailscaleIPv4(ctx context.Context) (netip.Addr, error)
 	// LookupHost returns the IP addresses a hostname resolves to.
 	LookupHost(ctx context.Context, name string) ([]netip.Addr, error)
+	// WSLFirewall asks Windows whether its Hyper-V firewall lets other
+	// devices reach WSL2's ports 80 and 443. It is an error on plain Linux.
+	WSLFirewall(ctx context.Context) (WSLFirewall, error)
 }
 
 // TrustStore is one place a root CA can be trusted.
@@ -77,6 +80,16 @@ type TrustStore interface {
 	Prompt() string
 	// Trust adds ca, read from the PEM file caFile, to the store.
 	Trust(ctx context.Context, caFile string, ca *x509.Certificate) error
+}
+
+// WSLFirewall is whether Windows' Hyper-V firewall lets other devices reach
+// WSL2's ports 80 and 443.
+type WSLFirewall struct {
+	// Open is true if it lets them reach both.
+	Open bool
+	// Detail says why, such as that the firewall lets every connection in
+	// by default.
+	Detail string
 }
 
 // ServiceStatus is the state of Laneway's user service.

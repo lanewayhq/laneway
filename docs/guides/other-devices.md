@@ -73,7 +73,7 @@ networkingMode=mirrored
 
 Then run `wsl.exe --shutdown` from Windows and open a new shell. `wslinfo --networking-mode` prints `mirrored` once it's on.
 
-In mirrored mode, Windows' Hyper-V firewall blocks connections from other devices to WSL, so your phone times out. Allow ports 80 and 443 with this command, in a PowerShell window opened with **Run as administrator** on Windows:
+In mirrored mode, Windows' Hyper-V firewall stands between other devices and WSL. Whether it lets them in depends on how Windows is set up, and `lane doctor` asks Windows and says, on its `Windows firewall` line. If it blocks them, your phone times out; allow ports 80 and 443 with this command, in a PowerShell window opened with **Run as administrator** on Windows:
 
 <!-- TODO(#130): confirm this command by hand -->
 ```powershell

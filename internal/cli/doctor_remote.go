@@ -40,14 +40,29 @@ func checkRemoteAccess(ctx context.Context, r *report, plat platform.Platform, i
 		checkRootDomainDNS(ctx, r, plat, info)
 	}
 	if len(info.Listen) > 0 && plat.Name() == "WSL2" {
-		r.check(statusWarn, "Windows firewall", "on WSL2, Windows' Hyper-V firewall may block other devices from ports 80 and 443; "+
-			"Laneway can't tell from inside WSL",
-			"if other devices can't connect, allow them from an elevated PowerShell on Windows: "+wslFirewallRule)
+		checkWSLFirewall(ctx, r, plat)
 	}
 	if ips := listenIPs(info, true); len(ips) > 0 {
 		r.check(statusOK, "reachable from", joinAddrs(ips)+": every Worktree, the Dashboard and the Service Domains, for any device "+
 			"that reaches these addresses; the Dashboard can remove Worktrees, so let only your devices reach them "+
 			"(such as with Tailscale's ACLs)", "")
+	}
+}
+
+// checkWSLFirewall reports whether Windows' Hyper-V firewall lets other
+// devices reach Laneway in WSL2.
+func checkWSLFirewall(ctx context.Context, r *report, plat platform.Platform) {
+	const name = "Windows firewall"
+	fw, err := plat.WSLFirewall(ctx)
+	switch {
+	case err != nil:
+		r.check(statusWarn, name, "couldn't ask Windows whether its Hyper-V firewall lets other devices reach ports 80 and 443: "+err.Error(),
+			"if other devices can't connect, allow them from an elevated PowerShell on Windows: "+wslFirewallRule)
+	case fw.Open:
+		r.check(statusOK, name, fw.Detail, "")
+	default:
+		r.check(statusWarn, name, fw.Detail+", so they can't connect",
+			"allow them from an elevated PowerShell on Windows, and remove any rule that blocks them: "+wslFirewallRule)
 	}
 }
 
