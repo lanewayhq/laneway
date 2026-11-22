@@ -100,6 +100,7 @@ func runDoctor(ctx context.Context, env Env, args []string) error {
 	checkCA(ctx, r, plat, p.CARootCert())
 	if daemonErr == nil {
 		checkStaleEnvKeys(daemonCtx, r, daemon)
+		checkRemoteAccess(ctx, r, plat, info, p.GlobalConfig())
 	}
 
 	if e, err := plat.ContainerEngine(ctx); err != nil {
