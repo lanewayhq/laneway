@@ -294,6 +294,11 @@ dialog.result .warning { padding: 0; }
 [data-page="project"] .x { padding: 0 32px 16px 66px; background: var(--color-sunken); border-bottom: 1px solid var(--color-line); cursor: auto; }
 [data-page="project"] .x-created { margin: -4px 0 10px; font-size: var(--text-sm); color: var(--color-muted); }
 [data-page="project"] .x-created time { color: var(--color-ink); }
+/* Every Domain of a Worktree that has more than one, Primary first. */
+[data-page="project"] .x-domains { margin: -4px 0 10px; font-size: var(--text-sm); color: var(--color-muted); overflow-wrap: anywhere; }
+[data-page="project"] .x-created + .x-domains { margin-top: -6px; }
+[data-page="project"] .x-domains a, [data-page="project"] .x-domains .sep { margin-left: 6px; }
+[data-page="project"] .x-domains .sep { color: var(--color-faint); }
 [data-page="project"] .xin { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 14px; }
 [data-page="project"] .box { border: 1px solid var(--color-line); border-radius: var(--radius-md); background: var(--color-surface); overflow: hidden; min-width: 0; }
 [data-page="project"] .box h4 {
@@ -357,11 +362,28 @@ dialog.diff .dlg-hd h3 { font-family: var(--font-mono); font-size: var(--text-ba
   [data-page="project"] .tabs .filter { width: 100%; margin-left: 0; }
   [data-page="project"] .r, [data-page="project"] .head { padding-left: 16px; padding-right: 16px; }
   [data-page="project"] .grid { grid-template-columns: 18px minmax(0, 1fr) 88px 132px; }
-  [data-page="project"] .grid > .dom, [data-page="project"] .grid > .merge,
   [data-page="project"] .head > :nth-child(3), [data-page="project"] .head > :nth-child(5) { display: none; }
+  /* A row's Domain and merge status drop to a second line under its name:
+     the Domain (with its count and Plugin items) as wide as it can be, the
+     merge status under the buttons, or the Domain the whole width without one. */
+  [data-page="project"] .r { row-gap: 6px; }
+  [data-page="project"] .r > .chev { grid-area: 1 / 1; }
+  [data-page="project"] .r > .wt { grid-area: 1 / 2; }
+  [data-page="project"] .r > :nth-child(4) { grid-area: 1 / 3; }
+  [data-page="project"] .r > .acts { grid-area: 1 / 4; }
+  [data-page="project"] .r > .dom {
+    grid-area: 2 / 2 / 3 / 4; display: grid; grid-template-columns: minmax(0, max-content) max-content;
+    align-items: baseline; column-gap: 8px;
+  }
+  [data-page="project"] .r:has(> .merge:empty) > .dom { grid-column: 2 / -1; }
+  [data-page="project"] .r > .dom .plugin-items { grid-column: 1 / -1; }
+  [data-page="project"] .r > .merge { grid-area: 2 / 4; justify-content: flex-end; }
+  [data-page="project"] .r > .merge .pill { height: auto; min-height: 22px; padding-block: 2px; white-space: normal; }
   [data-page="project"] .x { padding: 0 16px 16px; }
-  [data-page="project"] .pr { grid-template-columns: minmax(0, 1fr) 92px auto; }
-  [data-page="project"] .pr > :nth-child(3) { display: none; }
+  /* A Process's Domain, or its Start Mode, wraps under its name. */
+  [data-page="project"] .pr { grid-template-columns: minmax(0, 1fr) 92px auto; row-gap: 0; }
+  [data-page="project"] .pr > :nth-child(3) { grid-area: 2 / 1 / 3 / 3; margin-left: 0; }
+  [data-page="project"] .pr > :nth-child(3):empty { display: none; }
 }
 /* ---- end of Project page ---------------------------------------------- */
 
