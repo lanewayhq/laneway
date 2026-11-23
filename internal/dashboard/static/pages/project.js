@@ -14,8 +14,11 @@
 // start or stop and restart its Processes, a "⋯" menu with the less common
 // actions (its Plugins' actions and the ones other pages add through
 // dash.worktreeActions, such as Logs), and, on every linked Worktree, Remove
-// (dash.removeWorktree). A row expands into its Processes with their own
-// controls (and dash.processActions) and the last lines of their output
+// (dash.removeWorktree). On a phone the Domain and merge status drop to a
+// second line under the row's name, so they stay one tap away. A row expands
+// into every Domain the Worktree has, when it has more than one, and its
+// Processes with their own controls (and dash.processActions) and the last
+// lines of their output
 // (GET /v1/logs without follow), linking to the Logs page for that
 // Worktree. A linked Worktree with changed files or commits not on the
 // Default Branch lists them there too, as the merge status in the
@@ -294,6 +297,7 @@ export default {
 
     const expansion = (p, w) => h("div", { class: "x" },
       created(w),
+      allDomains(w),
       failed(w) ? failure(w.setup) : "",
       changes(dash, p, w),
       h("div", { class: "xin" },
@@ -441,12 +445,30 @@ function branchLine(p, w) {
     icon("branch"), h("span", {}, branch || "not on a branch"));
 }
 
+// otherDomains are the Worktree's Domains besides its Primary Domain: its own
+// Domain and older Aliases.
+function otherDomains(w) {
+  return [w.domain, ...(w.aliases ?? [])].filter((d) => d && d !== w.primaryDomain);
+}
+
 // domains links the Worktree at its Primary Domain, then counts its other
-// Domains (its own Domain and older Aliases), named in the title.
+// Domains, named in the title. Clicking the count, like the rest of the row,
+// expands it, and the expanded row links them all (allDomains).
 function domains(w) {
-  const others = [w.domain, ...(w.aliases ?? [])].filter((d) => d && d !== w.primaryDomain);
+  const others = otherDomains(w);
   return [link(w.primaryDomain),
     others.length ? h("span", { class: "al", title: others.join("\n") }, `+${others.length} Domain${others.length === 1 ? "" : "s"}`) : ""];
+}
+
+// allDomains links every Domain of a Worktree that has more than one, Primary
+// Domain first: the row only links that one, and a title can't be tapped.
+function allDomains(w) {
+  const others = otherDomains(w);
+  if (!w.primaryDomain || others.length === 0) {
+    return "";
+  }
+  return h("p", { class: "x-domains" }, "Domains",
+    ...[w.primaryDomain, ...others].flatMap((d, i) => [i ? h("span", { class: "sep", "aria-hidden": "true" }, "·") : "", link(d)]));
 }
 
 // plugins are the badges and links of the Plugins the Worktree uses.
