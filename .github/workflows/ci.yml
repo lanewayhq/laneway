@@ -61,6 +61,14 @@ jobs:
       # profile, so only Podman is affected. See #81.
       - name: Unload the runner's AppArmor profile for mysqld
         run: sudo apparmor_parser -R /etc/apparmor.d/usr.sbin.mysqld
+      # Ubuntu 26.04's AppArmor profile for pasta, rootless Podman's network
+      # helper, doesn't let Podman signal it: removing the last container on a
+      # custom network fails with "rootless netns: kill network process:
+      # permission denied" (the kernel logs operation="signal"
+      # profile="pasta" peer="podman"). Docker doesn't use pasta. Unload the
+      # profile, as for mysqld above.
+      - name: Unload the runner's AppArmor profile for pasta
+        run: sudo apparmor_parser -R /etc/apparmor.d/usr.bin.pasta
       - name: Slow tier (Postgres, MySQL, Redis, Mailpit on Docker and Podman)
         env:
           LANEWAY_SLOW: '1'
