@@ -213,6 +213,12 @@
           "api_version": 1,
           "url": "https://github.com/lanewayhq/plugins/releases/download/t3/v1.0.0/t3-1.0.0.tar.gz",
           "sha256": "3f4f899b910827d8147e446eb73a9df07ca040422aeaa803fca6ed751e5bbda1"
+        },
+        {
+          "version": "1.1.0",
+          "api_version": 1,
+          "url": "https://github.com/lanewayhq/plugins/releases/download/t3/v1.1.0/t3-1.1.0.tar.gz",
+          "sha256": "1c1c0a86687525f68e22785dfc4216b03c98ee0e38519320bd7a3dfdb97ad7cf"
         }
       ]
     },
