@@ -518,7 +518,7 @@ Commands in `[worktree] on_remove` in `laneway.toml` run in the main Worktree wh
 
 ```sh
 lane harness add claude   # SessionStart hook in .claude/settings.json + a section in AGENTS.md, imported from CLAUDE.md
-lane harness add t3       # a "Laneway: wait until Ready" script in t3.json that runs when T3 Code creates a worktree, + the AGENTS.md section
+lane harness add t3       # t3.json scripts: "Laneway: wait until Ready", run when T3 Code creates a worktree, and "Laneway: open in browser"; + the AGENTS.md section
 ```
 
 The hook runs `lane worktree ready`, so an agent's session in a new worktree starts only once its database, `.env` and `composer`/`bun install` are done. The `AGENTS.md` section tells the agent to use `lane info --json` for its URL and `lane exec` for commands, and, in a linked worktree without an Alias, to name it after its task once it is Ready (`lane worktree alias checkout-redesign`, see Aliases in §8). Projects set up before that instruction existed get it when `lane harness add` runs again. It's safe for teammates without Laneway: the hook does nothing if `lane` isn't installed.

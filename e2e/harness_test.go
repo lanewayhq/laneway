@@ -329,10 +329,10 @@ func TestHarnessAddT3AddsAWorktreeCreateScriptThatHoldsTheAgentUntilReady(t *tes
 		t.Errorf("$schema = %v, want T3 Code's schema", schema)
 	}
 	scripts := t3Scripts(t, filepath.Join(repo.Dir, "t3.json"))
-	if len(scripts) != 1 {
-		t.Fatalf("want one script, got %v", scripts)
+	if len(scripts) != 2 {
+		t.Fatalf("want two scripts, wait until Ready and open in browser, got %v", scripts)
 	}
-	script := scripts[0]
+	script, open := scripts[0], scripts[1]
 	if script["runOnWorktreeCreate"] != true || script["async"] != false {
 		t.Errorf("script = %v, want runOnWorktreeCreate: true and async: false", script)
 	}
@@ -345,6 +345,15 @@ func TestHarnessAddT3AddsAWorktreeCreateScriptThatHoldsTheAgentUntilReady(t *tes
 	// Without Laneway it does nothing.
 	if run := runHook(t, d, repo.Dir, script["command"].(string), false); run.ExitCode != 0 || run.Stdout != "" {
 		t.Errorf("without lane, script exited %d with %q", run.ExitCode, run.Stdout)
+	}
+	// The open script is the developer's to run, not T3 Code's on create.
+	if open["runOnWorktreeCreate"] == true {
+		t.Errorf("open script = %v, want it not run on Worktree create", open)
+	}
+	assertContains(t, open["command"].(string), "lane open")
+	// Without Laneway it says there's nothing to open, and succeeds.
+	if run := runHook(t, d, repo.Dir, open["command"].(string), false); run.ExitCode != 0 || !strings.Contains(run.Stdout, "Laneway isn't installed") {
+		t.Errorf("without lane, open script exited %d with %q", run.ExitCode, run.Stdout)
 	}
 }
 
@@ -375,7 +384,7 @@ func TestHarnessAddT3KeepsExistingScriptsAndChangesNothingTheSecondTime(t *testi
 		t.Errorf("top-level keys lost: %v", doc)
 	}
 	scripts := t3Scripts(t, path)
-	if len(scripts) != 2 || scripts[0]["name"] != "Tests" || scripts[0]["command"] != "npm test" {
+	if len(scripts) != 3 || scripts[0]["name"] != "Tests" || scripts[0]["command"] != "npm test" {
 		t.Fatalf("scripts = %v, want the existing one kept first", scripts)
 	}
 	assertContains(t, scripts[1]["command"].(string), "lane worktree ready")
@@ -400,7 +409,7 @@ func TestHarnessAddT3WarnsWhenAnotherScriptAlreadyRunsOnWorktreeCreate(t *testin
 	assertContains(t, res.Stderr, "Setup Workspace")
 	assertContains(t, res.Stderr, "lane worktree ready")
 	scripts := t3Scripts(t, filepath.Join(repo.Dir, "t3.json"))
-	if len(scripts) != 2 || scripts[0]["name"] != "Setup Workspace" || scripts[0]["runOnWorktreeCreate"] != true {
+	if len(scripts) != 3 || scripts[0]["name"] != "Setup Workspace" || scripts[0]["runOnWorktreeCreate"] != true {
 		t.Fatalf("scripts = %v, want the existing setup script kept as it was", scripts)
 	}
 }
